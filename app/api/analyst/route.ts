@@ -54,7 +54,6 @@ async function executeTool(name:string,args:Args){
   const brandRows=rows; const totalRows=await queryFacts({...args,brandId:undefined}); const brandSales=brandRows.reduce((a,r)=>a+Number(r.sales_value||0),0);const totalSales=totalRows.reduce((a,r)=>a+Number(r.sales_value||0),0);
   return {tool:name,brand_sales:brandSales,category_sales:totalSales,market_share:totalSales?brandSales/totalSales:null};
  }
- if(!toolNames.has(name))throw new Error("Unsupported tool");
  throw new Error("Tool execution not implemented: "+name);
 }
 
