@@ -53,17 +53,16 @@ async function aggregateSales(
     if (!headerDone) { headers = values; headerDone = true; return; }
     if (!values.length || !values[0]) return;
     salesRows++;
-    const ix = (name: string) => headers.indexOf(name);
-    const productId = Number(values[ix("product_id")]);
+    const productId = Number(values[headers.indexOf("product_id")]);
     const p = productMap.get(productId);
     if (!p) return;
-    const week = values[ix("week_ending")];
-    const sales = Number(values[ix("dollar_sales")]) || 0;
-    const units = Number(values[ix("units")]) || 0;
-    const dist = Number(values[ix("acv_distribution")]) || 0;
-    const promo = /^(true|1|yes)$/i.test(values[ix("on_promo")]);
-    const discount = Number(values[ix("discount_depth_pct")]) || 0;
-    const retailerId = Number(values[ix("retailer_id")]);
+    const week = values[headers.indexOf("week_ending")];
+    const sales = Number(values[headers.indexOf("dollar_sales")]) || 0;
+    const units = Number(values[headers.indexOf("units")]) || 0;
+    const dist = Number(values[headers.indexOf("acv_distribution")]) || 0;
+    const promo = /^(true|1|yes)$/i.test(values[headers.indexOf("on_promo")]);
+    const discount = Number(values[headers.indexOf("discount_depth_pct")]) || 0;
+    const retailerId = Number(values[headers.indexOf("retailer_id")]);
 
     const bk = p.brand + "|" + week;
     const b = brand.get(bk) ?? { brand_id: p.brand, category: p.category, week_ending: week, dollar_sales: 0, units: 0, dist: 0, observations: 0, promo_observations: 0, discount_sum: 0 };
