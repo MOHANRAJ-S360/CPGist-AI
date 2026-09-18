@@ -1,5 +1,5 @@
 import {NextResponse} from "next/server";
-import {CPG_TOOLS} from "@/lib/cpg-analytics";
+import {CPG_TOOLS} from "../../../lib/cpg-analytics";
 
 const toolNames=new Set(CPG_TOOLS.map(t=>t.name));
 type Args=Record<string,string|undefined>;
