@@ -34,6 +34,23 @@ async function executeTool(name:string,args:Args){
   const valid=rows.filter(r=>r.price!=null);const units=valid.reduce((a,r)=>a+Number(r.units||0),0);
   return {tool:name,average_price:units?valid.reduce((a,r)=>a+Number(r.price||0)*Number(r.units||0),0)/units:null,observations:valid.length};
  }
+ if(name==="analyze_drivers"){
+  const byBrand=new Map<string,number>(); for(const r of rows){const k=String(r.brand_id||"unassigned");byBrand.set(k,(byBrand.get(k)||0)+Number(r.sales_value||0));}
+  return {tool:name,brand_sales:Array.from(byBrand.entries()).map(([brandId,sales])=>({brandId,sales})).sort((a,b)=>b.sales-a.sales)};
+ }
+ if(name==="detect_anomalies"){
+  const by=new Map<string,number>();for(const r of rows){const p=String(r.period);by.set(p,(by.get(p)||0)+Number(r.sales_value||0));}
+  const vals=Array.from(by.values()),mean=vals.reduce((a,b)=>a+b,0)/(vals.length||1),sd=Math.sqrt(vals.reduce((a,b)=>a+(b-mean)**2,0)/(vals.length||1));
+  return {tool:name,anomalies:Array.from(by.entries()).filter(([,v])=>sd>0&&Math.abs(v-mean)/sd>=2).map(([period,sales])=>({period,sales,zScore:(sales-mean)/sd}))};
+ }
+ if(name==="forecast_sales"){
+  const horizon=Math.max(1,Math.min(26,Number(args.horizon||4)));const by=new Map<string,number>();for(const r of rows){const p=String(r.period);by.set(p,(by.get(p)||0)+Number(r.sales_value||0));}
+  const vals=Array.from(by.values());const n=vals.length;if(n<2)return {tool:name,forecast:[],reason:"At least two periods are required."};const xm=(n-1)/2,ym=vals.reduce((a,b)=>a+b,0)/n;let num=0,den=0;vals.forEach((y,x)=>{num+=(x-xm)*(y-ym);den+=(x-xm)**2});const slope=den?num/den:0,intercept=ym-slope*xm;return {tool:name,forecast:Array.from({length:horizon},(_,i)=>({periodOffset:i+1,sales:Math.max(0,intercept+slope*(n+i))})),method:"linear trend"};
+ }
+ if(name==="run_scenario"){
+  const priceChange=Number(args.priceChangePct||0)/100,distChange=Number(args.distributionChangePts||0);const sales=rows.reduce((a,r)=>a+Number(r.sales_value||0),0),units=rows.reduce((a,r)=>a+Number(r.units||0),0),dist=rows.filter(r=>r.distribution!=null).reduce((a,r)=>a+Number(r.distribution||0),0)/(rows.filter(r=>r.distribution!=null).length||1);
+  const elasticity=-1;const volumeFactor=1+elasticity*priceChange+distChange/100;return {tool:name,baselineSales:sales,baselineUnits:units,baselineDistribution:dist,assumptions:{priceElasticity:elasticity,distributionLift:distChange},scenarioSales:sales*volumeFactor*(1+priceChange),salesDelta:sales*(volumeFactor*(1+priceChange)-1)};
+ }
  if(name==="get_market_share"){
   const brandRows=rows; const totalRows=await queryFacts({...args,brandId:undefined}); const brandSales=brandRows.reduce((a,r)=>a+Number(r.sales_value||0),0);const totalSales=totalRows.reduce((a,r)=>a+Number(r.sales_value||0),0);
   return {tool:name,brand_sales:brandSales,category_sales:totalSales,market_share:totalSales?brandSales/totalSales:null};
