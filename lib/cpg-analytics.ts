@@ -20,6 +20,12 @@ const params = {
 
 export const CPG_TOOLS = [
   {
+    name: "data_readiness",
+    description: "Check which CPG data domains are currently populated before answering a question. Use this when the requested analysis may depend on pricing, promotion, retailer opportunity, product/SKU, inventory, profitability, geography, competition, or shopper data.",
+    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
+
+  {
     name: "business_health_scan",
     description: "Run a compact evidence-first health scan for vague executive questions such as 'how are we doing', 'what changed', 'what is wrong', or 'give me a business pulse'. It combines recent sales, units, realized price, distribution and anomaly signals without making causal claims.",
     parameters: { ...params, additionalProperties: false },
