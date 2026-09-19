@@ -20,6 +20,16 @@ const params = {
 
 export const CPG_TOOLS = [
   {
+    name: "cross_category_portfolio",
+    description: "Analyze whether the same exact brand spans multiple categories, and separately identify parent companies with brands across multiple categories. Use this FIRST for questions about brands common across categories, cross-category brand performance, or multi-category portfolios.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "retailer_opportunity",
     description: "Identify retailer-level whitespace for a specific brand within a category by comparing the brand's observed share at each retailer with its overall category share. This is a descriptive opportunity diagnostic, not a causal forecast.",
     parameters: {
