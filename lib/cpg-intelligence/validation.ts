@@ -29,8 +29,8 @@ export function validateAnalyticalResult(result: AnalyticalResult<any>): Validat
   if (result.data?.scenarioSales !== undefined && result.data?.baselineSales !== undefined && result.data?.assumptions) {
     const baseline = Number(result.data.baselineSales);
     const scenario = Number(result.data.scenarioSales);
-    const priceChange = Number(result.evidence.filters?.priceChangePct ?? 0);
-    const distributionChange = Number(result.evidence.filters?.distributionChangePts ?? 0);
+    const priceChange = Number(result.data.inputs?.priceChangePct ?? 0);
+    const distributionChange = Number(result.data.inputs?.distributionChangePts ?? 0);
     if (Number.isFinite(baseline) && Number.isFinite(scenario) && Number.isFinite(priceChange) && Number.isFinite(distributionChange)) {
       const expected = Math.max(0, baseline * (1 + priceChange / 100) * (1 + Number(result.data.assumptions.priceElasticity) * priceChange / 100) * (1 + Number(result.data.assumptions.distributionSalesLiftPerPoint) * distributionChange));
       const tolerance = Math.max(0.01, Math.abs(expected) * 1e-9);
