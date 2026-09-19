@@ -9,6 +9,7 @@ import {
   getPrice,
   getSales,
   runScenario,
+  validateAnalyticalResult,
   type IntelligenceQuery,
   type IntelligenceRow,
 } from "../../../lib/cpg-intelligence";
@@ -74,7 +75,8 @@ async function tool(name: string, a: Args, token: string) {
   switch (name) {
     case "get_sales": {
       const result = getSales(dataset.rows, filters);
-      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+      const issues = validateAnalyticalResult(result);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings, validation: issues };
     }
     case "get_distribution": {
       const result = getDistribution(dataset.rows, filters);
@@ -86,7 +88,18 @@ async function tool(name: string, a: Args, token: string) {
     }
     case "analyze_drivers": {
       const result = analyzeDrivers(dataset.rows, filters);
-      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+      const ids = result.data.byBrand.map(x => x.brandId).join(",");
+      let brandNames: Record<string,string> = {};
+      if (ids) {
+        const brands = await get("syndicate_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token);
+        brandNames = Object.fromEntries(brands.map((b:any) => [String(b.id), b.name]));
+      }
+      return {
+        ...result.data,
+        byBrand: result.data.byBrand.map(x => ({ ...x, brandName: brandNames[x.brandId] ?? null })),
+        evidence: { ...result.evidence, source: dataset.source },
+        warnings: result.warnings
+      };
     }
     case "detect_anomalies": {
       const result = detectAnomalies(dataset.rows, filters);
@@ -98,7 +111,8 @@ async function tool(name: string, a: Args, token: string) {
     }
     case "run_scenario": {
       const result = runScenario(dataset.rows, filters, Number(a.priceChangePct || 0), Number(a.distributionChangePts || 0));
-      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+      const issues = validateAnalyticalResult(result);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: [...result.warnings, ...issues.map(i => i.message)], validation: issues };
     }
     case "get_market_share": {
       if (!a.brandId) {
@@ -127,7 +141,7 @@ export async function POST(req: Request) {
       {
         role: "system",
         content:
-          "You are CPGist AI Analyst. You are an orchestration layer, not the analytics engine. Never invent metrics. For quantitative claims, use the controlled tools and cite the returned evidence in plain language: source, period and relevant filters. State warnings when a result is a baseline or simplified assumption. The connected dataset is the Syndicate CPG dataset. Market share is returned as a decimal; convert to percentage. Do not imply causal conclusions from descriptive data.",
+    You are CPGist AI Analyst. You are an orchestration layer, not the analytics engine. Never invent metrics. For quantitative claims, use the controlled tools. Preserve exact returned values. Never convert evidence rowCount into a week count; use evidence.periodCount for number of periods. Never claim requested date coverage if evidence.periodStart/periodEnd show narrower coverage; explicitly state actual coverage. Never invent or repeat duplicate ranking entries. When brandName is returned, use it instead of brandId in the user-facing answer. For scenarios, explain the price × volume × distribution mechanics and reproduce the tool's scenarioSales exactly. Treat warnings and validation issues as authoritative. Use a concise professional analyst format with headline, executive takeaway, key metrics, assumptions, interpretation, and data evidence. Do not imply causal conclusions from descriptive data. The connected dataset is the Syndicate CPG dataset. Market share is returned as a decimal; convert to percentage.
       },
       ...(body.messages || []),
     ];
