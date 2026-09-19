@@ -20,6 +20,12 @@ const params = {
 
 export const CPG_TOOLS = [
   {
+    name: "business_health_scan",
+    description: "Run a compact evidence-first health scan for vague executive questions such as 'how are we doing', 'what changed', 'what is wrong', or 'give me a business pulse'. It combines recent sales, units, realized price, distribution and anomaly signals without making causal claims.",
+    parameters: { ...params, additionalProperties: false },
+  },
+
+  {
     name: "cross_category_portfolio",
     description: "Analyze whether the same exact brand spans multiple categories, and separately identify parent companies with brands across multiple categories. Use this FIRST for questions about brands common across categories, cross-category brand performance, or multi-category portfolios.",
     parameters: {

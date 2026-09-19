@@ -342,3 +342,70 @@ export function runScenario(
     "Distribution lift is a simplified planning assumption and should be replaced by learned elasticity when sufficient data is available."
   ]);
 }
+
+
+export function businessHealthScan(
+  rows: IntelligenceRow[],
+  filters: IntelligenceQuery
+): AnalyticalResult<{
+  status: "growing" | "declining" | "mixed" | "stable" | "insufficient_data";
+  salesGrowthPct: number | null;
+  latestSales: number | null;
+  priorSales: number | null;
+  latestUnits: number | null;
+  priorUnits: number | null;
+  latestPrice: number | null;
+  priorPrice: number | null;
+  distributionChangePts: number | null;
+  anomalyCount: number;
+  signals: Array<{type: "growth" | "volume" | "price" | "distribution" | "anomaly"; signal: string; value: number | null}>;
+}> {
+  const salesResult = getSales(rows, filters);
+  const points = salesResult.data.periods;
+  if (points.length < 2) {
+    return base({
+      status: "insufficient_data",
+      salesGrowthPct: null,
+      latestSales: points[0]?.sales ?? null,
+      priorSales: null,
+      latestUnits: points[0]?.units ?? null,
+      priorUnits: null,
+      latestPrice: points[0]?.units ? points[0].sales / points[0].units : null,
+      priorPrice: null,
+      distributionChangePts: null,
+      anomalyCount: 0,
+      signals: []
+    }, rows, filters, ["At least two observed periods are required for a health scan."]);
+  }
+  const latest = points[points.length - 1];
+  const prior = points[points.length - 2];
+  const growth = prior.sales ? (latest.sales / prior.sales - 1) * 100 : null;
+  const latestPrice = latest.units ? latest.sales / latest.units : null;
+  const priorPrice = prior.units ? prior.sales / prior.units : null;
+  const dist = getDistribution(rows, filters).data;
+  const distributionChangePts = dist.average !== null && points.length >= 2 ? null : null;
+  const anomalies = detectAnomalies(rows, filters).data.anomalies;
+  const unitGrowth = prior.units ? (latest.units / prior.units - 1) * 100 : null;
+  const priceGrowth = priorPrice ? ((latestPrice ?? 0) / priorPrice - 1) * 100 : null;
+  const status = growth === null ? "insufficient_data" : growth > 1 ? "growing" : growth < -1 ? "declining" : "stable";
+  const signals: Array<{type: "growth" | "volume" | "price" | "distribution" | "anomaly"; signal: string; value: number | null}> = [
+    {type: "growth", signal: "Latest-period sales growth versus prior observed period", value: growth},
+    {type: "volume", signal: "Latest-period unit growth versus prior observed period", value: unitGrowth},
+    {type: "price", signal: "Latest-period realized price change versus prior observed period", value: priceGrowth},
+    {type: "anomaly", signal: "Observed weekly anomalies in the selected history", value: anomalies.length}
+  ];
+  if (dist.average !== null) signals.push({type: "distribution", signal: "Current average ACV distribution", value: dist.average});
+  return base({
+    status,
+    salesGrowthPct: growth,
+    latestSales: latest.sales,
+    priorSales: prior.sales,
+    latestUnits: latest.units,
+    priorUnits: prior.units,
+    latestPrice,
+    priorPrice,
+    distributionChangePts,
+    anomalyCount: anomalies.length,
+    signals
+  }, rows, filters, []);
+}
