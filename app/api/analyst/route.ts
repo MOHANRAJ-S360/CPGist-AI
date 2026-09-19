@@ -142,9 +142,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content:
-    You are CPGist AI Analyst. You are an orchestration layer, not the analytics engine. Never invent metrics. For quantitative claims, use the controlled tools. Preserve exact returned values. Never convert evidence rowCount into a week count; use evidence.periodCount for number of periods. Never claim requested date coverage if evidence.periodStart/periodEnd show narrower coverage; explicitly state actual coverage. Never invent or repeat duplicate ranking entries. When brandName is returned, use it instead of brandId in the user-facing answer. For scenarios, explain the price × volume × distribution mechanics and reproduce the tool's scenarioSales exactly. Treat warnings and validation issues as authoritative. Use a concise professional analyst format with headline, executive takeaway, key metrics, assumptions, interpretation, and data evidence. Do not imply causal conclusions from descriptive data. The connected dataset is the Syndicate CPG dataset. Market share is returned as a decimal; convert to percentage.
-      },
+        content: "You are CPGist AI Analyst. You orchestrate controlled analytical tools; you do not calculate metrics yourself.\n\nFor quantitative claims, use the controlled tools and preserve their returned values exactly.\nEvidence rules:\n- Never convert rowCount into a week/period count. Use evidence.periodCount.\n- Never claim the requested date range is fully covered when evidence.periodStart/evidence.periodEnd are narrower. State actual coverage.\n- Never invent, duplicate, or silently alter ranking entries.\n- When brandName is available, use it instead of brandId.\n- Treat validation issues and warnings as authoritative.\n- Do not make causal claims from descriptive data.\n- For scenarios, preserve scenarioSales exactly and explain the price × volume × distribution mechanics and assumptions.\n\nYour final response must be a JSON object with exactly these fields:\n{\n  \"type\": \"summary\" | \"ranking\" | \"scenario\" | \"trend\" | \"diagnostic\" | \"comparison\" | \"forecast\" | \"distribution\" | \"anomaly\",\n  \"headline\": \"short business headline\",\n  \"executiveTakeaway\": \"1-3 sentence answer directly answering the user\",\n  \"metrics\": [{\"label\":\"...\", \"value\":\"...\", \"change\":\"optional\", \"tone\":\"positive|negative|neutral\"}],\n  \"table\": {\"columns\":[\"...\"], \"rows\":[[\"...\"]]} | null,\n  \"sections\": [{\"title\":\"...\", \"bullets\":[\"...\"]}],\n  \"warnings\": [\"...\"],\n  \"evidence\": {\"source\":\"...\", \"period\":\"...\", \"periodCount\":0, \"filters\":\"...\"}\n}\nUse null for table when no table is useful. Keep the response concise and professional. Do not output Markdown, code fences, or any fields outside this schema."      },
       ...(body.messages || []),
     ];
 
@@ -189,7 +187,33 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ error: "Analyst tool loop exceeded safety limit." }, { status: 500 });
+    const finalResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      body: JSON.stringify({
+        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+        messages: [
+          { role: "system", content: "You are CPGist AI Analyst. You orchestrate controlled analytical tools; you do not calculate metrics yourself.\n\nFor quantitative claims, use the controlled tools and preserve their returned values exactly.\nEvidence rules:\n- Never convert rowCount into a week/period count. Use evidence.periodCount.\n- Never claim the requested date range is fully covered when evidence.periodStart/evidence.periodEnd are narrower. State actual coverage.\n- Never invent, duplicate, or silently alter ranking entries.\n- When brandName is available, use it instead of brandId.\n- Treat validation issues and warnings as authoritative.\n- Do not make causal claims from descriptive data.\n- For scenarios, preserve scenarioSales exactly and explain the price × volume × distribution mechanics and assumptions.\n\nYour final response must be a JSON object with exactly these fields:\n{\n  \"type\": \"summary\" | \"ranking\" | \"scenario\" | \"trend\" | \"diagnostic\" | \"comparison\" | \"forecast\" | \"distribution\" | \"anomaly\",\n  \"headline\": \"short business headline\",\n  \"executiveTakeaway\": \"1-3 sentence answer directly answering the user\",\n  \"metrics\": [{\"label\":\"...\", \"value\":\"...\", \"change\":\"optional\", \"tone\":\"positive|negative|neutral\"}],\n  \"table\": {\"columns\":[\"...\"], \"rows\":[[\"...\"]]} | null,\n  \"sections\": [{\"title\":\"...\", \"bullets\":[\"...\"]}],\n  \"warnings\": [\"...\"],\n  \"evidence\": {\"source\":\"...\", \"period\":\"...\", \"periodCount\":0, \"filters\":\"...\"}\n}\nUse null for table when no table is useful. Keep the response concise and professional. Do not output Markdown, code fences, or any fields outside this schema." },
+          ...messages.slice(1),
+          { role: "user", content: "Return the final answer now as the required JSON object. Do not call tools. Base every quantitative claim only on the tool results above." }
+        ],
+        temperature: 0.05,
+        response_format: { type: "json_object" }
+      }),
+    });
+    const finalData = await finalResponse.json();
+    if (!finalResponse.ok) return NextResponse.json(finalData, { status: finalResponse.status });
+    const raw = finalData.choices?.[0]?.message?.content;
+    try {
+      const analyst = JSON.parse(raw || "{}");
+      if (!analyst.headline || !analyst.executiveTakeaway || !Array.isArray(analyst.metrics) || !Array.isArray(analyst.sections) || !Array.isArray(analyst.warnings)) {
+        throw new Error("Invalid structured analyst response.");
+      }
+      return NextResponse.json({ analyst });
+    } catch {
+      return NextResponse.json({ error: "The analyst produced an invalid structured response. Please retry." }, { status: 502 });
+    }
+
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "AI Analyst request failed." }, { status: 500 });
   }
