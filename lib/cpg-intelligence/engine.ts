@@ -218,6 +218,7 @@ export function retailerOpportunity(
     .map(([retailerId, x]) => {
       const share = x.categorySales ? x.brandSales / x.categorySales : 0;
       const whitespacePts = (categoryBrandShare - share) * 100;
+      const actionSignal: "whitespace" | "defend" | "limited_signal" = whitespacePts >= 2 ? "whitespace" : whitespacePts <= -2 ? "defend" : "limited_signal";
       return {
         retailerId,
         brandSales: x.brandSales,
@@ -225,7 +226,7 @@ export function retailerOpportunity(
         brandSharePct: share * 100,
         whitespacePts,
         distribution: x.distributionWeight ? x.distributionWeighted / x.distributionWeight : null,
-        actionSignal: whitespacePts >= 2 ? "whitespace" : whitespacePts <= -2 ? "defend" : "limited_signal"
+        actionSignal
       };
     })
     .sort((a,b) => b.whitespacePts - a.whitespacePts);
