@@ -165,7 +165,7 @@ export async function POST(req: Request) {
       const message = data.choices?.[0]?.message;
       messages.push(message);
 
-      if (!message?.tool_calls?.length) return NextResponse.json(data);
+      if (!message?.tool_calls?.length) break;
 
       for (const call of message.tool_calls) {
         try {
