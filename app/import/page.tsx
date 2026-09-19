@@ -21,8 +21,8 @@ export default function ImportPage(){
   finally{setBusy(false);}
  }
  return <div className="app"><aside className="sidebar"><div className="brand"><div className="logo">C</div><div><b>CPGist</b><small>CPG INTELLIGENCE</small></div></div><Link className="navitem" href="/dashboard"><ArrowLeft size={15}/>Dashboard</Link><Link className="navitem active" href="/import"><Database size={15}/>Data Import</Link></aside>
- <main className="main"><header><b>Data Import</b></header><section className="content"><div className="intro"><div><div className="muted">Source ingestion</div><h1>Load the Syndicate dataset</h1><p>CPGist validates the supplied ZIP and processes the large sales file locally in safe batches, avoiding Edge Function timeouts.</p></div></div>
- <div className="card import-card"><div className="import-icon"><UploadCloud size={28}/></div><h2>Upload Syndicate data</h2><p>Accepted: the supplied ZIP containing 110 brands, 200 retailers, 440 products and 1,515,488 sales observations. The raw sales file is processed in your browser; only compact weekly aggregates are sent to Supabase.</p>
+ <main className="main"><header><b>Data Import</b></header><section className="content"><div className="intro"><div><div className="muted">Source ingestion</div><h1>Load the Syndicate dataset</h1><p>Load a CPG dataset into CPGist for analysis.</p></div></div>
+ <div className="card import-card"><div className="import-icon"><UploadCloud size={28}/></div><h2>Upload Syndicate data</h2>
  <label className="dropzone"><input type="file" accept=".zip" onChange={e=>{setFile(e.target.files?.[0]||null);setError("");setResult(null)}}/><strong>{file?file.name:"Choose dataset file"}</strong><span>{file?((file.size/1024/1024).toFixed(1)+" MB selected"):"Click to browse from your computer"}</span></label>
  <button className="primary import-btn" disabled={!file||busy} onClick={run}>{busy?<><Loader2 size={15} className="spin"/>Processing…</>:<><UploadCloud size={15}/>Validate & import</>}</button>
  {status&&<div className="form-message"><Loader2 size={14} className={busy?"spin":""}/>{status}</div>}
