@@ -88,6 +88,7 @@ async function tool(name: string, a: Args, token: string) {
     }
     case "analyze_drivers": {
       const result = analyzeDrivers(dataset.rows, filters);
+      const issues = validateAnalyticalResult(result);
       const ids = result.data.byBrand.map(x => x.brandId).join(",");
       let brandNames: Record<string,string> = {};
       if (ids) {
@@ -98,7 +99,8 @@ async function tool(name: string, a: Args, token: string) {
         ...result.data,
         byBrand: result.data.byBrand.map(x => ({ ...x, brandName: brandNames[x.brandId] ?? null })),
         evidence: { ...result.evidence, source: dataset.source },
-        warnings: result.warnings
+        warnings: [...result.warnings, ...issues.map(i => i.message)],
+        validation: issues
       };
     }
     case "detect_anomalies": {
