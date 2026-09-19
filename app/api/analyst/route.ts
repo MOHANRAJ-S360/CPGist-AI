@@ -63,7 +63,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
 
   let q = "syndicate_sales_weekly?select=brand_id,category,week_ending,dollar_sales,units,acv_distribution,promo_observations,avg_discount_depth_pct,observations&limit=30000";
   if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
-  if (category) q += "&category=eq." + encodeURIComponent(category);
+  if (category) q += "&category=ilike." + encodeURIComponent(category);
   if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
   if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
   return { rows: await get(q, token), source: "syndicate_sales_weekly" };
