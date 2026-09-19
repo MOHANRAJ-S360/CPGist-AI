@@ -47,7 +47,7 @@ async function aggregateSales(
   const decoder = new TextDecoder();
   let row: string[] = [], headers: string[] = [], quoted = false, start = 0;
   let headerDone = false, salesRows = 0;
-  let brand: Map<string, any> = new Map(), category: Map<string, any> = new Map(), retailer: Map<string, any> = new Map();
+  let brand: Map<string, any> = new Map(), category: Map<string, any> = new Map(), retailer: Map<string, any> = new Map(), brandRetailer: Map<string, any> = new Map();
 
   const consume = (values: string[]) => {
     if (!headerDone) { headers = values; headerDone = true; return; }
@@ -75,6 +75,11 @@ async function aggregateSales(
     const rk = retailerId + "|" + week;
     const r = retailer.get(rk) ?? { retailer_id: retailerId, week_ending: week, dollar_sales: 0, units: 0, dist: 0, n: 0 };
     r.dollar_sales += sales; r.units += units; r.dist += dist; r.n++; retailer.set(rk, r);
+
+    const brk = p.brand + "|" + retailerId + "|" + p.category;
+    const br = brandRetailer.get(brk) ?? { brand_id: p.brand, retailer_id: retailerId, category: p.category, sales: 0, units: 0, dist: 0, discount_sum: 0, observations: 0 };
+    br.sales += sales; br.units += units; br.dist += dist; br.discount_sum += discount; br.observations++;
+    brandRetailer.set(brk, br);
   };
 
   for (let i = 0; i < bytes.length; i++) {
@@ -101,7 +106,8 @@ async function aggregateSales(
     salesRows,
     brandWeeks: [...brand.values()].map(x => ({ brand_id: x.brand_id, category: x.category, week_ending: x.week_ending, dollar_sales: x.dollar_sales, units: x.units, acv_distribution: x.dist / x.observations, promo_observations: x.promo_observations, avg_discount_depth_pct: x.discount_sum / x.observations, observations: x.observations })),
     categoryWeeks: [...category.values()].map(x => ({ category: x.category, week_ending: x.week_ending, dollar_sales: x.dollar_sales, units: x.units, acv_distribution: x.dist / x.n })),
-    retailerWeeks: [...retailer.values()].map(x => ({ retailer_id: x.retailer_id, week_ending: x.week_ending, dollar_sales: x.dollar_sales, units: x.units, acv_distribution: x.dist / x.n }))
+    retailerWeeks: [...retailer.values()].map(x => ({ retailer_id: x.retailer_id, week_ending: x.week_ending, dollar_sales: x.dollar_sales, units: x.units, acv_distribution: x.dist / x.n })),
+    brandRetailer: [...brandRetailer.values()].map(x => ({ brand_id: x.brand_id, retailer_id: x.retailer_id, category: x.category, sales: x.sales, units: x.units, distribution: x.observations ? x.dist / x.observations : 0, discount_depth_pct: x.observations ? x.discount_sum / x.observations : 0, observations: x.observations }))
   };
 }
 
@@ -148,11 +154,12 @@ export async function importSyndicateZip(sb: SupabaseClient, file: File, progres
   await upsertBatches(sb, "syndicate_sales_weekly", agg.brandWeeks, "brand_id,week_ending", progress);
   await upsertBatches(sb, "syndicate_category_weekly", agg.categoryWeeks, "category,week_ending", progress);
   await upsertBatches(sb, "syndicate_retailer_weekly", agg.retailerWeeks, "retailer_id,week_ending", progress);
+  await upsertBatches(sb, "syndicate_brand_retailer", agg.brandRetailer, "brand_id,retailer_id,category", progress);
 
   progress("Loading competitive relationships and intelligence signals…");
   await upsertBatches(sb, "syndicate_brand_relationships", parseSmall(zip["brand_relationships.csv"]).map(r => ({ id:+r.id, brand_id:+r.brand_id, related_brand_id:+r.related_brand_id, relationship_type:r.relationship_type || null, category:r.category || null, overlapping_regions:r.overlapping_regions || null, org_id:+r.org_id || null })), "id", progress);
   await upsertBatches(sb, "syndicate_signal_notes", parseSmall(zip["signal_notes.csv"]).map(r => ({ id:+r.id, brand_id:+r.brand_id, category:r.category || null, retailer_id:+r.retailer_id, region:r.region || null, date_start:r.date_start || null, date_end:r.date_end || null, note_type:r.note_type || null, note_text:r.note_text || null, org_id:+r.org_id || null })), "id", progress);
   await upsertBatches(sb, "syndicate_competitor_signals", parseSmall(zip["competitor_signals.csv"]).map(r => ({ id:+r.id, brand_id:+r.brand_id, category:r.category || null, retailer_id:+r.retailer_id, region:r.region || null, signal_date:r.signal_date || null, signal_type:r.signal_type || null, magnitude_pct:+r.magnitude_pct || 0, description:r.description || null, org_id:+r.org_id || null })), "id", progress);
 
-  return { brands: brands.length, retailers: retailers.length, products: products.length, salesRows: agg.salesRows, brandWeeks: agg.brandWeeks.length, categoryWeeks: agg.categoryWeeks.length, retailerWeeks: agg.retailerWeeks.length };
+  return { brands: brands.length, retailers: retailers.length, products: products.length, salesRows: agg.salesRows, brandWeeks: agg.brandWeeks.length, categoryWeeks: agg.categoryWeeks.length, retailerWeeks: agg.retailerWeeks.length, brandRetailer: agg.brandRetailer.length };
 }
