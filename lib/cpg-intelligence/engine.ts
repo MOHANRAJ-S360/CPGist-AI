@@ -207,7 +207,7 @@ export function runScenario(
   baselineSales: number;
   scenarioSales: number;
   incrementalSales: number;
-  assumptions: { priceElasticity: number; distributionSalesLiftPerPoint: number };\n  inputs: { priceChangePct: number; distributionChangePts: number };
+  assumptions: { priceElasticity: number; distributionSalesLiftPerPoint: number };
 }> {
   const baselineSales = rows.reduce((s,r)=>s+n(r.dollar_sales),0);
   const pc = Number(priceChangePct)/100;
