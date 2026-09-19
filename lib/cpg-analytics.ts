@@ -20,6 +20,19 @@ const params = {
 
 export const CPG_TOOLS = [
   {
+    name: "retailer_opportunity",
+    description: "Identify retailer-level whitespace for a specific brand within a category by comparing the brand's observed share at each retailer with its overall category share. This is a descriptive opportunity diagnostic, not a causal forecast.",
+    parameters: {
+      type: "object",
+      properties: {
+        brandId: { type: "string", description: "Required brand identifier." },
+        categoryId: { type: "string", description: "Required category name." },
+      },
+      required: ["brandId", "categoryId"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "get_sales",
     description: "Retrieve weekly dollar sales and units for a CPG slice. Returns the time series, totals, evidence source, date range and warnings.",
     parameters: params,
