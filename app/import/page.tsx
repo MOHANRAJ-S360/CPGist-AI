@@ -30,3 +30,4 @@ export default function ImportPage(){
  {result&&<div className="import-success"><CheckCircle2 size={18}/><div><b>Dataset is live.</b><span>{result.brands} brands · {result.retailers} retailers · {result.products} products · {result.salesRows.toLocaleString()} source observations · {result.brandWeeks.toLocaleString()} brand-weeks</span><Link href="/dashboard">Open live dashboard →</Link></div></div>}
  </div></section></main></div>
 }
+// deployment trigger
