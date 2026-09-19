@@ -16,6 +16,7 @@ function evidence(rows: IntelligenceRow[], filters: IntelligenceQuery, source = 
     rowCount: rows.length,
     periodStart: periods[0] ?? null,
     periodEnd: periods.at(-1) ?? null,
+    periodCount: periods.length,
     filters,
     generatedAt: new Date().toISOString(),
   };
@@ -155,9 +156,12 @@ export function runScenario(
   const dp = Number(distributionChangePts);
   const priceElasticity = -1;
   const distributionSalesLiftPerPoint = 0.01;
-  const priceVolumeFactor = 1 + priceElasticity * pc;
+  // Revenue = price × volume. Elasticity determines the volume response to price;
+  // the price change itself must also be applied to revenue.
+  const priceFactor = 1 + pc;
+  const volumeFactor = 1 + priceElasticity * pc;
   const distributionFactor = 1 + distributionSalesLiftPerPoint * dp;
-  const scenarioSales = Math.max(0, baselineSales * priceVolumeFactor * distributionFactor);
+  const scenarioSales = Math.max(0, baselineSales * priceFactor * volumeFactor * distributionFactor);
   return base({
     baselineSales,
     scenarioSales,
