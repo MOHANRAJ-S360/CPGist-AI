@@ -83,8 +83,8 @@ async function tool(name: string, a: Args, token: string) {
       const counts: Record<string, number> = {};
       for (const table of tables) {
         try {
-          const rows = await get(table + "?select=id&limit=1", token);
-          const head = await fetch(process.env.NEXT_PUBLIC_SUPABASE_URL + "/rest/v1/" + table + "?select=id", { method: "HEAD", headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "", Authorization: "Bearer " + token, Prefer: "count=exact" }, cache: "no-store" });
+          const rows = await get(table + "?select=*&limit=1", token);
+          const head = await fetch(process.env.NEXT_PUBLIC_SUPABASE_URL + "/rest/v1/" + table + "?select=*", { method: "HEAD", headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "", Authorization: "Bearer " + token, Prefer: "count=exact" }, cache: "no-store" });
           const range = head.headers.get("content-range");
           counts[table] = range && range.includes("/") ? Number(range.split("/")[1]) || rows.length : rows.length;
         } catch { counts[table] = 0; }
