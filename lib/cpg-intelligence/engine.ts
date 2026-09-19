@@ -394,7 +394,7 @@ export function businessHealthScan(
     {type: "price", signal: "Latest-period realized price change versus prior observed period", value: priceGrowth},
     {type: "anomaly", signal: "Observed weekly anomalies in the selected history", value: anomalies.length}
   ];
-  if (dist.average !== null) signals.push({type: "distribution", signal: "Current average ACV distribution", value: dist.averageDistribution});
+  if (dist.averageDistribution !== null) signals.push({type: "distribution", signal: "Current average ACV distribution", value: dist.averageDistribution});
   return base({
     status,
     salesGrowthPct: growth,
