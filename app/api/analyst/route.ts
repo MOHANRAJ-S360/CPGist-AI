@@ -286,7 +286,7 @@ export async function POST(req: Request) {
     const raw = finalData.choices?.[0]?.message?.content;
     try {
       const analyst = JSON.parse(raw || "{}");
-      if (!analyst.headline || !analyst.executiveTakeaway || !Array.isArray(analyst.metrics) || !Array.isArray(analyst.sections) || !Array.isArray(analyst.warnings)) {
+      if (!analyst.headline || !analyst.executiveTakeaway || !Array.isArray(analyst.metrics) || !Array.isArray(analyst.sections) || !Array.isArray(analyst.warnings) || !Array.isArray(analyst.decisionTrail)) {
         throw new Error("Invalid structured analyst response.");
       }
       return NextResponse.json({ analyst });
