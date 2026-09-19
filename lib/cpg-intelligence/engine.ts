@@ -162,6 +162,92 @@ export function categoryGrowthPlan(rows: IntelligenceRow[], filters: Intelligenc
   return base({categorySales,brands,diagnostics},rows,filters,warnings);
 }
 
+
+export type RetailerOpportunityRow = {
+  brand_id: string | number;
+  retailer_id: string | number;
+  category: string;
+  sales: number | string;
+  units: number | string;
+  distribution?: number | string | null;
+  discount_depth_pct?: number | string | null;
+  observations?: number | string | null;
+};
+
+export function retailerOpportunity(
+  rows: RetailerOpportunityRow[],
+  brandId: string,
+  category: string
+): AnalyticalResult<{
+  category: string;
+  brandId: string;
+  categoryBrandSharePct: number;
+  retailers: Array<{
+    retailerId: string;
+    brandSales: number;
+    categorySales: number;
+    brandSharePct: number;
+    whitespacePts: number;
+    distribution: number | null;
+    actionSignal: "whitespace" | "defend" | "limited_signal";
+  }>;
+}> {
+  const scoped = rows.filter(r => String(r.category).toLowerCase() === category.toLowerCase());
+  const byRetailer = new Map<string, { brandSales: number; categorySales: number; distributionWeighted: number; distributionWeight: number }>();
+  let totalBrandSales = 0;
+  let totalCategorySales = 0;
+
+  for (const r of scoped) {
+    const retailerId = String(r.retailer_id);
+    const sales = n(r.sales);
+    const current = byRetailer.get(retailerId) ?? { brandSales: 0, categorySales: 0, distributionWeighted: 0, distributionWeight: 0 };
+    current.categorySales += sales;
+    if (String(r.brand_id) === String(brandId)) {
+      current.brandSales += sales;
+      const d = n(r.distribution);
+      current.distributionWeighted += d * Math.max(sales, 1);
+      current.distributionWeight += Math.max(sales, 1);
+      totalBrandSales += sales;
+    }
+    byRetailer.set(retailerId, current);
+    totalCategorySales += sales;
+  }
+
+  const categoryBrandShare = totalCategorySales ? totalBrandSales / totalCategorySales : 0;
+  const retailers = [...byRetailer.entries()]
+    .map(([retailerId, x]) => {
+      const share = x.categorySales ? x.brandSales / x.categorySales : 0;
+      const whitespacePts = (categoryBrandShare - share) * 100;
+      return {
+        retailerId,
+        brandSales: x.brandSales,
+        categorySales: x.categorySales,
+        brandSharePct: share * 100,
+        whitespacePts,
+        distribution: x.distributionWeight ? x.distributionWeighted / x.distributionWeight : null,
+        actionSignal: whitespacePts >= 2 ? "whitespace" : whitespacePts <= -2 ? "defend" : "limited_signal"
+      };
+    })
+    .sort((a,b) => b.whitespacePts - a.whitespacePts);
+
+  const warnings: string[] = [];
+  if (!scoped.length) warnings.push("No retailer opportunity rows are loaded for the requested category. Re-import the Syndicate ZIP after enabling retailer opportunity aggregation.");
+  return {
+    data: { category, brandId, categoryBrandSharePct: categoryBrandShare * 100, retailers },
+    evidence: {
+      source: "syndicate_brand_retailer",
+      grain: "brand/retailer/category all-time aggregate",
+      rowCount: scoped.length,
+      periodStart: null,
+      periodEnd: null,
+      periodCount: 0,
+      filters: { brandId, categoryId: category },
+      generatedAt: new Date().toISOString()
+    },
+    warnings
+  };
+}
+
 export function detectAnomalies(rows: IntelligenceRow[], filters: IntelligenceQuery): AnalyticalResult<{
   anomalies: Array<{ period: string; sales: number; zScore: number }>;
   baselineMean: number;
