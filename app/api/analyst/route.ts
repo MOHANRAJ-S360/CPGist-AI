@@ -13,6 +13,7 @@ import {
   runScenario,
   retailerOpportunity,
   crossCategoryPortfolio,
+  businessHealthScan,
   validateAnalyticalResult,
   type IntelligenceQuery,
   type IntelligenceRow,
@@ -77,6 +78,11 @@ async function tool(name: string, a: Args, token: string) {
   const dataset = await queryDataset(a, token);
 
   switch (name) {
+    case "business_health_scan": {
+      const result = businessHealthScan(dataset.rows, filters);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+    }
+
     case "cross_category_portfolio": {
       const [brands, salesRows] = await Promise.all([
         get("syndicate_brands?select=id,name,category,parent_company&limit=1000", token),
