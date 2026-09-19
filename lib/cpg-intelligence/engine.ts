@@ -104,6 +104,64 @@ export function analyzeDrivers(rows: IntelligenceRow[], filters: IntelligenceQue
   }, rows, filters);
 }
 
+
+export function categoryGrowthPlan(rows: IntelligenceRow[], filters: IntelligenceQuery): AnalyticalResult<{
+  categorySales: number;
+  brands: Array<{
+    brandId: string; sales: number; share: number; recentSales: number; priorSales: number;
+    growthPct: number | null; recentDistribution: number | null; priorDistribution: number | null;
+    distributionChangePts: number | null; recentDiscountDepthPct: number | null;
+    priorDiscountDepthPct: number | null; discountChangePts: number | null;
+    actionSignal: "accelerate_distribution" | "investigate_productivity" | "recover_distribution" | "stabilize" | "defend_scale";
+  }>;
+  diagnostics: Array<{brandId: string; signal: string; evidence: string}>;
+}> {
+  const periods = sortedPeriods(rows);
+  const recentSet = new Set(periods.slice(-13));
+  const priorSet = new Set(periods.slice(-26, -13));
+  const byBrand = new Map<string, IntelligenceRow[]>();
+  for (const r of rows) {
+    const id = String(r.brand_id ?? "");
+    if (!id) continue;
+    const list = byBrand.get(id) ?? [];
+    list.push(r);
+    byBrand.set(id, list);
+  }
+  const categorySales = rows.reduce((s,r)=>s+n(r.dollar_sales),0);
+  const brands = [...byBrand.entries()].map(([brandId, rs]) => {
+    const totalSales = rs.reduce((s,r)=>s+n(r.dollar_sales),0);
+    const recentRows = rs.filter(r=>recentSet.has(r.week_ending));
+    const priorRows = rs.filter(r=>priorSet.has(r.week_ending));
+    const recentSales = recentRows.reduce((s,r)=>s+n(r.dollar_sales),0);
+    const priorSales = priorRows.reduce((s,r)=>s+n(r.dollar_sales),0);
+    const avg = (xs:IntelligenceRow[], key:"acv_distribution"|"avg_discount_depth_pct") =>
+      xs.length ? xs.reduce((s,r)=>s+n(r[key]),0)/xs.length : null;
+    const rd=avg(recentRows,"acv_distribution"), pd=avg(priorRows,"acv_distribution");
+    const rdisc=avg(recentRows,"avg_discount_depth_pct"), pdisc=avg(priorRows,"avg_discount_depth_pct");
+    const growthPct = priorSales ? (recentSales/priorSales-1)*100 : null;
+    const distributionChangePts = rd !== null && pd !== null ? rd-pd : null;
+    const discountChangePts = rdisc !== null && pdisc !== null ? rdisc-pdisc : null;
+    let actionSignal: "accelerate_distribution"|"investigate_productivity"|"recover_distribution"|"stabilize"|"defend_scale";
+    if (growthPct !== null && growthPct > 2 && distributionChangePts !== null && distributionChangePts < 0.25) actionSignal="accelerate_distribution";
+    else if (growthPct !== null && growthPct < -1 && distributionChangePts !== null && distributionChangePts >= 0) actionSignal="investigate_productivity";
+    else if (growthPct !== null && growthPct < 0 && distributionChangePts !== null && distributionChangePts < 0) actionSignal="recover_distribution";
+    else if (growthPct !== null && growthPct <= 0) actionSignal="stabilize";
+    else if (categorySales && totalSales/categorySales >= 0.15) actionSignal="defend_scale";
+    else actionSignal="stabilize";
+    return {brandId,sales:totalSales,share:categorySales?totalSales/categorySales:0,recentSales,priorSales,growthPct,recentDistribution:rd,priorDistribution:pd,distributionChangePts,recentDiscountDepthPct:rdisc,priorDiscountDepthPct:pdisc,discountChangePts,actionSignal};
+  }).sort((a,b)=>b.sales-a.sales);
+  const diagnostics = brands.flatMap(b => {
+    const out:Array<{brandId:string;signal:string;evidence:string}>=[];
+    if (b.actionSignal==="accelerate_distribution") out.push({brandId:b.brandId,signal:"growth_with_limited_distribution_change",evidence:"Recent sales growth "+b.growthPct?.toFixed(1)+"% with distribution change "+b.distributionChangePts?.toFixed(2)+" pts."});
+    if (b.actionSignal==="investigate_productivity") out.push({brandId:b.brandId,signal:"distribution_not_converting",evidence:"Recent sales growth "+b.growthPct?.toFixed(1)+"% despite distribution change "+b.distributionChangePts?.toFixed(2)+" pts."});
+    if (b.actionSignal==="recover_distribution") out.push({brandId:b.brandId,signal:"sales_and_distribution_declining",evidence:"Recent sales growth "+b.growthPct?.toFixed(1)+"% and distribution change "+b.distributionChangePts?.toFixed(2)+" pts."});
+    return out;
+  });
+  const warnings:string[]=[];
+  if (periods.length < 26) warnings.push("Fewer than 26 observed weeks are available; the 13-week comparison is incomplete.");
+  return base({categorySales,brands,diagnostics},rows,filters,warnings);
+}
+
 export function detectAnomalies(rows: IntelligenceRow[], filters: IntelligenceQuery): AnalyticalResult<{
   anomalies: Array<{ period: string; sales: number; zScore: number }>;
   baselineMean: number;
