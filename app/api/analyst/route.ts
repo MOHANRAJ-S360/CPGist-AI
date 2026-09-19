@@ -11,6 +11,7 @@ import {
   getSales,
   runScenario,
   retailerOpportunity,
+  crossCategoryPortfolio,
   validateAnalyticalResult,
   type IntelligenceQuery,
   type IntelligenceRow,
@@ -75,6 +76,16 @@ async function tool(name: string, a: Args, token: string) {
   const dataset = await queryDataset(a, token);
 
   switch (name) {
+    case "cross_category_portfolio": {
+      const [brands, salesRows] = await Promise.all([
+        get("syndicate_brands?select=id,name,category,parent_company&limit=1000", token),
+        get("syndicate_sales_weekly?select=brand_id,dollar_sales&limit=12000", token)
+      ]);
+      const result = crossCategoryPortfolio(brands, salesRows);
+      const issues = validateAnalyticalResult(result);
+      return { ...result.data, evidence: result.evidence, warnings: [...result.warnings, ...issues.map(i => i.message)], validation: issues };
+    }
+
     case "retailer_opportunity": {
       const brandId = String(a.brandId || "").trim();
       const category = String(a.categoryId || "").trim();
@@ -189,7 +200,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst. You are an evidence-first CPG decision-support system. You orchestrate controlled analytical tools; you do not calculate metrics yourself.\n\nDecision procedure: For category improvement, growth, turnaround, leadership, or brand-priority questions, call category_growth_plan FIRST. Then call additional tools only for unresolved questions such as retailer whitespace, retailer concentration, price, anomalies, forecasts, or scenarios. Never substitute generic FMCG advice for observed evidence. Every action recommendation must reference the specific observed signal that triggered it. Clearly distinguish observed facts, diagnostic signals, hypotheses, and planning assumptions. Do not claim causality from descriptive data.\n\nFor quantitative claims, use the controlled tools and preserve their returned values exactly.\nEvidence rules:\n- Never convert rowCount into a week/period count. Use evidence.periodCount.\n- Never claim the requested date range is fully covered when evidence.periodStart/evidence.periodEnd are narrower. State actual coverage.\n- Never invent, duplicate, or silently alter ranking entries.\n- When brandName is available, use it instead of brandId.\n- Treat validation issues and warnings as authoritative.\n- Do not make causal claims from descriptive data.\n- For scenarios, preserve scenarioSales exactly and explain the price × volume × distribution mechanics and assumptions.\n\nYour final response must be a JSON object with exactly these fields:\n{\n  \"type\": \"summary\" | \"ranking\" | \"scenario\" | \"trend\" | \"diagnostic\" | \"comparison\" | \"forecast\" | \"distribution\" | \"anomaly\",\n  \"headline\": \"short business headline\",\n  \"executiveTakeaway\": \"1-3 sentence answer directly answering the user\",\n  \"metrics\": [{\"label\":\"...\", \"value\":\"...\", \"change\":\"optional\", \"tone\":\"positive|negative|neutral\"}],\n  \"table\": {\"columns\":[\"...\"], \"rows\":[[\"...\"]]} | null,\n  \"sections\": [{\"title\":\"...\", \"bullets\":[\"...\"]}],\n  \"warnings\": [\"...\"],\n  \"evidence\": {\"source\":\"...\", \"period\":\"...\", \"periodCount\":0, \"filters\":\"...\"}\n}\nUse null for table when no table is useful. Keep the response concise and professional. For category-growth questions, include a brand action table when category_growth_plan returned brand diagnostics. If a brand is identified as needing distribution action, call retailer_opportunity before making retailer-specific recommendations. Do not output Markdown, code fences, or any fields outside this schema."      },
+        content: "You are CPGist AI Analyst. You are an evidence-first CPG decision-support system. You orchestrate controlled analytical tools; you do not calculate metrics yourself.\n\nDecision procedure: For category improvement, growth, turnaround, leadership, or brand-priority questions, call category_growth_plan FIRST. Then call additional tools only for unresolved questions such as retailer whitespace, retailer concentration, price, anomalies, forecasts, or scenarios. Never substitute generic FMCG advice for observed evidence. Every action recommendation must reference the specific observed signal that triggered it. Clearly distinguish observed facts, diagnostic signals, hypotheses, and planning assumptions. Do not claim causality from descriptive data.\n\nFor quantitative claims, use the controlled tools and preserve their returned values exactly.\nEvidence rules:\n- Never convert rowCount into a week/period count. Use evidence.periodCount.\n- Never claim the requested date range is fully covered when evidence.periodStart/evidence.periodEnd are narrower. State actual coverage.\n- Never invent, duplicate, or silently alter ranking entries.\n- When brandName is available, use it instead of brandId.\n- Treat validation issues and warnings as authoritative.\n- Do not make causal claims from descriptive data.\n- For scenarios, preserve scenarioSales exactly and explain the price × volume × distribution mechanics and assumptions.\n\nYour final response must be a JSON object with exactly these fields:\n{\n  \"type\": \"summary\" | \"ranking\" | \"scenario\" | \"trend\" | \"diagnostic\" | \"comparison\" | \"forecast\" | \"distribution\" | \"anomaly\",\n  \"headline\": \"short business headline\",\n  \"executiveTakeaway\": \"1-3 sentence answer directly answering the user\",\n  \"metrics\": [{\"label\":\"...\", \"value\":\"...\", \"change\":\"optional\", \"tone\":\"positive|negative|neutral\"}],\n  \"table\": {\"columns\":[\"...\"], \"rows\":[[\"...\"]]} | null,\n  \"sections\": [{\"title\":\"...\", \"bullets\":[\"...\"]}],\n  \"warnings\": [\"...\"],\n  \"evidence\": {\"source\":\"...\", \"period\":\"...\", \"periodCount\":0, \"filters\":\"...\"}\n}\nUse null for table when no table is useful. Keep the response concise and professional. For category-growth questions, include a brand action table when category_growth_plan returned brand diagnostics. For cross-category questions, use cross_category_portfolio FIRST; never claim an exact brand spans categories unless the tool returns it. If exactMultiCategoryBrands is empty, clearly distinguish parent-company portfolio breadth from exact brand breadth. If a brand is identified as needing distribution action, call retailer_opportunity before making retailer-specific recommendations. Do not output Markdown, code fences, or any fields outside this schema."      },
       ...(body.messages || []),
     ];
 
