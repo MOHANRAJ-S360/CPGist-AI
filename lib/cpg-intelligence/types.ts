@@ -25,6 +25,7 @@ export type Evidence = {
   rowCount: number;
   periodStart: string | null;
   periodEnd: string | null;
+  periodCount: number;
   filters: IntelligenceQuery;
   generatedAt: string;
 };
