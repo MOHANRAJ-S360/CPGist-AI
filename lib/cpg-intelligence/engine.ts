@@ -174,6 +174,31 @@ export type RetailerOpportunityRow = {
   observations?: number | string | null;
 };
 
+export function crossCategoryPortfolio(
+  brands: Array<{id:string|number; name:string; category:string; parent_company?:string|null}>,
+  salesRows: Array<{brand_id:string|number; dollar_sales:number|string}>
+): AnalyticalResult<{
+  exactMultiCategoryBrands: Array<{brandName:string; categories:string[]; categoryCount:number; sales:number}>;
+  parentCompanyPortfolios: Array<{parentCompany:string; categories:string[]; categoryCount:number; brandCount:number; sales:number}>;
+}> {
+  const salesByBrand = new Map<string, number>();
+  for (const r of salesRows) salesByBrand.set(String(r.brand_id),(salesByBrand.get(String(r.brand_id))||0)+n(r.dollar_sales));
+  const byName = new Map<string,{name:string;categories:Set<string>;ids:Set<string>;sales:number}>();
+  const byParent = new Map<string,{categories:Set<string>;brands:Set<string>;sales:number}>();
+  for (const b of brands) {
+    const nameKey=b.name.trim().toLowerCase();
+    const x=byName.get(nameKey)||{name:b.name,categories:new Set(),ids:new Set(),sales:0};
+    x.categories.add(b.category); x.ids.add(String(b.id)); x.sales += salesByBrand.get(String(b.id))||0; byName.set(nameKey,x);
+    const p=(b.parent_company||"").trim();
+    if(p){ const y=byParent.get(p)||{categories:new Set(),brands:new Set(),sales:0}; y.categories.add(b.category); y.brands.add(String(b.id)); y.sales += salesByBrand.get(String(b.id))||0; byParent.set(p,y); }
+  }
+  const exactMultiCategoryBrands=[...byName.values()].filter(x=>x.categories.size>1).map(x=>({brandName:x.name,categories:[...x.categories],categoryCount:x.categories.size,sales:x.sales})).sort((a,b)=>b.sales-a.sales);
+  const parentCompanyPortfolios=[...byParent.entries()].filter(([,x])=>x.categories.size>1).map(([parentCompany,x])=>({parentCompany,categories:[...x.categories],categoryCount:x.categories.size,brandCount:x.brands.size,sales:x.sales})).sort((a,b)=>b.sales-a.sales);
+  const warnings:string[]=[];
+  if(!exactMultiCategoryBrands.length) warnings.push("No exact brand name spans multiple categories in the current brand master. The dataset models category at the brand level; cross-category portfolio results therefore use parent company as a separate, explicitly labeled view.");
+  return {data:{exactMultiCategoryBrands,parentCompanyPortfolios},evidence:{source:"syndicate_brands + syndicate_sales_weekly",grain:"brand master + weekly brand sales",rowCount:brands.length,periodStart:null,periodEnd:null,periodCount:0,filters:{},generatedAt:new Date().toISOString()},warnings};
+}
+
 export function retailerOpportunity(
   rows: RetailerOpportunityRow[],
   brandId: string,
