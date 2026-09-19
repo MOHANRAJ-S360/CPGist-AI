@@ -78,6 +78,20 @@ async function tool(name: string, a: Args, token: string) {
   const dataset = await queryDataset(a, token);
 
   switch (name) {
+    case "data_readiness": {
+      const tables = ["syndicate_brands","syndicate_products","syndicate_sales_weekly","syndicate_retailer_weekly","syndicate_brand_retailer","syndicate_signal_notes","syndicate_competitor_signals"];
+      const counts: Record<string, number> = {};
+      for (const table of tables) {
+        try {
+          const response = await fetch(process.env.NEXT_PUBLIC_SUPABASE_URL + "/rest/v1/" + table + "?select=*", { headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "", Authorization: "Bearer " + token, Prefer: "count=exact" }, cache: "no-store" });
+          if (!response.ok) throw new Error("readiness check failed");
+          const range = response.headers.get("content-range");
+          counts[table] = range && range.includes("/") ? Number(range.split("/")[1]) || 0 : (await response.json()).length;
+        } catch { counts[table] = 0; }
+      }
+      return { domains: { sales: counts.syndicate_sales_weekly > 0, retailerOpportunity: counts.syndicate_brand_retailer > 0, products: counts.syndicate_products > 0, competition: counts.syndicate_competitor_signals > 0, signals: counts.syndicate_signal_notes > 0 }, counts, warnings: counts.syndicate_brand_retailer === 0 ? ["Retailer opportunity aggregation is not populated yet; re-import the Syndicate ZIP to enable retailer whitespace analysis."] : [] };
+    }
+
     case "business_health_scan": {
       const result = businessHealthScan(dataset.rows, filters);
       return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
