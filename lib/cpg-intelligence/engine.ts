@@ -383,7 +383,7 @@ export function businessHealthScan(
   const latestPrice = latest.units ? latest.sales / latest.units : null;
   const priorPrice = prior.units ? prior.sales / prior.units : null;
   const dist = getDistribution(rows, filters).data;
-  const distributionChangePts = dist.average !== null && points.length >= 2 ? null : null;
+  const distributionChangePts = dist.averageDistribution !== null && points.length >= 2 ? null : null;
   const anomalies = detectAnomalies(rows, filters).data.anomalies;
   const unitGrowth = prior.units ? (latest.units / prior.units - 1) * 100 : null;
   const priceGrowth = priorPrice ? ((latestPrice ?? 0) / priorPrice - 1) * 100 : null;
@@ -394,7 +394,7 @@ export function businessHealthScan(
     {type: "price", signal: "Latest-period realized price change versus prior observed period", value: priceGrowth},
     {type: "anomaly", signal: "Observed weekly anomalies in the selected history", value: anomalies.length}
   ];
-  if (dist.average !== null) signals.push({type: "distribution", signal: "Current average ACV distribution", value: dist.average});
+  if (dist.average !== null) signals.push({type: "distribution", signal: "Current average ACV distribution", value: dist.averageDistribution});
   return base({
     status,
     salesGrowthPct: growth,
