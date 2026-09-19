@@ -1,8 +1,180 @@
-// @ts-nocheck
-import {NextResponse} from "next/server";
-import {CPG_TOOLS} from "../../../lib/cpg-analytics";
-type Args=Record<string,string|number|undefined>;
-async function get(path:string,token:string){const u=process.env.NEXT_PUBLIC_SUPABASE_URL,k=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;if(!u||!k)throw new Error("Supabase environment is not configured.");if(!token)throw new Error("Your session has expired. Please sign in again.");const r=await fetch(u+"/rest/v1/"+path,{headers:{apikey:k,Authorization:"Bearer "+token},cache:"no-store"});if(!r.ok)throw new Error(await r.text());return r.json();}
-async function facts(a:Args,token:string){const brand=a.brandId?String(a.brandId):"",cat=a.categoryId?String(a.categoryId):"",ret=a.retailerId?String(a.retailerId):"";if(ret){let q="syndicate_retailer_weekly?select=week_ending,retailer_id,dollar_sales,units,acv_distribution&limit=30000";q+="&retailer_id=eq."+encodeURIComponent(ret);if(a.startDate)q+="&week_ending=gte."+encodeURIComponent(String(a.startDate));if(a.endDate)q+="&week_ending=lte."+encodeURIComponent(String(a.endDate));return get(q,token);}let q="syndicate_sales_weekly?select=brand_id,category,week_ending,dollar_sales,units,acv_distribution&limit=30000";if(brand)q+="&brand_id=eq."+encodeURIComponent(brand);if(cat)q+="&category=eq."+encodeURIComponent(cat);if(a.startDate)q+="&week_ending=gte."+encodeURIComponent(String(a.startDate));if(a.endDate)q+="&week_ending=lte."+encodeURIComponent(String(a.endDate));return get(q,token);}
-async function tool(name:string,a:Args,token:string){const rows:any[]=await facts(a,token);if(name==="get_sales"){const m=new Map<string,number>();for(const r of rows)m.set(r.week_ending,(m.get(r.week_ending)||0)+ +r.dollar_sales);return {periods:[...m.entries()].map(([period,sales]:[string,number])=>({period,sales}))};}if(name==="get_distribution")return {average_distribution:rows.length?rows.reduce((x,r)=>x+ +r.acv_distribution,0)/rows.length:null,observations:rows.length};if(name==="get_price"){const units=rows.reduce((x,r)=>x+ +r.units,0),sales=rows.reduce((x,r)=>x+ +r.dollar_sales,0);return {average_price:units?sales/units:null};}if(name==="analyze_drivers"){const m=new Map<string,number>();for(const r of rows){const k=String(r.brand_id);m.set(k,(m.get(k)||0)+ +r.dollar_sales)}return {brand_sales:[...m.entries()].sort((a:[string,number],b:[string,number])=>b[1]-a[1]).map(([brandId,sales]:[string,number])=>({brandId,sales}))};}if(name==="detect_anomalies"){const m=new Map<string,number>();for(const r of rows)m.set(r.week_ending,(m.get(r.week_ending)||0)+ +r.dollar_sales);const v:number[]=[...m.values()],avg=v.reduce((a,b)=>a+b,0)/(v.length||1),sd=Math.sqrt(v.reduce((a,b)=>a+(b-avg)**2,0)/(v.length||1));return {anomalies:[...m.entries()].filter((entry:[string,number])=>sd&&Math.abs(entry[1]-avg)/sd>=2).map(([period,sales]:[string,number])=>({period,sales,zScore:(sales-avg)/sd}))};}if(name==="forecast_sales"){const h=Math.max(1,Math.min(26,Number(a.horizon||4)));const m=new Map<string,number>();for(const r of rows)m.set(r.week_ending,(m.get(r.week_ending)||0)+ +r.dollar_sales);const v=[...m.values()],n=v.length;if(n<2)return {forecast:[],reason:"At least two periods are required."};const ym=v.reduce((x,y)=>x+y,0)/n,xm=(n-1)/2;let num=0,den=0;v.forEach((y,x)=>{num+=(x-xm)*(y-ym);den+=(x-xm)**2});const slope=den?num/den:0,intercept=ym-slope*xm;return {method:"linear trend",forecast:Array.from({length:h},(_,i)=>({periodOffset:i+1,sales:Math.max(0,intercept+slope*(n+i))}))};}if(name==="run_scenario"){const sales=rows.reduce((x,r)=>x+ +r.dollar_sales,0),pc=Number(a.priceChangePct||0)/100,dp=Number(a.distributionChangePts||0);const volume=1-pc+dp/100;return {baselineSales:sales,scenarioSales:sales*volume*(1+pc),assumptions:{priceElasticity:-1,distributionChangePts:dp}};}if(name==="get_market_share"){const total=await facts({...a,brandId:undefined},token);const bs=rows.reduce((x,r)=>x+ +r.dollar_sales,0),ts=total.reduce((x,r)=>x+ +r.dollar_sales,0);return {market_share:ts?bs/ts:null,brand_sales:bs,category_sales:ts};}throw new Error("Unsupported analytical tool: "+name);}
-export async function POST(req:Request){try{const body=await req.json(),key=process.env.GROQ_API_KEY;if(!key)return NextResponse.json({error:"GROQ_API_KEY is not configured in Vercel Production."},{status:503});const auth=req.headers.get("authorization")||"",token=auth.startsWith("Bearer ")?auth.slice(7):"";if(!token)return NextResponse.json({error:"Please sign in again before using AI Analyst."},{status:401});let messages=[{role:"system",content:"You are CPGist AI Analyst. Never invent metrics. For quantitative claims use tools and explain the evidence. The connected dataset is the Syndicate CPG dataset. Market share is returned as a decimal; convert to percentage."},...(body.messages||[])];for(let round=0;round<4;round++){const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},body:JSON.stringify({model:process.env.GROQ_MODEL||"openai/gpt-oss-120b",messages,temperature:.1,tools:CPG_TOOLS.map((t:any)=>({type:"function",function:t})),tool_choice:"auto"})});const d=await r.json();if(!r.ok)return NextResponse.json(d,{status:r.status});const msg=d.choices?.[0]?.message;messages.push(msg);if(!msg?.tool_calls?.length)return NextResponse.json(d);for(const c of msg.tool_calls){try{const result=await tool(c.function.name,JSON.parse(c.function.arguments||"{}"),token);messages.push({role:"tool",tool_call_id:c.id,name:c.function.name,content:JSON.stringify(result)});}catch(e:any){messages.push({role:"tool",tool_call_id:c.id,name:c.function.name,content:JSON.stringify({error:e.message})});}}}return NextResponse.json({error:"Analyst tool loop exceeded safety limit."},{status:500});}catch(e:any){return NextResponse.json({error:e?.message||"AI Analyst request failed."},{status:500});}}
+import { NextResponse } from "next/server";
+import { CPG_TOOLS } from "../../../lib/cpg-analytics";
+import {
+  analyzeDrivers,
+  detectAnomalies,
+  forecastSales,
+  getDistribution,
+  getMarketShare,
+  getPrice,
+  getSales,
+  runScenario,
+  type IntelligenceQuery,
+  type IntelligenceRow,
+} from "../../../lib/cpg-intelligence";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type Args = Record<string, string | number | undefined>;
+
+type Dataset = {
+  rows: IntelligenceRow[];
+  source: string;
+};
+
+async function get(path: string, token: string) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) throw new Error("Supabase environment is not configured.");
+  if (!token) throw new Error("Your session has expired. Please sign in again.");
+  const response = await fetch(url + "/rest/v1/" + path, {
+    headers: { apikey: key, Authorization: "Bearer " + token },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+function filtersFromArgs(a: Args): IntelligenceQuery {
+  return {
+    brandId: a.brandId ? String(a.brandId) : undefined,
+    categoryId: a.categoryId ? String(a.categoryId) : undefined,
+    retailerId: a.retailerId ? String(a.retailerId) : undefined,
+    startDate: a.startDate ? String(a.startDate) : undefined,
+    endDate: a.endDate ? String(a.endDate) : undefined,
+  };
+}
+
+async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" = "sales"): Promise<Dataset> {
+  const brand = a.brandId ? String(a.brandId) : "";
+  const category = a.categoryId ? String(a.categoryId) : "";
+  const retailer = a.retailerId ? String(a.retailerId) : "";
+
+  if (mode === "retailer" || (retailer && !brand && !category)) {
+    let q = "syndicate_retailer_weekly?select=week_ending,retailer_id,dollar_sales,units,acv_distribution&limit=30000";
+    q += "&retailer_id=eq." + encodeURIComponent(retailer);
+    if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
+    if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
+    return { rows: await get(q, token), source: "syndicate_retailer_weekly" };
+  }
+
+  let q = "syndicate_sales_weekly?select=brand_id,category,week_ending,dollar_sales,units,acv_distribution,promo_observations,avg_discount_depth_pct,observations&limit=30000";
+  if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
+  if (category) q += "&category=eq." + encodeURIComponent(category);
+  if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
+  if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
+  return { rows: await get(q, token), source: "syndicate_sales_weekly" };
+}
+
+async function tool(name: string, a: Args, token: string) {
+  const filters = filtersFromArgs(a);
+  const dataset = await queryDataset(a, token);
+
+  switch (name) {
+    case "get_sales": {
+      const result = getSales(dataset.rows, filters);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+    }
+    case "get_distribution": {
+      const result = getDistribution(dataset.rows, filters);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+    }
+    case "get_price": {
+      const result = getPrice(dataset.rows, filters);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+    }
+    case "analyze_drivers": {
+      const result = analyzeDrivers(dataset.rows, filters);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+    }
+    case "detect_anomalies": {
+      const result = detectAnomalies(dataset.rows, filters);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+    }
+    case "forecast_sales": {
+      const result = forecastSales(dataset.rows, filters, Number(a.horizon || 4));
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+    }
+    case "run_scenario": {
+      const result = runScenario(dataset.rows, filters, Number(a.priceChangePct || 0), Number(a.distributionChangePts || 0));
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+    }
+    case "get_market_share": {
+      if (!a.brandId) {
+        return { error: "get_market_share requires brandId so the analyst can identify the numerator." };
+      }
+      const categoryRows = await queryDataset({ ...a, brandId: undefined }, token);
+      const result = getMarketShare(dataset.rows, categoryRows.rows, filters);
+      return { ...result.data, evidence: { ...result.evidence, source: dataset.source + " + " + categoryRows.source }, warnings: result.warnings };
+    }
+    default:
+      throw new Error("Unsupported analytical tool: " + name);
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const key = process.env.GROQ_API_KEY;
+    if (!key) return NextResponse.json({ error: "GROQ_API_KEY is not configured in Vercel Production." }, { status: 503 });
+
+    const auth = req.headers.get("authorization") || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    if (!token) return NextResponse.json({ error: "Please sign in again before using AI Analyst." }, { status: 401 });
+
+    const messages = [
+      {
+        role: "system",
+        content:
+          "You are CPGist AI Analyst. You are an orchestration layer, not the analytics engine. Never invent metrics. For quantitative claims, use the controlled tools and cite the returned evidence in plain language: source, period and relevant filters. State warnings when a result is a baseline or simplified assumption. The connected dataset is the Syndicate CPG dataset. Market share is returned as a decimal; convert to percentage. Do not imply causal conclusions from descriptive data.",
+      },
+      ...(body.messages || []),
+    ];
+
+    for (let round = 0; round < 4; round++) {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+          messages,
+          temperature: 0.1,
+          tools: CPG_TOOLS.map((t: any) => ({ type: "function", function: t })),
+          tool_choice: "auto",
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) return NextResponse.json(data, { status: response.status });
+
+      const message = data.choices?.[0]?.message;
+      messages.push(message);
+
+      if (!message?.tool_calls?.length) return NextResponse.json(data);
+
+      for (const call of message.tool_calls) {
+        try {
+          const result = await tool(call.function.name, JSON.parse(call.function.arguments || "{}"), token);
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: JSON.stringify(result),
+          });
+        } catch (error: any) {
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: JSON.stringify({ error: error?.message || "Analytical tool failed." }),
+          });
+        }
+      }
+    }
+
+    return NextResponse.json({ error: "Analyst tool loop exceeded safety limit." }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "AI Analyst request failed." }, { status: 500 });
+  }
+}
