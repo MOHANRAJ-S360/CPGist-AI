@@ -187,6 +187,7 @@ async function importCompactDatasetZip(sb: SupabaseClient, zip: Record<string, U
   const retailerWeekBytes = pickZipEntry(zip, [/retailer_weekly\.csv$/i]);
   const brandRetailerWeekBytes = pickZipEntry(zip, [/brand_retailer_weekly\.csv$/i]);
   const brandCategoryWeekBytes = pickZipEntry(zip, [/brand_category_weekly\.csv$/i]);
+  const productWeekBytes = pickZipEntry(zip, [/product_weekly\.csv$/i]);
   const competitorWeekBytes = pickZipEntry(zip, [/competitor_weekly\.csv$/i]);
 
   if (!brandBytes || !retailerBytes || !productBytes || !brandWeekBytes || !categoryWeekBytes || !retailerWeekBytes) {
@@ -261,6 +262,17 @@ async function importCompactDatasetZip(sb: SupabaseClient, zip: Record<string, U
     })).filter(x=>x.brand_id&&x.retailer_id&&x.week_ending);
     await upsertBatches(sb,"cpgist_brand_retailer_weekly",rows,"brand_id,retailer_id,week_ending",progress);
   }
+  if (productWeekBytes) {
+    const rows=rowsToRecords(productWeekBytes).map(r=>({
+      product_id:numField(r,"product_id","id","sku_id"), brand_id:numField(r,"brand_id"), retailer_id:numField(r,"retailer_id"),
+      week_ending:pickRow(r,"week_ending","period","week"),
+      sales:numField(r,"sales","dollar_sales","sales_value"), units:numField(r,"units","volume_units"),
+      price:numField(r,"price","avg_price","average_price")||null,
+      distribution:numField(r,"distribution","acv_distribution","weighted_distribution")||null,
+      promo_rate:numField(r,"promo_rate","promo_rate_pct","promotion_rate")||null
+    })).filter(x=>x.product_id&&x.retailer_id&&x.week_ending);
+    await upsertBatches(sb,"cpgist_product_weekly",rows,"product_id,retailer_id,week_ending",progress);
+  }
   if (brandCategoryWeekBytes) {
     const rows=rowsToRecords(brandCategoryWeekBytes).map(r=>({
       brand_id:numField(r,"brand_id"),category:pickRow(r,"category","category_name"),week_ending:pickRow(r,"week_ending","period","week"),
@@ -277,7 +289,7 @@ async function importCompactDatasetZip(sb: SupabaseClient, zip: Record<string, U
     await upsertBatches(sb,"cpgist_competitor_weekly",rows,"brand_id,competitor_id,week_ending",progress);
   }
 
-  return {type:"compact",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:bw.length,categoryWeeks:cw.length,retailerWeeks:rw.length};
+  return {type:"compact",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:bw.length,categoryWeeks:cw.length,retailerWeeks:rw.length,productWeeks:productWeekBytes ? rowsToRecords(productWeekBytes).length : 0};
 }
 
 export async function importDatasetZip(sb: SupabaseClient, file: File, progress: Progress) {
