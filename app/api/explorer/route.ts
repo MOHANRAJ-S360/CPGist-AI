@@ -3,16 +3,44 @@ const base=()=>({u:process.env.NEXT_PUBLIC_SUPABASE_URL,k:process.env.SUPABASE_S
 async function get(path:string){const {u,k}=base();if(!u||!k)throw new Error("Supabase server environment is not configured.");const r=await fetch(u+"/rest/v1/"+path,{headers:{apikey:k,Authorization:"Bearer "+k},cache:"no-store"});if(!r.ok)throw new Error(await r.text());return r.json();}
 const n=(v:any)=>Number(v??0)||0;const pct=(a:number,b:number)=>b?((a-b)/b)*100:0;const enc=(v:any)=>encodeURIComponent(String(v??""));
 async function brandDetail(id:string,brand:any,compact:boolean){
+async function brandDetail(id:string,brand:any,compact:boolean){
  if(compact){
   const rows:any[]=await get("cpgist_brand_weekly?brand_id=eq."+enc(id)+"&select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&order=week_ending.asc&limit=100000");
-  const periods=[...new Set(rows.map(r=>String(r.week_ending)))].sort();const latest=periods.slice(-13),prior=periods.slice(-26,-13),ls=new Set(latest),ps=new Set(prior);
-  const agg=(rs:any[])=>({sales:rs.reduce((a,r)=>a+n(r.sales),0),units:rs.reduce((a,r)=>a+n(r.units),0),distribution:rs.length?rs.reduce((a,r)=>a+n(r.distribution),0)/rs.length:null,promoRate:rs.length?rs.reduce((a,r)=>a+n(r.promo_rate),0)/rs.length:null});
+  const periods=[...new Set(rows.map(r=>String(r.week_ending)))].sort();
+  const latest=periods.slice(-13),prior=periods.slice(-26,-13),ls=new Set(latest),ps=new Set(prior);
+  const agg=(rs:any[])=>({sales:rs.reduce((a,r)=>a+n(r.sales),0),units:rs.reduce((a,r)=>a+n(r.units),0),distribution:rs.length?rs.reduce((a,r)=>a+n(r.distribution),0)/rs.length:null,price:rs.reduce((a,r)=>a+n(r.avg_price),0)/Math.max(1,rs.length),promoRate:rs.length?rs.reduce((a,r)=>a+n(r.promo_rate),0)/rs.length:null});
   const a=agg(rows.filter(r=>ls.has(String(r.week_ending)))),b=agg(rows.filter(r=>ps.has(String(r.week_ending))));
+  const categoryName=String(brand.category||"");
+  let categorySales=0;
+  if(categoryName){
+   try{
+    const cr:any[]=await get("cpgist_category_weekly?category=ilike."+enc(categoryName)+"&select=category,week_ending,sales&order=week_ending.asc&limit=5000");
+    categorySales=cr.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0);
+   }catch{}
+  }
   const weekly=periods.map(w=>{const rr=rows.filter(r=>String(r.week_ending)===w);return{period:w,sales:rr.reduce((x,r)=>x+n(r.sales),0),units:rr.reduce((x,r)=>x+n(r.units),0)}});
-  let products:any[]=[];let retailers:any[]=[];
-  try{const p=await get("cpgist_products?brand_id=eq."+enc(id)+"&select=id,brand_id,name,sku,category,subcategory,size&order=name&limit=2000");products=p.map((x:any)=>({...x,sales:0,units:0}));}catch{}
-  try{const rr=await get("cpgist_brand_retailer_weekly?brand_id=eq."+enc(id)+"&select=retailer_id,week_ending,sales,units,distribution,price,promo_rate&order=week_ending.desc&limit=100000");const rdim=await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&order=name&limit=2000");const map=new Map<any,{sales:number;units:number}>();for(const r of rr){const x=map.get(r.retailer_id)||{sales:0,units:0};x.sales+=n(r.sales);x.units+=n(r.units);map.set(r.retailer_id,x)}retailers=[...map.entries()].sort((x,y)=>y[1].sales-x[1].sales).slice(0,50).map(([rid,x])=>{const z=rdim.find((v:any)=>String(v.id)===String(rid));return{id:rid,name:z?.name||("Retailer "+rid),channel:z?.channel||"",region:z?.region||"",sales:x.sales,units:x.units}})}catch{}
-  return {entity:"brand",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,promoRate:a.promoRate},weekly,products,retailers,source:"cpgist_compact"};
+  let products:any[]=[], retailers:any[]=[];
+  try{
+   const p:any[]=await get("cpgist_products?brand_id=eq."+enc(id)+"&select=id,brand_id,name,sku,category,subcategory,size,pack_count&order=name&limit=5000");
+   let pw:any[]=[];
+   try{pw=await get("cpgist_product_weekly?brand_id=eq."+enc(id)+"&select=product_id,brand_id,retailer_id,week_ending,sales,units,price,distribution,promo_rate&order=week_ending.asc&limit=100000");}catch{}
+   const pm=new Map<string,any>(p.map((x:any)=>[String(x.id),x]));
+   const prodMap=new Map<string,any>();
+   for(const r of pw){
+    if(!ls.has(String(r.week_ending))&&!ps.has(String(r.week_ending)))continue;
+    const x=prodMap.get(String(r.product_id))||{id:r.product_id,name:pm.get(String(r.product_id))?.name||("Product "+r.product_id),sku:pm.get(String(r.product_id))?.sku||null,category:pm.get(String(r.product_id))?.category||null,subcategory:pm.get(String(r.product_id))?.subcategory||null,size:pm.get(String(r.product_id))?.size||null,sales:0,priorSales:0,units:0};
+    if(ls.has(String(r.week_ending))){x.sales+=n(r.sales);x.units+=n(r.units)}else{x.priorSales+=n(r.sales)}
+    prodMap.set(String(r.product_id),x);
+   }
+   products=[...prodMap.values()].map(x=>({...x,growth:x.priorSales?(x.sales/x.priorSales-1)*100:null})).sort((a,b)=>b.sales-a.sales);
+   if(!products.length)products=p.map(x=>({...x,sales:0,priorSales:0,units:0,growth:null}));
+  }catch{}
+  try{
+   const rr:any[]=await get("cpgist_brand_retailer_weekly?brand_id=eq."+enc(id)+"&select=retailer_id,week_ending,sales,units,distribution,price,promo_rate&order=week_ending.asc&limit=100000");
+   const rdim:any[]=await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&order=name&limit=2000");
+   const map=new Map<any,{sales:number;units:number}>();for(const r of rr){if(!ls.has(String(r.week_ending)))continue;const x=map.get(r.retailer_id)||{sales:0,units:0};x.sales+=n(r.sales);x.units+=n(r.units);map.set(r.retailer_id,x)}
+   retailers=[...map.entries()].sort((x,y)=>y[1].sales-x[1].sales).slice(0,50).map(([rid,x])=>{const z=rdim.find((v:any)=>String(v.id)===String(rid));return{id:rid,name:z?.name||("Retailer "+rid),channel:z?.channel||"",region:z?.region||"",retailer_group:z?.retailer_group||"",total_stores:z?.total_stores??null,sales:x.sales,units:x.units}})}catch{}
+  return {entity:"brand",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,share:categorySales?a.sales/categorySales*100:null},weekly,products,retailers,source:"cpgist_compact"};
  }
  const rows:any[]=await get("syndicate_sales_weekly?brand_id=eq."+enc(id)+"&select=brand_id,category,week_ending,dollar_sales,units,acv_distribution,promo_observations,observations&order=week_ending.asc&limit=100000");
  const periods=[...new Set(rows.map(r=>String(r.week_ending)))].sort(),latest=periods.slice(-13),prior=periods.slice(-26,-13),ls=new Set(latest),ps=new Set(prior);
