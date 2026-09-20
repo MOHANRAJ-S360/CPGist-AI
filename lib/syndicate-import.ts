@@ -175,7 +175,7 @@ export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Prog
   let zip:Record<string,Uint8Array>;
   try{zip=unzipSync(new Uint8Array(await file.arrayBuffer()))}catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
   const names=Object.keys(zip);
-  const csvCount=names.filter(n=>/\\.csv$/i.test(n)).length;
+  const csvCount=names.filter(n=>/\.csv$/i.test(n)).length;
   if(names.some(n=>/brand_weekly\.csv$/i.test(n))&&names.some(n=>/category_weekly\.csv$/i.test(n)))
     return importCompactDatasetZip(sb,zip,progress);
   throw new Error("This is not the CPGist Free Dataset package. Expected brand_weekly.csv and category_weekly.csv were not found.");
