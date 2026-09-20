@@ -317,3 +317,15 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   return {type:"compact",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart,periodEnd};
 }
 
+
+export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
+  if(!file.name.toLowerCase().endsWith(".zip"))throw new Error("Please select a CPGist dataset ZIP file.");
+  if(file.size>100*1024*1024)throw new Error("The CPGist Free Dataset ZIP must be 100 MB or smaller for browser import.");
+  progress(`Reading ${file.name}…`);
+  let zip:Record<string,Uint8Array>;
+  try{zip=unzipSync(new Uint8Array(await file.arrayBuffer()))}catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
+  const names=Object.keys(zip);
+  const hasCore=["03_brands.csv","08_retailers.csv","06_products.csv","05_categories.csv","10_locations.csv","26_brand_weekly.csv","27_category_weekly.csv","28_retailer_weekly.csv"].every(n=>names.some(x=>basename(x).toLowerCase()===n.toLowerCase()));
+  if(!hasCore)throw new Error("Unsupported or incomplete CPGist Free Dataset. Expected the numbered master and weekly CSV files (03_brands.csv, 08_retailers.csv, 06_products.csv, 05_categories.csv, 10_locations.csv and 26–28 weekly aggregates).");
+  return importCompactDatasetZip(sb,zip,progress);
+}
