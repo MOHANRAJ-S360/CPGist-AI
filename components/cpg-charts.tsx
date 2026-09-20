@@ -13,7 +13,7 @@ export function LineChart({points,height=230}:{points:Point[];height?:number}){
 }
 export function BarChart({items}:{items:{label:string;value:number;change?:number}[]}){
  const max=Math.max(...items.map(x=>x.value),1);
- return <div className="bar-chart">{items.map((x,i)=><div className="bar-row" key={i}><div className="bar-label" title={x.label}>{x.label}</div><div className="bar-track"><div className="bar-fill" style={{width:(x.value/max*100)+"%"}}/></div><div className="bar-value">{compact(x.value)}</div>{x.change!=null&&<div className={"bar-change "+(x.change>=0?"up":"down")}>{x.change>=0?"+":""}{x.change.toFixed(1)}%</div>}</div>)}</div>
+ return <div className="bar-chart">{items.map((x,i)=><div className="bar-row" key={i}><div className="bar-label" title={x.label}>{x.label}</div><div className="bar-track"><div className="bar-fill" style={{width:(x.value/max*100)+"%"}}/></div><div className="bar-value">{compact(x.value)}</div>{x.change!=null&&<div className={"bar-change "+(x.change>=0?"up":"down")}>{x.change>=0?"+":""}{(x.change*100).toFixed(1)}%</div>}</div>)}</div>
 }
 export function Donut({share,centerLabel}:{share:number;centerLabel:string}){
  const r=42,c=2*Math.PI*r,offset=c-(Math.max(0,Math.min(100,share))/100)*c;
