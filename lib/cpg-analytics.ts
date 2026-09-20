@@ -56,6 +56,11 @@ export const CPG_TOOLS = [
     },
   },
   {
+    name: "week_over_week_brands",
+    description: "Compare every brand's latest observed week with the immediately prior observed week. Use this for questions such as which brands improved, declined, gained sales, lost sales, or changed versus last week. Returns every brand in the selected scope, not just the top 10.",
+    parameters: params,
+  },
+  {
     name: "get_sales",
     description: "Retrieve weekly dollar sales and units for a CPG slice. Returns the time series, totals, evidence source, date range and warnings.",
     parameters: params,
