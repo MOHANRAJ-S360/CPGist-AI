@@ -57,6 +57,7 @@ export async function GET(req:NextRequest){
   const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim().toLowerCase(),id=p.get("id");
   let compact=false;
   try{const x=await get("cpgist_brands?select=id&limit=1");compact=Array.isArray(x)&&x.length>0}catch{}
+  if(!compact)return NextResponse.json({error:"CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using the client explorer.",code:"COMPACT_DATASET_REQUIRED"},{status:503});
   if(entity==="brand"){
    const brands:any[]=await get((compact?"cpgist_brands":"syndicate_brands")+"?select=id,name,category,parent_company,home_regions"+(compact?",portfolio":"")+"&order=name&limit=2000");
    if(!id)return NextResponse.json({entity,source:compact?"cpgist_compact":"syndicate",results:brands.filter(b=>!q||String(b.name).toLowerCase().includes(q)||String(b.parent_company||"").toLowerCase().includes(q)||String(b.category||"").toLowerCase().includes(q)||String(b.home_regions||"").toLowerCase().includes(q))});
