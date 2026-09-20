@@ -66,48 +66,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   } catch {}
 
   if (compact) {
-    if (mode === "retailer" || (retailer && !brand && !category)) {
-      try {
-        let q = "cpgist_brand_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution,price,promo_rate&limit=100000";
-        q += "&retailer_id=eq." + encodeURIComponent(retailer);
-        if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
-        if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-        const raw = await get(q, token);
-        return { rows: raw.map((r:any) => ({
-          brand_id: r.brand_id, category: r.category, week_ending: r.week_ending,
-          dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
-          avg_discount_depth_pct: r.discount_depth_pct, promo_observations: r.promo_rate,
-          observations: 1
-        })), source: "cpgist_brand_retailer_weekly" };
-      } catch {}
-    }
-    let q = "cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&limit=100000";
-    if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
-    if (category) q += "&category=ilike." + encodeURIComponent(category);
-    if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
-    if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-    const raw = await get(q, token);
-    return { rows: raw.map((r:any) => ({
-      brand_id: r.brand_id, category: r.category, week_ending: r.week_ending,
-      dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
-      avg_price: r.avg_price, promo_observations: r.promo_rate, observations: 1
-    })), source: "cpgist_brand_weekly" };
-  }
-
-  if (mode === "retailer" || (retailer && !brand && !category)) {
-    let q = "syndicate_retailer_weekly?select=week_ending,retailer_id,dollar_sales,units,acv_distribution&limit=30000";
-    q += "&retailer_id=eq." + encodeURIComponent(retailer);
-    if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
-    if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-    return { rows: await get(q, token), source: "syndicate_retailer_weekly" };
-  }
-
-  let q = "syndicate_sales_weekly?select=brand_id,category,week_ending,dollar_sales,units,acv_distribution,promo_observations,avg_discount_depth_pct,observations&limit=30000";
-  if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
-  if (category) q += "&category=ilike." + encodeURIComponent(category);
-  if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
-  if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-  return { rows: await get(q, token), source: "syndicate_sales_weekly" };
+    throw new Error("CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using AI Analyst.");
 }
 async function tool(name: string, a: Args, token: string) {
   const filters = filtersFromArgs(a);
@@ -115,7 +74,7 @@ async function tool(name: string, a: Args, token: string) {
 
   switch (name) {
     case "data_readiness": {
-      const tables = ["syndicate_brands","syndicate_products","syndicate_sales_weekly","syndicate_retailer_weekly","syndicate_brand_retailer","syndicate_signal_notes","syndicate_competitor_signals"];
+      const tables = ["cpgist_brands","cpgist_products","cpgist_categories","cpgist_regions","cpgist_brand_weekly","cpgist_category_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_product_weekly","cpgist_competitor_weekly"];
       const counts: Record<string, number> = {};
       for (const table of tables) {
         try {
@@ -125,7 +84,7 @@ async function tool(name: string, a: Args, token: string) {
           counts[table] = range && range.includes("/") ? Number(range.split("/")[1]) || 0 : (await response.json()).length;
         } catch { counts[table] = 0; }
       }
-      return { domains: { sales: counts.syndicate_sales_weekly > 0, retailerOpportunity: counts.syndicate_brand_retailer > 0, products: counts.syndicate_products > 0, competition: counts.syndicate_competitor_signals > 0, signals: counts.syndicate_signal_notes > 0 }, counts, warnings: counts.syndicate_brand_retailer === 0 ? ["Retailer opportunity aggregation is not populated yet; re-import the Syndicate ZIP to enable retailer whitespace analysis."] : [] };
+      return { domains: { sales: counts.cpgist_brand_weekly > 0, retailerOpportunity: counts.cpgist_brand_retailer_weekly > 0, products: counts.cpgist_products > 0, competition: counts.cpgist_competitor_weekly > 0 }, counts, warnings: counts.cpgist_brand_weekly === 0 ? ["CPGist Free Dataset is not imported yet."] : [] };
     }
 
     case "business_health_scan": {
@@ -135,8 +94,8 @@ async function tool(name: string, a: Args, token: string) {
 
     case "cross_category_portfolio": {
       const [brands, salesRows] = await Promise.all([
-        get("syndicate_brands?select=id,name,category,parent_company&limit=1000", token),
-        get("syndicate_sales_weekly?select=brand_id,dollar_sales&limit=12000", token)
+        get("cpgist_brands?select=id,name,category,parent_company&limit=2000", token),
+        get("cpgist_brand_weekly?select=brand_id,sales&limit=100000", token)
       ]);
       const result = crossCategoryPortfolio(brands, salesRows);
       const issues = validateAnalyticalResult(result);
@@ -148,10 +107,10 @@ async function tool(name: string, a: Args, token: string) {
       const category = String(a.categoryId || "").trim();
       if (!brandId || !category) return { error: "retailer_opportunity requires brandId and categoryId." };
       const encodedCategory = encodeURIComponent(category);
-      const retailerRows = await get("syndicate_brand_retailer?select=brand_id,retailer_id,category,sales,units,distribution,discount_depth_pct,observations&category=ilike." + encodedCategory + "&limit=10000", token);
+      const retailerRows = await get("cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate&category=ilike." + encodedCategory + "&limit=100000", token);
       const result = retailerOpportunity(retailerRows, brandId, category);
       const ids = result.data.retailers.map(x => x.retailerId).join(",");
-      const retailers = ids ? await get("syndicate_retailers?select=id,name,channel,region,total_stores&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
+      const retailers = ids ? await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
       const names = Object.fromEntries(retailers.map((r:any) => [String(r.id), r]));
       const issues = validateAnalyticalResult(result);
       return {
@@ -176,7 +135,7 @@ async function tool(name: string, a: Args, token: string) {
       const result = categoryGrowthPlan(categoryDataset.rows, filtersFromArgs(a));
       const issues = validateAnalyticalResult(result);
       const ids = result.data.brands.map(x=>x.brandId).join(",");
-      const brands = ids ? await get("syndicate_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
+      const brands = ids ? await get("cpgist_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
       const names = Object.fromEntries(brands.map((b:any)=>[String(b.id),b.name]));
       return {
         ...result.data,
@@ -207,7 +166,7 @@ async function tool(name: string, a: Args, token: string) {
       const ids = result.data.byBrand.map(x => x.brandId).join(",");
       let brandNames: Record<string,string> = {};
       if (ids) {
-        const brands = await get("syndicate_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token);
+        const brands = await get("cpgist_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token);
         brandNames = Object.fromEntries(brands.map((b:any) => [String(b.id), b.name]));
       }
       return {
