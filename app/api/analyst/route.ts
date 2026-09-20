@@ -57,16 +57,40 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   const category = a.categoryId ? String(a.categoryId) : "";
   const retailer = a.retailerId ? String(a.retailerId) : "";
 
-  // Prefer the reduced CPGist dataset when it is installed. It is the current
-  // client-facing dataset and keeps the analyst aligned with the dashboard.
   let compact = false;
   try {
     const probe = await get("cpgist_brands?select=id&limit=1", token);
     compact = Array.isArray(probe) && probe.length > 0;
   } catch {}
 
-  if (compact) {
+  if (!compact) {
     throw new Error("CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using AI Analyst.");
+  }
+
+  if (mode === "retailer" || (retailer && !brand && !category)) {
+    let q = "cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,week_ending,sales,units,distribution,price,promo_rate&limit=100000";
+    q += "&retailer_id=eq." + encodeURIComponent(retailer);
+    if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
+    if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
+    const raw = await get(q, token);
+    return { rows: raw.map((r:any) => ({
+      brand_id: r.brand_id, category: r.category, retailer_id: r.retailer_id, week_ending: r.week_ending,
+      dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
+      avg_price: r.price, promo_observations: r.promo_rate, observations: 1
+    })), source: "cpgist_brand_retailer_weekly" };
+  }
+
+  let q = "cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&limit=100000";
+  if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
+  if (category) q += "&category=ilike." + encodeURIComponent(category);
+  if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
+  if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
+  const raw = await get(q, token);
+  return { rows: raw.map((r:any) => ({
+    brand_id: r.brand_id, category: r.category, week_ending: r.week_ending,
+    dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
+    avg_price: r.avg_price, promo_observations: r.promo_rate, observations: 1
+  })), source: "cpgist_brand_weekly" };
 }
 async function tool(name: string, a: Args, token: string) {
   const filters = filtersFromArgs(a);
