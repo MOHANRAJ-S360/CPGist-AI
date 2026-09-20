@@ -51,16 +51,6 @@ export async function GET(){
 
   // The old Syndicate dataset is retained only for legacy import compatibility; it is
   // never a silent fallback for the client-facing workspace.
-  const rows=await get("syndicate_sales_weekly?select=brand_id,category,week_ending,dollar_sales,units,acv_distribution,promo_observations,observations&order=week_ending.asc&limit=100000");
-  const brands=await get("syndicate_brands?select=id,name,category,parent_company,home_regions&order=name&limit=2000");
-  const periods=periodSet(rows),latestPeriods=periods.slice(-13),priorPeriods=periods.slice(-26,-13);
-  const latest=agg(windowRows(rows,latestPeriods),"dollar_sales"),prior=agg(windowRows(rows,priorPeriods),"dollar_sales");
-  const weekly=periods.map(p=>{const rr=rows.filter((r:any)=>String(r.week_ending)===p);return{period:p,label:new Date(p).toLocaleDateString("en-US",{month:"short",day:"numeric"}),sales:rr.reduce((a:number,r:any)=>a+n(r.dollar_sales),0),units:rr.reduce((a:number,r:any)=>a+n(r.units),0)}});
-  const bm=new Map<string,any>();for(const r of rows){const id=String(r.brand_id);const x=bm.get(id)||{id,sales:0,priorSales:0};if(latestPeriods.includes(String(r.week_ending)))x.sales+=n(r.dollar_sales);else if(priorPeriods.includes(String(r.week_ending)))x.priorSales+=n(r.dollar_sales);bm.set(id,x);}
-  const bmap=new Map<string,any>(brands.map((b:any)=>[String(b.id),b]));const total=latest.sales;
-  const topBrands=[...bm.values()].map((x:any)=>{const b=bmap.get(x.id)||{};return{id:x.id,name:b.name||("Brand "+x.id),category:b.category||"",parent_company:b.parent_company||"",home_regions:b.home_regions||"",sales:x.sales,priorSales:x.priorSales,share:total?x.sales/total*100:0,growth:pct(x.sales,x.priorSales)}}).sort((a,b)=>b.sales-a.sales);
-  const cm=new Map<string,any>();for(const r of rows){const k=String(r.category||"Unclassified");const x=cm.get(k)||{name:k,sales:0,priorSales:0};if(latestPeriods.includes(String(r.week_ending)))x.sales+=n(r.dollar_sales);else if(priorPeriods.includes(String(r.week_ending)))x.priorSales+=n(r.dollar_sales);cm.set(k,x);}
-  const categories=[...cm.values()].map((x:any)=>({...x,growth:pct(x.sales,x.priorSales)})).sort((a,b)=>b.sales-a.sales);
   return NextResponse.json({error:"CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using the client workspace.",code:"COMPACT_DATASET_REQUIRED"},{status:503});
  }catch(e:any){return NextResponse.json({error:e?.message||"Dashboard data failed."},{status:500})}
 }
