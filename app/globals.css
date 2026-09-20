@@ -145,3 +145,5 @@
  .card{break-inside:avoid;box-shadow:none!important}
  body{background:#fff!important}
 }
+
+.scope-badge{display:inline-flex;align-items:center;gap:5px;border:1px solid #d8d2ff;background:#f4f2ff;color:#5b5bd6;border-radius:999px;padding:7px 10px;font-size:9px;white-space:nowrap}.scope-badge b{color:#3d3f68}
