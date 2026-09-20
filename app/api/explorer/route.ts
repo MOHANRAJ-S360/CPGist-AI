@@ -111,4 +111,19 @@ export async function GET(req:NextRequest){
  }catch(e:any){
   return NextResponse.json({error:e?.message||"Data explorer failed."},{status:500});
  }
-}
+}  let products:any[]=[];
+  try{
+    const p:any[]=await get("cpgist_products?brand_id=eq."+enc(id)+"&select=id,brand_id,name,sku,category,subcategory,size,pack_count&order=name&limit=5000");
+    let ps:any[]=[];
+    try{ps=await get("cpgist_product_summary?brand_id=eq."+enc(id)+"&select=product_id,brand_id,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&order=sales_13w.desc&limit=5000");}catch{}
+    const sm=new Map<string,any>(ps.map((x:any)=>[String(x.product_id),x]));
+    products=p.map((x:any)=>{const s=sm.get(String(x.id));return {...x,sales:s?.sales_13w??0,units:s?.units_13w??0,price:s?.avg_price_13w??null,distribution:s?.distribution_13w??null,promoRate:s?.promo_rate_13w??null,growth:null}}).sort((a:any,b:any)=>Number(b.sales||0)-Number(a.sales||0));
+  }catch{}
+
+  let retailers:any[]=[];
+  try{
+    const rr:any[]=await get("cpgist_brand_retailer_summary?brand_id=eq."+enc(id)+"&select=retailer_id,category,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&order=sales_13w.desc&limit=5000");
+    const rdim:any[]=await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&order=name&limit=2000");
+    retailers=rr.map((x:any)=>{const z=rdim.find((v:any)=>String(v.id)===String(x.retailer_id))||{};return{id:x.retailer_id,name:z.name||("Retailer "+x.retailer_id),channel:z.channel||"",region:z.region||"",retailer_group:z.retailer_group||"",total_stores:z.total_stores??null,sales:x.sales_13w,units:x.units_13w,price:x.avg_price_13w,distribution:x.distribution_13w,promoRate:x.promo_rate_13w}}).sort((a:any,b:any)=>Number(b.sales||0)-Number(a.sales||0));
+  }catch{}
+
