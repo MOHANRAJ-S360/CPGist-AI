@@ -49,6 +49,8 @@ export async function GET(){
     return NextResponse.json({source:"cpgist_compact",rowCount:rows.length,totalSales:latest.sales,totalUnits:latest.units,avgDistribution:latest.distribution,growth:pct(latest.sales,prior.sales),periods,periodEnd:periods.at(-1)||null,weekly,topBrands,categories,retailers,brandCount:brands.length,categoryCount:categories.length,retailerCount:retailers.length});
   }
 
+  // The old Syndicate dataset is retained only for legacy import compatibility; it is
+  // never a silent fallback for the client-facing workspace.
   const rows=await get("syndicate_sales_weekly?select=brand_id,category,week_ending,dollar_sales,units,acv_distribution,promo_observations,observations&order=week_ending.asc&limit=100000");
   const brands=await get("syndicate_brands?select=id,name,category,parent_company,home_regions&order=name&limit=2000");
   const periods=periodSet(rows),latestPeriods=periods.slice(-13),priorPeriods=periods.slice(-26,-13);
@@ -59,6 +61,6 @@ export async function GET(){
   const topBrands=[...bm.values()].map((x:any)=>{const b=bmap.get(x.id)||{};return{id:x.id,name:b.name||("Brand "+x.id),category:b.category||"",parent_company:b.parent_company||"",home_regions:b.home_regions||"",sales:x.sales,priorSales:x.priorSales,share:total?x.sales/total*100:0,growth:pct(x.sales,x.priorSales)}}).sort((a,b)=>b.sales-a.sales);
   const cm=new Map<string,any>();for(const r of rows){const k=String(r.category||"Unclassified");const x=cm.get(k)||{name:k,sales:0,priorSales:0};if(latestPeriods.includes(String(r.week_ending)))x.sales+=n(r.dollar_sales);else if(priorPeriods.includes(String(r.week_ending)))x.priorSales+=n(r.dollar_sales);cm.set(k,x);}
   const categories=[...cm.values()].map((x:any)=>({...x,growth:pct(x.sales,x.priorSales)})).sort((a,b)=>b.sales-a.sales);
-  return NextResponse.json({source:"syndicate",rowCount:rows.length,totalSales:latest.sales,totalUnits:latest.units,avgDistribution:latest.distribution,growth:pct(latest.sales,prior.sales),periods,periodEnd:periods.at(-1)||null,weekly,topBrands,categories,retailers:[],brandCount:brands.length,categoryCount:categories.length,retailerCount:0});
+  return NextResponse.json({error:"CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using the client workspace.",code:"COMPACT_DATASET_REQUIRED"},{status:503});
  }catch(e:any){return NextResponse.json({error:e?.message||"Dashboard data failed."},{status:500})}
 }
