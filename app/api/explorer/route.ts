@@ -38,7 +38,7 @@ async function brandDetail(id:string,brand:any){
 
 export async function GET(req:NextRequest){
  try{
-  const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim(),id=p.get("id");
+  const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim(),id=p.get("id"),limit=Math.min(100,Math.max(1,Number(p.get("limit")||50)||50)),offset=Math.max(0,Number(p.get("offset")||0)||0);
   let compact=false;try{const x=await get("cpgist_brands?select=id&limit=1");compact=Array.isArray(x)&&x.length>0}catch{}
   if(!compact)return NextResponse.json({error:"CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using the client workspace.",code:"COMPACT_DATASET_REQUIRED"},{status:503});
 
@@ -46,23 +46,24 @@ export async function GET(req:NextRequest){
    const rows:any[]=await get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000");
    if(id){const brand=rows.find(x=>String(x.id)===String(id));if(!brand)return NextResponse.json({error:"Brand not found."},{status:404});return NextResponse.json(await brandDetail(String(id),brand))}
    const results=rows.filter(x=>has(x.name,q)||has(x.category,q)||has(x.parent_company,q)||has(x.home_regions,q));
-   return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results});
+   return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
   if(entity==="retailer"){
    const rows:any[]=await get("cpgist_retailers?select=id,name,channel,region,total_stores,retailer_group&order=name&limit=5000");
-   return NextResponse.json({entity,source:"cpgist_compact",count:rows.filter(x=>has(x.name,q)||has(x.channel,q)||has(x.region,q)||has(x.retailer_group,q)).length,results:rows.filter(x=>has(x.name,q)||has(x.channel,q)||has(x.region,q)||has(x.retailer_group,q))});
+   const results=rows.filter(x=>has(x.name,q)||has(x.channel,q)||has(x.region,q)||has(x.retailer_group,q));
+   return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
   if(entity==="category"){
    const rows:any[]=await get("cpgist_categories?select=id,name,parent_category,subcategory_count&order=name&limit=5000");
-   const results=rows.filter(x=>has(x.name,q)||has(x.parent_category,q));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results});
+   const results=rows.filter(x=>has(x.name,q)||has(x.parent_category,q));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
   if(entity==="region"){
    const rows:any[]=await get("cpgist_regions?select=id,name,country,region_group&order=name&limit=5000");
-   const results=rows.filter(x=>has(x.name,q)||has(x.country,q)||has(x.region_group,q));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results});
+   const results=rows.filter(x=>has(x.name,q)||has(x.country,q)||has(x.region_group,q));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
   if(entity==="product"){
    const rows:any[]=await get("cpgist_products?select=id,brand_id,name,category,subcategory,size,sku&order=name&limit=10000");
-   const results=rows.filter(x=>has(x.name,q)||has(x.category,q)||has(x.subcategory,q)||has(x.sku,q));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results});
+   const results=rows.filter(x=>has(x.name,q)||has(x.category,q)||has(x.subcategory,q)||has(x.sku,q));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
   return NextResponse.json({error:"Unsupported entity."},{status:400});
  }catch(e:any){return NextResponse.json({error:e?.message||"Data explorer failed."},{status:500})}
