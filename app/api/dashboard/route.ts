@@ -27,9 +27,9 @@ export async function GET(){
    get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&order=name&limit=5000")
   ]);
 
-  const periods=[...new Set(brandRows.map((r:any)=>String(r.week_ending)).filter(Boolean))].sort();
+  const periods:string[]=[...new Set<string>((brandRows as any[]).map((r:any)=>String(r.week_ending)).filter(Boolean))].sort();
   if(periods.length<13)throw new Error("CPGist Free Dataset has fewer than 13 weekly periods.");
-  const latestPeriods=periods.slice(-13),priorPeriods=periods.slice(-26,-13),latestSet=new Set(latestPeriods),priorSet=new Set(priorPeriods);
+  const latestPeriods=periods.slice(-13),priorPeriods=periods.slice(-26,-13),latestSet=new Set<string>(latestPeriods),priorSet=new Set<string>(priorPeriods);
   const periodStart=periods[0],periodEnd=periods.at(-1);
 
   const agg=(rows:any[],periodSet:Set<string>)=>{
@@ -38,10 +38,10 @@ export async function GET(){
    const distRows=rows.filter((r:any)=>periodSet.has(String(r.week_ending))&&r.distribution!=null);
    return {sales,units,avgDistribution:distRows.length?distRows.reduce((a,r)=>a+n(r.distribution),0)/distRows.length:null};
   };
-  const latest=agg(brandRows,latestSet),prior=agg(brandRows,priorSet);
+  const latest=agg(brandRows as any[],latestSet),prior=agg(brandRows as any[],priorSet);
 
   const weekly=periods.map(p=>{
-   const rs=brandRows.filter(r=>String(r.week_ending)===p);
+   const rs=(brandRows as any[]).filter((r:any)=>String(r.week_ending)===p);
    return {period:p,label:new Date(p+"T00:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric"}),sales:rs.reduce((a,r)=>a+n(r.sales),0),units:rs.reduce((a,r)=>a+n(r.units),0)};
   });
 
