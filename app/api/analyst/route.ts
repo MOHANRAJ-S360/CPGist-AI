@@ -3,6 +3,7 @@ import { CPG_TOOLS } from "../../../lib/cpg-analytics";
 import { capabilityContext } from "../../../lib/cpg-intelligence/capabilities";
 import {
   analyzeDrivers,
+  compareBrandPeriods,
   categoryGrowthPlan,
   detectAnomalies,
   forecastSales,
@@ -171,6 +172,18 @@ async function tool(name: string, a: Args, token: string) {
       };
     }
 
+    case "week_over_week_brands": {
+      const result = compareBrandPeriods(dataset.rows, filters);
+      const ids = result.data.brands.map(x => x.brandId).join(",");
+      const brands = ids ? await get("cpgist_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
+      const names = Object.fromEntries(brands.map((b:any) => [String(b.id), b.name]));
+      return {
+        ...result.data,
+        brands: result.data.brands.map(x => ({ ...x, brandName: names[x.brandId] ?? null })),
+        evidence: { ...result.evidence, source: dataset.source },
+        warnings: result.warnings,
+      };
+    }
     case "get_sales": {
       const result = getSales(dataset.rows, filters);
       const issues = validateAnalyticalResult(result);
@@ -263,7 +276,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst. You are an evidence-first CPG decision-support system. Treat natural-language CPG questions as flexible business requests: users may use informal wording, abbreviations, executive language, or combine several questions in one sentence. Map the request to the closest capabilities and controlled tools rather than requiring exact keywords. If the requested capability is not supported by the connected data, say exactly what is unavailable and answer the supported portion instead of inventing evidence. You orchestrate controlled analytical tools; you do not calculate metrics yourself.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nDecision procedure: For category improvement, growth, turnaround, leadership, or brand-priority questions, call category_growth_plan FIRST. Then call additional tools only for unresolved questions such as retailer whitespace, retailer concentration, price, anomalies, forecasts, or scenarios. Never substitute generic FMCG advice for observed evidence. Every action recommendation must reference the specific observed signal that triggered it. Clearly distinguish observed facts, diagnostic signals, hypotheses, and planning assumptions. Do not claim causality from descriptive data.\n\nFor quantitative claims, use the controlled tools and preserve their returned values exactly.\nEvidence rules:\n- Never convert rowCount into a week/period count. Use evidence.periodCount.\n- Never claim the requested date range is fully covered when evidence.periodStart/evidence.periodEnd are narrower. State actual coverage.\n- Never invent, duplicate, or silently alter ranking entries.\n- When brandName is available, use it instead of brandId.\n- Treat validation issues and warnings as authoritative.\n- Do not make causal claims from descriptive data.\n- For scenarios, preserve scenarioSales exactly and explain the price × volume × distribution mechanics and assumptions.\n\nYour final response must be a JSON object with exactly these fields:\n{\n  \"type\": \"summary\" | \"ranking\" | \"scenario\" | \"trend\" | \"diagnostic\" | \"comparison\" | \"forecast\" | \"distribution\" | \"anomaly\",\n  \"headline\": \"short business headline\",\n  \"executiveTakeaway\": \"1-3 sentence answer directly answering the user\",\n  \"metrics\": [{\"label\":\"...\", \"value\":\"...\", \"change\":\"optional\", \"tone\":\"positive|negative|neutral\"}],\n  \"table\": {\"columns\":[\"...\"], \"rows\":[[\"...\"]]} | null,\n  \"sections\": [{\"title\":\"...\", \"bullets\":[\"...\"]}],\n  \"warnings\": [\"...\"],\n  \"evidence\": {\"source\":\"...\", \"period\":\"...\", \"periodCount\":0, \"filters\":\"...\"},\n  \"decisionTrail\": [{\"type\":\"observed|diagnostic|action|limitation\",\"text\":\"...\"}],\n  \"nextBestQuestion\": \"optional follow-up question or null\"\n}\nUse null for table when no table is useful. Include a short decisionTrail grounded only in tool evidence: observed facts, diagnostic interpretation, concrete action, and limitations. Include nextBestQuestion only when a useful unresolved question remains; otherwise use null. Keep the response concise and professional. For category-growth questions, include a brand action table when category_growth_plan returned brand diagnostics. For cross-category questions, use cross_category_portfolio FIRST; never claim an exact brand spans categories unless the tool returns it. If exactMultiCategoryBrands is empty, clearly distinguish parent-company portfolio breadth from exact brand breadth. If a brand is identified as needing distribution action, call retailer_opportunity before making retailer-specific recommendations. Do not output Markdown, code fences, or any fields outside this schema." + activeScope      },
+        content: "You are CPGist AI Analyst. You are an evidence-first CPG decision-support system. During tool selection, NEVER call a tool named json or any tool not listed in the request. The only callable tools are the analytical functions supplied in this request. Do not try to satisfy the final JSON formatting requirement by calling a tool. Treat natural-language CPG questions as flexible business requests: users may use informal wording, abbreviations, executive language, or combine several questions in one sentence. Map the request to the closest capabilities and controlled tools rather than requiring exact keywords. If the requested capability is not supported by the connected data, say exactly what is unavailable and answer the supported portion instead of inventing evidence. You orchestrate controlled analytical tools; you do not calculate metrics yourself.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nDecision procedure: For category improvement, growth, turnaround, leadership, or brand-priority questions, call category_growth_plan FIRST. Then call additional tools only for unresolved questions such as retailer whitespace, retailer concentration, price, anomalies, forecasts, or scenarios. Never substitute generic FMCG advice for observed evidence. Every action recommendation must reference the specific observed signal that triggered it. Clearly distinguish observed facts, diagnostic signals, hypotheses, and planning assumptions. Do not claim causality from descriptive data.\n\nFor quantitative claims, use the controlled tools and preserve their returned values exactly.\nEvidence rules:\n- Never convert rowCount into a week/period count. Use evidence.periodCount.\n- Never claim the requested date range is fully covered when evidence.periodStart/evidence.periodEnd are narrower. State actual coverage.\n- Never invent, duplicate, or silently alter ranking entries.\n- When brandName is available, use it instead of brandId.\n- Treat validation issues and warnings as authoritative.\n- Do not make causal claims from descriptive data.\n- For scenarios, preserve scenarioSales exactly and explain the price × volume × distribution mechanics and assumptions.\n\nYour final response must be a JSON object with exactly these fields:\n{\n  \"type\": \"summary\" | \"ranking\" | \"scenario\" | \"trend\" | \"diagnostic\" | \"comparison\" | \"forecast\" | \"distribution\" | \"anomaly\",\n  \"headline\": \"short business headline\",\n  \"executiveTakeaway\": \"1-3 sentence answer directly answering the user\",\n  \"metrics\": [{\"label\":\"...\", \"value\":\"...\", \"change\":\"optional\", \"tone\":\"positive|negative|neutral\"}],\n  \"table\": {\"columns\":[\"...\"], \"rows\":[[\"...\"]]} | null,\n  \"sections\": [{\"title\":\"...\", \"bullets\":[\"...\"]}],\n  \"warnings\": [\"...\"],\n  \"evidence\": {\"source\":\"...\", \"period\":\"...\", \"periodCount\":0, \"filters\":\"...\"},\n  \"decisionTrail\": [{\"type\":\"observed|diagnostic|action|limitation\",\"text\":\"...\"}],\n  \"nextBestQuestion\": \"optional follow-up question or null\"\n}\nUse null for table when no table is useful. Include a short decisionTrail grounded only in tool evidence: observed facts, diagnostic interpretation, concrete action, and limitations. Include nextBestQuestion only when a useful unresolved question remains; otherwise use null. Keep the response concise and professional. For category-growth questions, include a brand action table when category_growth_plan returned brand diagnostics. For cross-category questions, use cross_category_portfolio FIRST; never claim an exact brand spans categories unless the tool returns it. If exactMultiCategoryBrands is empty, clearly distinguish parent-company portfolio breadth from exact brand breadth. If a brand is identified as needing distribution action, call retailer_opportunity before making retailer-specific recommendations. Do not output Markdown, code fences, or any fields outside this schema." + activeScope      },
       ...(body.messages || []),
     ];
 
@@ -274,16 +287,37 @@ export async function POST(req: Request) {
         temperature: 0.1,
         tools: CPG_TOOLS.map((t: any) => ({ type: "function", function: t })),
         tool_choice: "auto",
+        parallel_tool_calls: false,
+        disable_tool_validation: true,
+        reasoning_format: "hidden",
       });
       if (!response.ok) return NextResponse.json({ error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status }, { status: response.status });
 
       const message = data.choices?.[0]?.message;
+      if (!message) break;
+
+      if (!message?.tool_calls?.length) {
+        messages.push(message);
+        break;
+      }
+
+      // Groq can occasionally emit an unsupported tool name (for example "json")
+      // when a reasoning model is asked for structured output. Keep the turn valid,
+      // return a tool-level error for that call, and let the model recover instead of
+      // failing the whole request with a tool validation 400.
       messages.push(message);
-
-      if (!message?.tool_calls?.length) break;
-
       for (const call of message.tool_calls) {
         try {
+          const knownTool = CPG_TOOLS.some((t: any) => t.name === call.function.name);
+          if (!knownTool) {
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              name: call.function.name,
+              content: JSON.stringify({ error: "Unsupported tool name. Use only the supplied CPGist analytical tools.", is_error: true }),
+            });
+            continue;
+          }
           const result = await tool(call.function.name, JSON.parse(call.function.arguments || "{}"), token);
           messages.push({
             role: "tool",
@@ -310,7 +344,8 @@ export async function POST(req: Request) {
         { role: "user", content: "Return the final answer now as the required JSON object. Do not call tools. Use only observed tool evidence." }
       ],
       temperature: 0.05,
-      response_format: { type: "json_object" }
+      response_format: { type: "json_object" },
+      reasoning_format: "hidden"
     });
     if (!finalResponse.ok) return NextResponse.json({ error: finalData?.error?.message || finalData?.message || "AI Analyst final response failed.", providerStatus: finalResponse.status }, { status: finalResponse.status });
     const raw = finalData.choices?.[0]?.message?.content;
