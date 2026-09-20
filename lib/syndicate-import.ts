@@ -262,8 +262,11 @@ async function importCompactDatasetZip(sb: SupabaseClient, zip: Record<string, U
     })).filter(x=>x.brand_id&&x.retailer_id&&x.week_ending);
     await upsertBatches(sb,"cpgist_brand_retailer_weekly",rows,"brand_id,retailer_id,week_ending",progress);
   }
+  let productWeekCount=0;
   if (productWeekBytes) {
-    const rows=rowsToRecords(productWeekBytes).map(r=>({
+    const productWeekSource=rowsToRecords(productWeekBytes);
+    productWeekCount=productWeekSource.length;
+    const rows=productWeekSource.map(r=>({
       product_id:numField(r,"product_id","id","sku_id"), brand_id:numField(r,"brand_id"), retailer_id:numField(r,"retailer_id"),
       week_ending:pickRow(r,"week_ending","period","week"),
       sales:numField(r,"sales","dollar_sales","sales_value"), units:numField(r,"units","volume_units"),
