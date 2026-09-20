@@ -23,7 +23,7 @@ function parseSmall(bytes:Uint8Array):Row[]{
 
 function clean(v:any){return String(v??"").trim()}
 function pick(r:Row,...names:string[]){for(const n of names)if(r[n]!==undefined&&clean(r[n])!=="")return clean(r[n]);return ""}
-function num(r:Row,...names:string[]){const raw=pick(r,...names);if(!raw)return 0;const direct=Number(raw);if(Number.isFinite(direct))return direct;const m=raw.match(/(\\d+(?:\\.\\d+)?)$/);return m?Number(m[1]):0}
+function num(r:Row,...names:string[]){const raw=pick(r,...names);if(!raw)return 0;const direct=Number(raw);if(Number.isFinite(direct))return direct;const m=raw.match(/(\d+(?:\.\d+)?)$/);return m?Number(m[1]):0}
 function dateValue(r:Row,...names:string[]){return pick(r,...names)}
 function parseDate(s:string){const t=Date.parse(s);return Number.isFinite(t)?new Date(t):null}
 
