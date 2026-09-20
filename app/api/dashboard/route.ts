@@ -32,13 +32,13 @@ export async function GET(){
     const weekly=periods.map(p=>{const rr=rows.filter((r:any)=>String(r.week_ending)===p);return{period:p,label:new Date(p).toLocaleDateString("en-US",{month:"short",day:"numeric"}),sales:rr.reduce((a:number,r:any)=>a+n(r.sales),0),units:rr.reduce((a:number,r:any)=>a+n(r.units),0)}});
     const brandMap=new Map<string,any>();
     for(const r of rows){const id=String(r.brand_id);const x=brandMap.get(id)||{id,name:"",salesLatest:0,salesPrior:0};x.salesLatest+=latestPeriods.includes(String(r.week_ending))?n(r.sales):0;x.salesPrior+=priorPeriods.includes(String(r.week_ending))?n(r.sales):0;brandMap.set(id,x);}
-    const brandsById=new Map(brands.map((b:any)=>[String(b.id),b]));
+    const brandsById=new Map<string,any>(brands.map((b:any)=>[String(b.id),b]));
     const total=latest.sales;
-    const topBrands=[...brandMap.values()].map(x=>{const b=brandsById.get(x.id)||{};return{id:x.id,name:b.name||("Brand "+x.id),category:b.category||"",parent_company:b.parent_company||"",home_regions:b.home_regions||"",sales:x.salesLatest,priorSales:x.salesPrior,share:total?x.salesLatest/total*100:0,growth:pct(x.salesLatest,x.salesPrior)}}).sort((a,b)=>b.sales-a.sales);
+    const topBrands=[...brandMap.values()].map((x:any)=>{const b=brandsById.get(x.id)||{};return{id:x.id,name:b.name||("Brand "+x.id),category:b.category||"",parent_company:b.parent_company||"",home_regions:b.home_regions||"",sales:x.salesLatest,priorSales:x.salesPrior,share:total?x.salesLatest/total*100:0,growth:pct(x.salesLatest,x.salesPrior)}}).sort((a:any,b:any)=>b.sales-a.sales);
     const categoryMap=new Map<string,any>();
     for(const r of rows){if(!latestPeriods.includes(String(r.week_ending)))continue;const key=String(r.category||"Unclassified");const x=categoryMap.get(key)||{name:key,sales:0,priorSales:0};x.sales+=n(r.sales);categoryMap.set(key,x);}
     for(const r of rows){if(!priorPeriods.includes(String(r.week_ending)))continue;const key=String(r.category||"Unclassified");const x=categoryMap.get(key)||{name:key,sales:0,priorSales:0};x.priorSales+=n(r.sales);categoryMap.set(key,x);}
-    const categories=[...categoryMap.values()].map(x=>({...x,growth:pct(x.sales,x.priorSales)})).sort((a,b)=>b.sales-a.sales);
+    const categories=[...categoryMap.values()].map((x:any)=>({...x,growth:pct(x.sales,x.priorSales)})).sort((a,b)=>b.sales-a.sales);
     let retailers:any[]=[];
     try{
       const rr=await get("cpgist_brand_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&order=week_ending.asc&limit=100000");
