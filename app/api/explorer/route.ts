@@ -8,7 +8,7 @@ async function brandDetail(id:string,brand:any,compact:boolean){
   const rows:any[]=await get("cpgist_brand_weekly?brand_id=eq."+enc(id)+"&select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&order=week_ending.asc&limit=100000");
   const periods=[...new Set(rows.map(r=>String(r.week_ending)))].sort();
   const latest=periods.slice(-13),prior=periods.slice(-26,-13),ls=new Set(latest),ps=new Set(prior);
-  const agg=(rs:any[])=>({sales:rs.reduce((a,r)=>a+n(r.sales),0),units:rs.reduce((a,r)=>a+n(r.units),0),distribution:rs.length?rs.reduce((a,r)=>a+n(r.distribution),0)/rs.length:null,price:rs.reduce((a,r)=>a+n(r.avg_price),0)/Math.max(1,rs.length),promoRate:rs.length?rs.reduce((a,r)=>a+n(r.promo_rate),0)/rs.length:null});
+  const agg=(rs:any[])=>{const sales=rs.reduce((a,r)=>a+n(r.sales),0),units=rs.reduce((a,r)=>a+n(r.units),0);return{sales,units,distribution:rs.length?rs.reduce((a,r)=>a+n(r.distribution),0)/rs.length:null,price:units?sales/units:null,promoRate:rs.length?rs.reduce((a,r)=>a+n(r.promo_rate),0)/rs.length:null};};
   const a=agg(rows.filter(r=>ls.has(String(r.week_ending)))),b=agg(rows.filter(r=>ps.has(String(r.week_ending))));
   const categoryName=String(brand.category||"");
   let categorySales=0;
