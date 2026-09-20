@@ -163,3 +163,129 @@ export async function importSyndicateZip(sb: SupabaseClient, file: File, progres
 
   return { brands: brands.length, retailers: retailers.length, products: products.length, salesRows: agg.salesRows, brandWeeks: agg.brandWeeks.length, categoryWeeks: agg.categoryWeeks.length, retailerWeeks: agg.retailerWeeks.length, brandRetailer: agg.brandRetailer.length };
 }
+
+
+function pickZipEntry(zip: Record<string, Uint8Array>, patterns: RegExp[]): Uint8Array | null {
+  const key = Object.keys(zip).find(k => patterns.some(p => p.test(k)));
+  return key ? zip[key] : null;
+}
+function pickRow(row: Row, ...names: string[]) {
+  for (const name of names) if (row[name] !== undefined && row[name] !== "") return row[name];
+  return "";
+}
+function rowsToRecords(bytes: Uint8Array) { return parseSmall(bytes); }
+function numField(row: Row, ...names: string[]) { const v = Number(pickRow(row, ...names)); return Number.isFinite(v) ? v : 0; }
+
+async function importCompactDatasetZip(sb: SupabaseClient, zip: Record<string, Uint8Array>, progress: Progress) {
+  const brandBytes = pickZipEntry(zip, [/(^|[/_])brands\.csv$/i]);
+  const retailerBytes = pickZipEntry(zip, [/(^|[/_])retailers\.csv$/i]);
+  const productBytes = pickZipEntry(zip, [/(^|[/_])products\.csv$/i]);
+  const categoryBytes = pickZipEntry(zip, [/(^|[/_])categories\.csv$/i]);
+  const regionBytes = pickZipEntry(zip, [/(^|[/_])(regions|locations)\.csv$/i]);
+  const brandWeekBytes = pickZipEntry(zip, [/brand_weekly\.csv$/i]);
+  const categoryWeekBytes = pickZipEntry(zip, [/category_weekly\.csv$/i]);
+  const retailerWeekBytes = pickZipEntry(zip, [/retailer_weekly\.csv$/i]);
+  const brandRetailerWeekBytes = pickZipEntry(zip, [/brand_retailer_weekly\.csv$/i]);
+  const brandCategoryWeekBytes = pickZipEntry(zip, [/brand_category_weekly\.csv$/i]);
+  const competitorWeekBytes = pickZipEntry(zip, [/competitor_weekly\.csv$/i]);
+
+  if (!brandBytes || !retailerBytes || !productBytes || !brandWeekBytes || !categoryWeekBytes || !retailerWeekBytes) {
+    throw new Error("This ZIP is not a supported CPGist Free Dataset. Required compact files were not found (brands, retailers, products, brand_weekly, category_weekly, retailer_weekly).");
+  }
+
+  progress("Detected the CPGist compact dataset. Loading master dimensions…");
+  const br = rowsToRecords(brandBytes);
+  const brands = br.map(r => ({
+    id: numField(r, "id", "brand_id"), name: pickRow(r, "name", "brand_name"),
+    category: pickRow(r, "category", "category_name") || null,
+    parent_company: pickRow(r, "parent_company", "parent_company_name") || null,
+    home_regions: pickRow(r, "home_regions", "home_region", "region") || null,
+    portfolio: pickRow(r, "portfolio", "portfolio_name") || null
+  })).filter(x => x.id && x.name);
+  const rr = rowsToRecords(retailerBytes);
+  const retailers = rr.map(r => ({
+    id: numField(r, "id", "retailer_id"), name: pickRow(r, "name", "retailer_name"),
+    channel: pickRow(r, "channel", "channel_name") || null, region: pickRow(r, "region", "region_name") || null,
+    retailer_group: pickRow(r, "retailer_group", "retailer_group_name", "group_name") || null,
+    total_stores: numField(r, "total_stores", "store_count")
+  })).filter(x => x.id && x.name);
+  const pr = rowsToRecords(productBytes);
+  const products = pr.map(r => ({
+    id: numField(r, "id", "product_id", "sku_id"), brand_id: numField(r, "brand_id"),
+    name: pickRow(r, "name", "product_name", "sku_name") || "Unnamed product",
+    sku: pickRow(r, "sku", "sku_code", "product_code") || null,
+    category: pickRow(r, "category", "category_name") || null,
+    subcategory: pickRow(r, "subcategory", "subcategory_name") || null,
+    size: pickRow(r, "size", "pack_size") || null, pack_count: numField(r, "pack_count")
+  })).filter(x => x.id && x.name);
+  const categories = categoryBytes ? rowsToRecords(categoryBytes).map(r => ({
+    id: numField(r, "id", "category_id"), name: pickRow(r, "name", "category_name"), parent_category: pickRow(r, "parent_category","parent_category_name") || null, subcategory_count: numField(r,"subcategory_count")
+  })).filter(x=>x.id&&x.name) : [];
+  const regions = regionBytes ? rowsToRecords(regionBytes).map(r => ({
+    id: numField(r, "id","region_id","location_id"), name: pickRow(r,"name","region_name","location_name"), country: pickRow(r,"country","country_name")||null, region_group: pickRow(r,"region_group","region_group_name")||null
+  })).filter(x=>x.id&&x.name) : [];
+
+  progress(`Master dimensions: ${brands.length} brands · ${retailers.length} retailers · ${products.length} products.`);
+  await upsertBatches(sb,"cpgist_brands",brands,"id",progress);
+  await upsertBatches(sb,"cpgist_retailers",retailers,"id",progress);
+  await upsertBatches(sb,"cpgist_products",products,"id",progress);
+  if (categories.length) await upsertBatches(sb,"cpgist_categories",categories,"id",progress);
+  if (regions.length) await upsertBatches(sb,"cpgist_regions",regions,"id",progress);
+
+  const mapBrandWeek = (bytes: Uint8Array) => rowsToRecords(bytes).map(r => ({
+    brand_id:numField(r,"brand_id"), week_ending:pickRow(r,"week_ending","period","week"), category:pickRow(r,"category","category_name")||null,
+    sales:numField(r,"sales","dollar_sales","sales_value"), units:numField(r,"units","volume_units"),
+    distribution:numField(r,"distribution","acv_distribution","weighted_distribution"), avg_price:numField(r,"avg_price","price","average_price")||null,
+    promo_rate:numField(r,"promo_rate","promo_rate_pct","promotion_rate")||null
+  })).filter(x=>x.brand_id&&x.week_ending);
+  const mapCategoryWeek = (bytes: Uint8Array) => rowsToRecords(bytes).map(r => ({
+    category:pickRow(r,"category","category_name"),week_ending:pickRow(r,"week_ending","period","week"),
+    sales:numField(r,"sales","dollar_sales","sales_value"),units:numField(r,"units","volume_units"),distribution:numField(r,"distribution","acv_distribution","weighted_distribution")
+  })).filter(x=>x.category&&x.week_ending);
+  const mapRetailerWeek = (bytes: Uint8Array) => rowsToRecords(bytes).map(r => ({
+    retailer_id:numField(r,"retailer_id","id"),week_ending:pickRow(r,"week_ending","period","week"),
+    sales:numField(r,"sales","dollar_sales","sales_value"),units:numField(r,"units","volume_units"),distribution:numField(r,"distribution","acv_distribution","weighted_distribution")
+  })).filter(x=>x.retailer_id&&x.week_ending);
+
+  progress("Loading compact weekly analytical tables (raw fact files are intentionally not copied into Postgres).");
+  const bw=mapBrandWeek(brandWeekBytes), cw=mapCategoryWeek(categoryWeekBytes), rw=mapRetailerWeek(retailerWeekBytes);
+  await upsertBatches(sb,"cpgist_brand_weekly",bw,"brand_id,week_ending",progress);
+  await upsertBatches(sb,"cpgist_category_weekly",cw,"category,week_ending",progress);
+  await upsertBatches(sb,"cpgist_retailer_weekly",rw,"retailer_id,week_ending",progress);
+
+  if (brandRetailerWeekBytes) {
+    const rows=rowsToRecords(brandRetailerWeekBytes).map(r=>({
+      brand_id:numField(r,"brand_id"),retailer_id:numField(r,"retailer_id"),category:pickRow(r,"category","category_name")||null,
+      week_ending:pickRow(r,"week_ending","period","week"),sales:numField(r,"sales","dollar_sales","sales_value"),units:numField(r,"units","volume_units"),
+      distribution:numField(r,"distribution","acv_distribution"),price:numField(r,"price","avg_price","average_price")||null,promo_rate:numField(r,"promo_rate","promotion_rate")||null
+    })).filter(x=>x.brand_id&&x.retailer_id&&x.week_ending);
+    await upsertBatches(sb,"cpgist_brand_retailer_weekly",rows,"brand_id,retailer_id,week_ending",progress);
+  }
+  if (brandCategoryWeekBytes) {
+    const rows=rowsToRecords(brandCategoryWeekBytes).map(r=>({
+      brand_id:numField(r,"brand_id"),category:pickRow(r,"category","category_name"),week_ending:pickRow(r,"week_ending","period","week"),
+      sales:numField(r,"sales","dollar_sales","sales_value"),units:numField(r,"units","volume_units"),distribution:numField(r,"distribution","acv_distribution")
+    })).filter(x=>x.brand_id&&x.category&&x.week_ending);
+    await upsertBatches(sb,"cpgist_brand_category_weekly",rows,"brand_id,category,week_ending",progress);
+  }
+  if (competitorWeekBytes) {
+    const rows=rowsToRecords(competitorWeekBytes).map(r=>({
+      brand_id:numField(r,"brand_id"),competitor_id:numField(r,"competitor_id","competitor_brand_id"),week_ending:pickRow(r,"week_ending","period","week"),
+      category:pickRow(r,"category","category_name")||null,sales:numField(r,"sales","dollar_sales","sales_value"),units:numField(r,"units","volume_units"),
+      price:numField(r,"price","avg_price","average_price")||null,share:numField(r,"share","market_share","share_pct")||null
+    })).filter(x=>x.week_ending&&x.competitor_id);
+    await upsertBatches(sb,"cpgist_competitor_weekly",rows,"brand_id,competitor_id,week_ending",progress);
+  }
+
+  return {type:"compact",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:bw.length,categoryWeeks:cw.length,retailerWeeks:rw.length};
+}
+
+export async function importDatasetZip(sb: SupabaseClient, file: File, progress: Progress) {
+  if (!file.name.toLowerCase().endsWith(".zip")) throw new Error("Please select a CPGist dataset ZIP file.");
+  if (file.size > 50 * 1024 * 1024) throw new Error("The ZIP is above Supabase Free's 50 MB file limit. Use the reduced CPGist Free Dataset ZIP (under 50 MB).");
+  progress("Reading dataset ZIP in your browser…");
+  const zip = unzipSync(new Uint8Array(await file.arrayBuffer()));
+  const names=Object.keys(zip);
+  if (names.some(n=>/brand_weekly\.csv$/i.test(n)) && names.some(n=>/category_weekly\.csv$/i.test(n))) return importCompactDatasetZip(sb,zip,progress);
+  return importSyndicateZip(sb,file,progress);
+}
