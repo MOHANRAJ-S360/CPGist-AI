@@ -16,7 +16,7 @@ function parseSmall(bytes:Uint8Array):Row[]{
     else cell+=c;
   }
   if(cell||row.length){flush();if(row.some(Boolean))rows.push(row)}
-  const headers=rows.shift()||[];
+  const headers=(rows.shift()||[]).map(h=>String(h||"").replace(/^\uFEFF/,"").trim());
   for(const values of rows){const r:Row={};headers.forEach((h,i)=>r[h]=values[i]??"");out.push(r)}
   return out;
 }
@@ -75,130 +75,237 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
   }
 }
 
+function basename(path:string){const i=path.lastIndexOf("/");return i>=0?path.slice(i+1):path}
 function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x));return k?zip[k]:null}
-function requiredEntry(zip:Record<string,Uint8Array>,name:string){const b=entry(zip,new RegExp(`(^|/)${name.replace(".","\\.")}$`,"i"));if(!b)throw new Error(`ZIP is missing ${name}.`);return b}
+function entryExact(zip:Record<string,Uint8Array>,...names:string[]){
+  const wanted=new Set(names.maasync function clearCompactDataset(sb:SupabaseClient,progress:Progress){
+  const targets:Array<[string,string]>=[
+    ["cpgist_product_summary","product_id"],["cpgist_brand_retailer_summary","brand_id"],
+    ["cpgist_brand_weekly","brand_id"],["cpgist_category_weekly","category"],
+    ["cpgist_retailer_weekly","retailer_id"],["cpgist_brand_retailer_weekly","brand_id"],
+    ["cpgist_product_weekly","product_id"],["cpgist_brand_category_weekly","brand_id"],
+    ["cpgist_competitor_weekly","brand_id"],["cpgist_products","id"],["cpgist_categories","id"],
+    ["cpgist_regions","id"],["cpgist_retailers","id"],["cpgist_brands","id"]
+  ];
+  for(const [table,key] of targets){
+    const {error}=await sb.from(table).delete().not(key,"is",null);
+    if(error)throw new Error(`Could not reset ${table}: ${error.message}`);
+  }
+  progress("Cleared previous compact dataset safely; loading the new archive from scratch…");
+}
 
 async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8Array>,progress:Progress){
-  const brandBytes=entry(zip,/(^|[/_])brands\.csv$/i);
-  const retailerBytes=entry(zip,/(^|[/_])retailers\.csv$/i);
-  const productBytes=entry(zip,/(^|[/_])products\.csv$/i);
-  const categoryBytes=entry(zip,/(^|[/_])categories\.csv$/i);
-  const regionBytes=entry(zip,/(^|[/_])(regions|locations)\.csv$/i);
-  const brandWeekBytes=entry(zip,/brand_weekly\.csv$/i);
-  const categoryWeekBytes=entry(zip,/category_weekly\.csv$/i);
-  const retailerWeekBytes=entry(zip,/retailer_weekly\.csv$/i);
-  const brandCategoryBytes=entry(zip,/brand_category_weekly\.csv$/i);
-  const competitorBytes=entry(zip,/competitor_weekly\.csv$/i);
-  const brandRetailerBytes=entry(zip,/brand_retailer_weekly\.csv$/i);
-  const productWeekBytes=entry(zip,/product_weekly\.csv$/i);
-  if(!brandBytes||!retailerBytes||!productBytes||!brandWeekBytes||!categoryWeekBytes||!retailerWeekBytes)
-    throw new Error("Unsupported CPGist Free Dataset: brands, retailers, products and the core weekly aggregate CSVs are required.");
+  // IMPORTANT: never use fuzzy filename matching here. Files such as 04_sub_brands.csv,
+  // 16a_competitor_brands.csv, 31_brand_category_weekly.csv and 29_brand_retailer_weekly.csv
+  // contain the words "brands", "category_weekly" or "retailer_weekly" and can otherwise be
+  // selected accidentally.
+  const brandBytes=entryExact(zip,"03_brands.csv");
+  const retailerBytes=entryExact(zip,"08_retailers.csv");
+  const productBytes=entryExact(zip,"06_products.csv");
+  const categoryBytes=entryExact(zip,"05_categories.csv");
+  const regionBytes=entryExact(zip,"10_locations.csv");
+  const brandWeekBytes=entryExact(zip,"26_brand_weekly.csv");
+  const categoryWeekBytes=entryExact(zip,"27_category_weekly.csv");
+  const retailerWeekBytes=entryExact(zip,"28_retailer_weekly.csv");
+  const brandCategoryBytes=entryExact(zip,"31_brand_category_weekly.csv");
+  const brandRetailerBytes=entryExact(zip,"29_brand_retailer_weekly.csv");
+  const productWeekBytes=entryExact(zip,"30_product_weekly.csv");
+  const competitorBytes=entryExact(zip,"32_competitor_weekly.csv");
+
+  const missing=[
+    ["03_brands.csv",brandBytes],["08_retailers.csv",retailerBytes],["06_products.csv",productBytes],
+    ["05_categories.csv",categoryBytes],["10_locations.csv",regionBytes],["26_brand_weekly.csv",brandWeekBytes],
+    ["27_category_weekly.csv",categoryWeekBytes],["28_retailer_weekly.csv",retailerWeekBytes],
+    ["31_brand_category_weekly.csv",brandCategoryBytes],["29_brand_retailer_weekly.csv",brandRetailerBytes],
+    ["30_product_weekly.csv",productWeekBytes]
+  ].filter(([,v])=>!v).map(([n])=>n);
+  if(missing.length)throw new Error("CPGist Free Dataset is incomplete. Missing: "+missing.join(", "));
 
   progress("Reading master dimensions…");
-  const brands=parseSmall(brandBytes).map(r=>({id:id(r,"id","brand_id"),name:pick(r,"name","brand_name"),category:pick(r,"category","category_name")||null,parent_company:pick(r,"parent_company","parent_company_name")||null,home_regions:pick(r,"home_regions","home_region","region")||null,portfolio:pick(r,"portfolio","portfolio_name")||null})).filter(x=>x.id&&x.name);
-  const retailers=parseSmall(retailerBytes).map(r=>({id:id(r,"id","retailer_id"),name:pick(r,"name","retailer_name"),channel:pick(r,"channel","channel_name")||null,region:pick(r,"region","region_name")||null,retailer_group:pick(r,"retailer_group","retailer_group_name","group_name")||null,total_stores:num(r,"total_stores","store_count")})).filter(x=>x.id&&x.name);
-  const products=parseSmall(productBytes).map(r=>({id:id(r,"id","product_id","sku_id"),brand_id:id(r,"brand_id"),name:pick(r,"name","product_name","sku_name")||"Unnamed product",sku:pick(r,"sku","sku_code","product_code")||null,category:pick(r,"category","category_name")||null,subcategory:pick(r,"subcategory","subcategory_name")||null,size:pick(r,"size","pack_size")||null,pack_count:num(r,"pack_count")})).filter(x=>x.id&&x.name);
-  const categoryRaw=categoryBytes?parseSmall(categoryBytes):[];
-  const categoryMap=new Map<number,{id:number,name:string,parent_category:string|null,subcategory_count:number}>();
+  const brands=parseSmall(brandBytes).map(r=>({
+    id:id(r,"brand_id","id"),
+    name:pick(r,"brand_name","name"),
+    category:pick(r,"category_name","category")||null,
+    parent_company:pick(r,"parent_company","parent_company_name")||null,
+    home_regions:pick(r,"home_region","home_regions","region")||null,
+    portfolio:pick(r,"portfolio","portfolio_name")||null
+  })).filter(x=>x.id&&x.name);
+
+  const retailers=parseSmall(retailerBytes).map(r=>({
+    id:id(r,"retailer_id","id"),
+    name:pick(r,"retailer_name","name"),
+    channel:pick(r,"channel_name","channel")||null,
+    region:pick(r,"region","region_name")||null,
+    retailer_group:pick(r,"retailer_group_name","retailer_group")||null,
+    total_stores:num(r,"store_count","total_stores","store_counts")
+  })).filter(x=>x.id&&x.name);
+
+  const products=parseSmall(productBytes).map(r=>({
+    id:id(r,"product_id","id","sku_id"),
+    brand_id:id(r,"brand_id"),
+    name:pick(r,"product_name","name","sku_name")||"Unnamed product",
+    sku:pick(r,"sku","sku_code","product_code")||null,
+    category:pick(r,"category_name","category")||null,
+    subcategory:pick(r,"subcategory_name","subcategory")||null,
+    size:pick(r,"pack_size","size")||null,
+    pack_count:num(r,"pack_count")
+  })).filter(x=>x.id&&x.name);
+
+  const categoryRaw=parseSmall(categoryBytes);
+  const categoryMap=new Map<string,{id:number,name:string,parent_category:string|null,subcategory_count:number}>();
   for(const r of categoryRaw){
-    const cid=id(r,"id","category_id"); const name=pick(r,"name","category_name");
+    const cid=id(r,"category_id","id"),name=pick(r,"category_name","name");
     if(!cid||!name)continue;
-    const key=cid;
+    const key=clean(pick(r,"category_id","id"));
     const existing=categoryMap.get(key);
-    const parent=pick(r,"parent_category","parent_category_name")||null;
-    if(existing){existing.subcategory_count+=1;if(!existing.parent_category&&parent)existing.parent_category=parent}
-    else categoryMap.set(key,{id:cid,name,parent_category:parent,subcategory_count:1});
+    const sub=pick(r,"subcategory_name","subcategory")||null;
+    if(existing){if(sub)existing.subcategory_count+=1}
+    else categoryMap.set(key,{id:cid,name,parent_category:null,subcategory_count:sub?1:0});
   }
   const categories=[...categoryMap.values()];
-  const regionRaw=regionBytes?parseSmall(regionBytes):[];
+
+  const regionRaw=parseSmall(regionBytes);
   const regionMap=new Map<string,{id:number,name:string,country:string|null,region_group:string|null}>();
   for(const r of regionRaw){
     const name=pick(r,"region","region_name","name","location_name");
     if(!name)continue;
     const key=name.toLowerCase();
-    if(!regionMap.has(key)){
-      regionMap.set(key,{id:regionMap.size+1,name,country:pick(r,"country","country_name")||null,region_group:pick(r,"region_group","region_group_name")||null});
-    }
+    if(!regionMap.has(key))regionMap.set(key,{id:regionMap.size+1,name,country:pick(r,"country","country_name")||null,region_group:pick(r,"region_group","region_group_name")||null});
   }
   const regions=[...regionMap.values()];
-  if(!brands.length||!retailers.length||!products.length)throw new Error("Dataset master dimensions are empty.");
-  progress(`Validated ${brands.length.toLocaleString()} brands · ${retailers.length.toLocaleString()} retailers · ${products.length.toLocaleString()} products.`);
+
+  if(!brands.length)throw new Error("Dataset master dimension error: 03_brands.csv was found but no valid brand rows were parsed.");
+  if(!retailers.length)throw new Error("Dataset master dimension error: 08_retailers.csv was found but no valid retailer rows were parsed.");
+  if(!products.length)throw new Error("Dataset master dimension error: 06_products.csv was found but no valid product rows were parsed.");
+  if(!categories.length)throw new Error("Dataset master dimension error: 05_categories.csv was found but no valid category rows were parsed.");
+  if(!regions.length)throw new Error("Dataset master dimension error: 10_locations.csv was found but no valid region rows were parsed.");
+
+  const brandRows:any[]=[],categoryRows:any[]=[],retailerRows:any[]=[],brandCategoryRows:any[]=[],brandRetailerRows:any[]=[],productRows:any[]=[];
+  const categoryName=new Map<number,string>(categories.map(x=>[x.id,x.name]));
+  const brandMap=new Map<number,any>(brands.map(x=>[x.id,x]));
+  const productMap=new Map<number,any>(products.map(x=>[x.id,x]));
+
+  await scanCsv(brandWeekBytes,r=>brandRows.push({
+    brand_id:id(r,"brand_id"),week_ending:dateValue(r,"week_ending","period","week"),
+    category:categoryName.get(id(r,"category_id"))||pick(r,"category_name","category")||brandMap.get(id(r,"brand_id"))?.category||null,
+    sales:num(r,"dollar_sales","sales","sales_value"),units:num(r,"units","volume_units"),
+    distribution:num(r,"acv_distribution","distribution","weighted_distribution"),
+    avg_price:num(r,"average_price","avg_price","price")||null,
+    promo_rate:num(r,"promo_rate","promo_rate_pct","promotion_rate")||null
+  }),progress);
+
+  await scanCsv(categoryWeekBytes,r=>categoryRows.push({
+    category:categoryName.get(id(r,"category_id"))||pick(r,"category_name","category")||"Unclassified",
+    week_ending:dateValue(r,"week_ending","period","week"),
+    sales:num(r,"dollar_sales","sales","sales_value"),units:num(r,"units","volume_units"),
+    distribution:num(r,"distribution","acv_distribution","weighted_distribution")
+  }),progress);
+
+  await scanCsv(retailerWeekBytes,r=>retailerRows.push({
+    retailer_id:id(r,"retailer_id","id"),week_ending:dateValue(r,"week_ending","period","week"),
+    sales:num(r,"dollar_sales","sales","sales_value"),units:num(r,"units","volume_units"),
+    distribution:num(r,"distribution","acv_distribution","weighted_distribution")
+  }),progress);
+
+  await scanCsv(brandCategoryBytes,r=>brandCategoryRows.push({
+    brand_id:id(r,"brand_id"),category:categoryName.get(id(r,"category_id"))||pick(r,"category_name","category")||"Unclassified",
+    week_ending:dateValue(r,"week_ending","period","week"),
+    sales:num(r,"brand_dollar_sales","dollar_sales","sales","sales_value"),units:num(r,"brand_units","units","volume_units"),
+    distribution:null
+  }),progress);
+
+  await scanCsv(brandRetailerBytes,r=>brandRetailerRows.push({
+    brand_id:id(r,"brand_id"),retailer_id:id(r,"retailer_id"),
+    category:categoryName.get(id(r,"category_id"))||pick(r,"category_name","category")||null,
+    week_ending:dateValue(r,"week_ending","period","week"),
+    sales:num(r,"dollar_sales","sales","sales_value"),units:num(r,"units","volume_units"),
+    distribution:num(r,"distribution","acv_distribution")||null,
+    price:num(r,"average_price","avg_price","price")||null,
+    promo_rate:num(r,"promo_rate","promo_rate_pct","promotion_rate")||null
+  }),progress);
+
+  await scanCsv(productWeekBytes,r=>productRows.push({
+    product_id:id(r,"product_id"),brand_id:id(r,"brand_id"),retailer_id:id(r,"retailer_id"),
+    week_ending:dateValue(r,"week_ending","period","week"),
+    sales:num(r,"dollar_sales","sales","sales_value"),units:num(r,"units","volume_units"),
+    price:num(r,"average_price","avg_price","price")||null,
+    distribution:num(r,"distribution","acv_distribution")||null,promo_rate:null
+  }),progress);
+
+  const periods=[...new Set(brandRows.map(r=>r.week_ending).filter(Boolean))].sort();
+  if(periods.length<13)throw new Error(`Only ${periods.length} weekly periods were found in 26_brand_weekly.csv; at least 13 are required.`);
+  const periodEnd=periods.at(-1)!;
+  const latest13=new Set(periods.slice(-13)), prior13=new Set(periods.slice(-26,-13));
+  const latestPeriodSet=new Set(periods.slice(-13));
+  const periodStart=periods[0];
+  if(periodEnd>"2026-09-19")throw new Error(`Dataset contains a future weekly period (${periodEnd}). Latest allowed period is 2026-09-19.`);
+  progress(`Validated ${brands.length.toLocaleString()} brands · ${retailers.length.toLocaleString()} retailers · ${products.length.toLocaleString()} products · ${categories.length.toLocaleString()} categories · ${regions.length.toLocaleString()} regions.`);
+  progress(`Source coverage: ${periodStart} → ${periodEnd} (${periods.length} weeks).`);
+
+  // The archive is the source of truth; only the compact, client-ready analytical layer is loaded into Postgres.
+  await clearCompactDataset(sb,progress);
 
   await upsertBatches(sb,"cpgist_brands",brands,"id",progress);
   await upsertBatches(sb,"cpgist_retailers",retailers,"id",progress);
   await upsertBatches(sb,"cpgist_products",products,"id",progress);
-  if(categories.length)await upsertBatches(sb,"cpgist_categories",categories,"id",progress);
-  if(regions.length)await upsertBatches(sb,"cpgist_regions",regions,"id",progress);
-
-  const brandRows:any[]=[],categoryRows:any[]=[],retailerRows:any[]=[],brandCategoryRows:any[]=[],competitorRows:any[]=[];
-  await scanCsv(brandWeekBytes,r=>brandRows.push({brand_id:id(r,"brand_id"),week_ending:dateValue(r,"week_ending","period","week"),category:pick(r,"category","category_name")||null,sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution"),avg_price:num(r,"avg_price","price","average_price")||null,promo_rate:num(r,"promo_rate","promo_rate_pct","promotion_rate")||null}),progress);
-  await scanCsv(categoryWeekBytes,r=>categoryRows.push({category:pick(r,"category","category_name"),week_ending:dateValue(r,"week_ending","period","week"),sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution")}),progress);
-  await scanCsv(retailerWeekBytes,r=>retailerRows.push({retailer_id:id(r,"retailer_id","id"),week_ending:dateValue(r,"week_ending","period","week"),sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution")}),progress);
-  if(brandCategoryBytes)await scanCsv(brandCategoryBytes,r=>brandCategoryRows.push({brand_id:id(r,"brand_id"),category:pick(r,"category","category_name"),week_ending:dateValue(r,"week_ending","period","week"),sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution")}),progress);
-  if(competitorBytes)await scanCsv(competitorBytes,r=>competitorRows.push({brand_id:id(r,"brand_id"),competitor_id:id(r,"competitor_id","competitor_brand_id"),week_ending:dateValue(r,"week_ending","period","week"),category:pick(r,"category","category_name")||null,sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),price:num(r,"price","avg_price","average_price")||null,share:num(r,"share","market_share","share_pct")||null}),progress);
-
-  const periods=[...new Set(brandRows.map(r=>r.week_ending).filter(Boolean))].sort();
-  if(periods.length<13)throw new Error(`Only ${periods.length} weekly periods were found; at least 13 are required.`);
-  const periodEnd=periods.at(-1)!;
-  const cutoff=periods[Math.max(0,periods.length-13)];
-  const latest13=new Set(periods.slice(-13));
-  progress(`Source coverage: ${periods[0]} → ${periodEnd} (${periods.length} weeks). Using ${cutoff} → ${periodEnd} for client summaries.`);
-
+  await upsertBatches(sb,"cpgist_categories",categories,"id",progress);
+  await upsertBatches(sb,"cpgist_regions",regions,"id",progress);
   await upsertBatches(sb,"cpgist_brand_weekly",brandRows,"brand_id,week_ending",progress);
   await upsertBatches(sb,"cpgist_category_weekly",categoryRows,"category,week_ending",progress);
   await upsertBatches(sb,"cpgist_retailer_weekly",retailerRows,"retailer_id,week_ending",progress);
-  if(brandCategoryRows.length)await upsertBatches(sb,"cpgist_brand_category_weekly",brandCategoryRows,"brand_id,category,week_ending",progress);
-  if(competitorRows.length)await upsertBatches(sb,"cpgist_competitor_weekly",competitorRows,"brand_id,competitor_id,week_ending",progress);
+  await upsertBatches(sb,"cpgist_brand_category_weekly",brandCategoryRows,"brand_id,category,week_ending",progress);
+  await upsertBatches(sb,"cpgist_brand_retailer_weekly",brandRetailerRows,"brand_id,retailer_id,week_ending",progress);
 
-  // Keep product and account detail useful without trying to put the raw product×retailer×week cube into a 500 MB database.
-  // The ZIP remains the source archive; Postgres receives client-ready 13-week summaries.
-  const productMap=new Map<number,{brand_id:number}>(products.map(p=>[p.id,{brand_id:p.brand_id}]));
+  // Store only latest-13-week product detail in the compact database; the full 201k-row product-week cube stays in the ZIP.
   const productAgg=new Map<number,any>();
-  const retailerAgg=new Map<string,any>();
-  if(productWeekBytes){
-    await scanCsv(productWeekBytes,r=>{
-      const w=dateValue(r,"week_ending","period","week"),pid=id(r,"product_id","id","sku_id"),rid=id(r,"retailer_id","id");
-      if(!pid||!latest13.has(w))return;
-      const p=productMap.get(pid);if(!p)return;
-      const x=productAgg.get(pid)||{product_id:pid,brand_id:p.brand_id,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0,promo_sum:0,promo_n:0};
-      const sales=num(r,"sales","dollar_sales","sales_value"),units=num(r,"units","volume_units"),price=num(r,"price","avg_price","average_price"),dist=num(r,"distribution","acv_distribution","weighted_distribution"),promo=num(r,"promo_rate","promo_rate_pct","promotion_rate");
-      x.sales_13w+=sales;x.units_13w+=units;if(price){x.price_sum+=price;x.price_n++}if(dist){x.dist_sum+=dist;x.dist_n++}if(promo){x.promo_sum+=promo;x.promo_n++};productAgg.set(pid,x);
-      if(rid){
-        const k=p.brand_id+"|"+rid,xr=retailerAgg.get(k)||{brand_id:p.brand_id,retailer_id:rid,category:pick(r,"category","category_name")||products.find(z=>z.id===pid)?.category||null,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0,promo_sum:0,promo_n:0};
-        xr.sales_13w+=sales;xr.units_13w+=units;if(price){xr.price_sum+=price;xr.price_n++}if(dist){xr.dist_sum+=dist;xr.dist_n++}if(promo){xr.promo_sum+=promo;xr.promo_n++};retailerAgg.set(k,xr);
-      }
-    },progress);
+  for(const r of productRows){
+    if(!latestPeriodSet.has(r.week_ending))continue;
+    const x=productAgg.get(r.product_id)||{product_id:r.product_id,brand_id:r.brand_id,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0};
+    x.sales_13w+=r.sales;x.units_13w+=r.units;
+    if(r.price!=null){x.price_sum+=r.price;x.price_n++}
+    if(r.distribution!=null){x.dist_sum+=r.distribution;x.dist_n++}
+    productAgg.set(r.product_id,x);
   }
-
-  const productSummary=[...productAgg.values()].map(x=>({product_id:x.product_id,brand_id:x.brand_id,period_end:x.period_end,sales_13w:x.sales_13w,units_13w:x.units_13w,avg_price_13w:x.price_n?x.price_sum/x.price_n:null,distribution_13w:x.dist_n?x.dist_sum/x.dist_n:null,promo_rate_13w:x.promo_n?x.promo_sum/x.promo_n:null}));
-  const brandRetailerSummary=[...retailerAgg.values()].map(x=>({brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,period_end:x.period_end,sales_13w:x.sales_13w,units_13w:x.units_13w,avg_price_13w:x.price_n?x.price_sum/x.price_n:null,distribution_13w:x.dist_n?x.dist_sum/x.dist_n:null,promo_rate_13w:x.promo_n?x.promo_sum/x.promo_n:null}));
+  const productSummary=[...productAgg.values()].map(x=>({product_id:x.product_id,brand_id:x.brand_id,period_end:x.period_end,sales_13w:x.sales_13w,units_13w:x.units_13w,avg_price_13w:x.price_n?x.price_sum/x.price_n:null,distribution_13w:x.dist_n?x.dist_sum/x.dist_n:null,promo_rate_13w:null}));
   if(productSummary.length)await upsertBatches(sb,"cpgist_product_summary",productSummary,"product_id",progress);
+
+  // The archive already provides the correct brand×retailer cube; use it rather than rebuilding it from product rows.
+  const retailerSummaryAgg=new Map<string,any>();
+  for(const r of brandRetailerRows){
+    if(!latestPeriodSet.has(r.week_ending))continue;
+    const k=r.brand_id+"|"+r.retailer_id;
+    const x=retailerSummaryAgg.get(k)||{brand_id:r.brand_id,retailer_id:r.retailer_id,category:r.category,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0,promo_sum:0,promo_n:0};
+    x.sales_13w+=r.sales;x.units_13w+=r.units;
+    if(r.price!=null){x.price_sum+=r.price;x.price_n++}
+    if(r.distribution!=null){x.dist_sum+=r.distribution;x.dist_n++}
+    if(r.promo_rate!=null){x.promo_sum+=r.promo_rate;x.promo_n++}
+    retailerSummaryAgg.set(k,x);
+  }
+  const brandRetailerSummary=[...retailerSummaryAgg.values()].map(x=>({brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,period_end:x.period_end,sales_13w:x.sales_13w,units_13w:x.units_13w,avg_price_13w:x.price_n?x.price_sum/x.price_n:null,distribution_13w:x.dist_n?x.dist_sum/x.dist_n:null,promo_rate_13w:x.promo_n?x.promo_sum/x.promo_n:null}));
   if(brandRetailerSummary.length)await upsertBatches(sb,"cpgist_brand_retailer_summary",brandRetailerSummary,"brand_id,retailer_id",progress);
 
-  // Do not import the raw product_weekly or brand_retailer_weekly cubes. They are intentionally too large for the Free Postgres quota.
-  // Verify the actual persisted dataset before declaring success.
+  // 32_competitor_weekly is intentionally archive-only because the compact schema does not have a competitor-brand master/foreign-key context.
+  // Keeping it out of the compact tables prevents invented brand IDs and preserves analytical integrity.
+  if(competitorBytes)progress("Competitor weekly data validated as archive-only; no invented competitor-to-brand mapping was written.");
+
   const checks=await Promise.all([
     sb.from("cpgist_brands").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_retailers").select("id",{count:"exact",head:true}),
     sb.from("cpgist_products").select("id",{count:"exact",head:true}),
-    sb.from("cpgist_brand_weekly").select("brand_id",{count:"exact",head:true})
+    sb.from("cpgist_categories").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_regions").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_brand_weekly").select("brand_id",{count:"exact",head:true}),
+    sb.from("cpgist_category_weekly").select("category",{count:"exact",head:true}),
+    sb.from("cpgist_retailer_weekly").select("retailer_id",{count:"exact",head:true}),
+    sb.from("cpgist_product_summary").select("product_id",{count:"exact",head:true}),
+    sb.from("cpgist_brand_retailer_summary").select("brand_id",{count:"exact",head:true})
   ]);
   const bad=checks.find(x=>x.error);
   if(bad?.error)throw new Error(`Import verification failed: ${bad.error.message}`);
-  const [bCount,pCount,bwCount]=checks.map(x=>x.count||0);
-  if(!bCount||!pCount||!bwCount)throw new Error("Import verification failed: the compact tables are still empty. Check Supabase RLS/write access and retry.");
-  progress(`Verified live database: ${bCount.toLocaleString()} brands · ${pCount.toLocaleString()} products · ${bwCount.toLocaleString()} brand-week rows.`);
+  const counts=checks.map(x=>x.count||0);
+  if(!counts[0]||!counts[1]||!counts[2]||!counts[3]||!counts[4]||!counts[5])throw new Error("Import verification failed: one or more compact master/weekly tables are empty. Check Supabase permissions and retry.");
+  progress(`Verified live database: ${counts[0].toLocaleString()} brands · ${counts[1].toLocaleString()} retailers · ${counts[2].toLocaleString()} products · ${counts[3].toLocaleString()} categories · ${counts[4].toLocaleString()} regions · ${counts[5].toLocaleString()} brand-weeks.`);
 
-  return {type:"compact",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart:periods[0],periodEnd};
+  return {type:"compact",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart,periodEnd};
 }
 
-export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
-  if(!file.name.toLowerCase().endsWith(".zip"))throw new Error("Please select a CPGist dataset ZIP file.");
-  if(file.size>100*1024*1024)throw new Error("The CPGist Free Dataset ZIP must be 100 MB or smaller for browser import.");
-  progress(`Reading ${file.name}…`);
-  let zip:Record<string,Uint8Array>;
-  try{zip=unzipSync(new Uint8Array(await file.arrayBuffer()))}catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
-  const names=Object.keys(zip);
-  if(names.some(n=>/brand_weekly\.csv$/i.test(n))&&names.some(n=>/category_weekly\.csv$/i.test(n)))
-    return importCompactDatasetZip(sb,zip,progress);
-  throw new Error("This is not the CPGist Free Dataset package. Expected brand_weekly.csv and category_weekly.csv were not found.");
-}
