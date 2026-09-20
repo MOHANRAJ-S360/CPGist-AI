@@ -70,6 +70,8 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
 function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x));return k?zip[k]:null}
 function requiredEntry(zip:Record<string,Uint8Array>,name:string){const b=entry(zip,new RegExp(`(^|/)${name.replace(".","\\.")}$`,"i"));if(!b)throw new Error(`ZIP is missing ${name}.`);return b}
 
+const REQUIRED_LATEST_WEEK = "2026-09-19";
+
 async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8Array>,progress:Progress){
   const brandBytes=entry(zip,/(^|[/_])brands\.csv$/i);
   const retailerBytes=entry(zip,/(^|[/_])retailers\.csv$/i);
@@ -112,6 +114,9 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   const periods=[...new Set(brandRows.map(r=>r.week_ending).filter(Boolean))].sort();
   if(periods.length<13)throw new Error(`Only ${periods.length} weekly periods were found; at least 13 are required.`);
   const periodEnd=periods.at(-1)!;
+  if(periodEnd !== REQUIRED_LATEST_WEEK){
+    throw new Error(`Dataset freshness check failed. Expected the latest completed weekly period to be ${REQUIRED_LATEST_WEEK}, but the package ends at ${periodEnd}. Please use the current CPGist_Supabase_Free_Dataset.zip.`);
+  }
   const cutoff=periods[Math.max(0,periods.length-13)];
   const latest13=new Set(periods.slice(-13));
   progress(`Source coverage: ${periods[0]} → ${periodEnd} (${periods.length} weeks). Using ${cutoff} → ${periodEnd} for client summaries.`);
@@ -160,7 +165,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   if(!bCount||!pCount||!bwCount)throw new Error("Import verification failed: the compact tables are still empty. Check Supabase RLS/write access and retry.");
   progress(`Verified live database: ${bCount.toLocaleString()} brands · ${pCount.toLocaleString()} products · ${bwCount.toLocaleString()} brand-week rows.`);
 
-  return {type:"compact",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart:periods[0],periodEnd};
+  return {type:"compact",csvFiles:csvCount,brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart:periods[0],periodEnd};
 }
 
 export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
@@ -170,6 +175,7 @@ export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Prog
   let zip:Record<string,Uint8Array>;
   try{zip=unzipSync(new Uint8Array(await file.arrayBuffer()))}catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
   const names=Object.keys(zip);
+  const csvCount=names.filter(n=>/\\.csv$/i.test(n)).length;
   if(names.some(n=>/brand_weekly\.csv$/i.test(n))&&names.some(n=>/category_weekly\.csv$/i.test(n)))
     return importCompactDatasetZip(sb,zip,progress);
   throw new Error("This is not the CPGist Free Dataset package. Expected brand_weekly.csv and category_weekly.csv were not found.");
