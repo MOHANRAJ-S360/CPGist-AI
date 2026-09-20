@@ -1,3 +1,4 @@
+// Production redeploy marker: 2026-09-20
 import {NextResponse} from "next/server";
 
 const base=()=>({u:process.env.NEXT_PUBLIC_SUPABASE_URL,k:process.env.SUPABASE_SERVICE_ROLE_KEY});
