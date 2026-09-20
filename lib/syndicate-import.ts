@@ -5,22 +5,22 @@ type Row = Record<string,string>;
 type Progress = (message:string)=>void;
 
 function parseSmall(bytes:Uint8Array):Row[]{
-  const text=strFromU8(bytes), rows:string[][]=[], out:Row[]=[];
+  const text=strFromU8(bytes).replace(/^\uFEFF/,"");
+  const rows:string[][]=[], out:Row[]=[];
   let row:string[]=[], cell="", quoted=false;
   const flush=()=>{row.push(cell);cell=""};
   for(let i=0;i<text.length;i++){
     const c=text[i];
-    if(c=='"'){if(quoted&&text[i+1]=='"'){cell+='"';i++}else quoted=!quoted}
-    else if(c==","&&!quoted)flush();
-    else if((c=="\n"||c=="\r")&&!quoted){if(c=="\r"&&text[i+1]=="\n")i++;flush();if(row.some(Boolean))rows.push(row);row=[]}
+    if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}
+    else if(c===","&&!quoted)flush();
+    else if((c==="\n"||c==="\r")&&!quoted){if(c==="\r"&&text[i+1]==="\n")i++;flush();if(row.some(v=>v.trim()!==""))rows.push(row);row=[]}
     else cell+=c;
   }
-  if(cell||row.length){flush();if(row.some(Boolean))rows.push(row)}
-  const headers=rows.shift()||[];
-  for(const values of rows){const r:Row={};headers.forEach((h,i)=>r[h]=values[i]??"");out.push(r)}
+  if(cell||row.length){flush();if(row.some(v=>v.trim()!==""))rows.push(row)}
+  const headers=(rows.shift()||[]).map(h=>h.replace(/^\uFEFF/,"").trim().toLowerCase());
+  for(const values of rows){const r:Row={};headers.forEach((h,i)=>r[h]=String(values[i]??"").trim());out.push(r)}
   return out;
 }
-
 function clean(v:any){return String(v??"").trim()}
 function pick(r:Row,...names:string[]){for(const n of names)if(r[n]!==undefined&&clean(r[n])!=="")return clean(r[n]);return ""}
 function num(r:Row,...names:string[]){const raw=pick(r,...names);if(!raw)return 0;const direct=Number(raw);if(Number.isFinite(direct))return direct;const m=raw.match(/(\d+(?:\.\d+)?)$/);return m?Number(m[1]):0}
@@ -67,17 +67,17 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
   }
 }
 
-function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x));return k?zip[k]:null}
-function requiredEntry(zip:Record<string,Uint8Array>,name:string){const b=entry(zip,new RegExp(`(^|/)${name.replace(".","\\.")}$`,"i"));if(!b)throw new Error(`ZIP is missing ${name}.`);return b}
-
+function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x.replace(/\\/g,"/")));return k?zip[k]:null}
+function entryByBasename(zip:Record<string,Uint8Array>,names:string[]){const wanted=new Set(names.map(x=>x.toLowerCase()));const k=Object.keys(zip).find(x=>wanted.has(x.replace(/\\/g,"/").split("/").pop()!.toLowerCase()));return k?zip[k]:null}
+function requiredEntry(zip:Record<string,Uint8Array>,name:string){const b=entryByBasename(zip,[name]);if(!b)throw new Error("ZIP is missing "+name+".");return b}
 const REQUIRED_LATEST_WEEK = "2026-09-19";
 
 async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8Array>,progress:Progress){
-  const brandBytes=entry(zip,/(^|[/_])brands\.csv$/i);
-  const retailerBytes=entry(zip,/(^|[/_])retailers\.csv$/i);
-  const productBytes=entry(zip,/(^|[/_])products\.csv$/i);
-  const categoryBytes=entry(zip,/(^|[/_])categories\.csv$/i);
-  const regionBytes=entry(zip,/(^|[/_])(regions|locations)\.csv$/i);
+  const brandBytes=entryByBasename(zip,["03_brands.csv","brands.csv"]);
+  const retailerBytes=entryByBasename(zip,["08_retailers.csv","retailers.csv"]);
+  const productBytes=entryByBasename(zip,["06_products.csv","products.csv"]);
+  const categoryBytes=entryByBasename(zip,["05_categories.csv","categories.csv"]);
+  const regionBytes=entryByBasename(zip,["10_locations.csv","regions.csv","locations.csv"]);
   const brandWeekBytes=entry(zip,/brand_weekly\.csv$/i);
   const categoryWeekBytes=entry(zip,/category_weekly\.csv$/i);
   const retailerWeekBytes=entry(zip,/retailer_weekly\.csv$/i);
@@ -95,7 +95,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   const categories=categoryBytes?parseSmall(categoryBytes).map(r=>({id:num(r,"id","category_id"),name:pick(r,"name","category_name"),parent_category:pick(r,"parent_category","parent_category_name")||null,subcategory_count:num(r,"subcategory_count")})).filter(x=>x.id&&x.name):[];
   if(categoryBytes){const cr=parseSmall(categoryBytes);const counts=new Map<number,number>();for(const r of cr){const id=num(r,"id","category_id");if(id)counts.set(id,(counts.get(id)||0)+1)}for(const x of categories)x.subcategory_count=counts.get(x.id)||x.subcategory_count||0;}
   const regions=regionBytes?parseSmall(regionBytes).map(r=>({id:num(r,"id","region_id","location_id"),name:pick(r,"name","region_name","location_name")||[pick(r,"city"),pick(r,"market")].filter(Boolean).join(" — "),country:pick(r,"country","country_name")||null,region_group:pick(r,"region_group","region_group_name","region")||null})).filter(x=>x.id&&x.name):[];
-  if(!brands.length||!retailers.length||!products.length)throw new Error("Dataset master dimensions are empty.");
+  if(!brands.length||!retailers.length||!products.length){const csvs=Object.keys(zip).filter(n=>/\.csv$/i.test(n)).map(n=>n.replace(/\\/g,"/").split("/").pop()).join(", ");throw new Error("Dataset master dimensions could not be parsed. Brands="+brands.length+", Retailers="+retailers.length+", Products="+products.length+". Expected 03_brands.csv, 08_retailers.csv and 06_products.csv. CSVs found: "+csvs.slice(0,1200));}
   progress(`Validated ${brands.length.toLocaleString()} brands · ${retailers.length.toLocaleString()} retailers · ${products.length.toLocaleString()} products.`);
 
   await upsertBatches(sb,"cpgist_brands",brands,"id",progress);
