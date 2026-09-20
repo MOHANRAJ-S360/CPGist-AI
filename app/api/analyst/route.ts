@@ -57,6 +57,43 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   const category = a.categoryId ? String(a.categoryId) : "";
   const retailer = a.retailerId ? String(a.retailerId) : "";
 
+  // Prefer the reduced CPGist dataset when it is installed. It is the current
+  // client-facing dataset and keeps the analyst aligned with the dashboard.
+  let compact = false;
+  try {
+    const probe = await get("cpgist_brands?select=id&limit=1", token);
+    compact = Array.isArray(probe) && probe.length > 0;
+  } catch {}
+
+  if (compact) {
+    if (mode === "retailer" || (retailer && !brand && !category)) {
+      try {
+        let q = "cpgist_brand_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution,price,promo_rate&limit=100000";
+        q += "&retailer_id=eq." + encodeURIComponent(retailer);
+        if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
+        if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
+        const raw = await get(q, token);
+        return { rows: raw.map((r:any) => ({
+          brand_id: r.brand_id, category: r.category, week_ending: r.week_ending,
+          dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
+          avg_discount_depth_pct: r.discount_depth_pct, promo_observations: r.promo_rate,
+          observations: 1
+        })), source: "cpgist_brand_retailer_weekly" };
+      } catch {}
+    }
+    let q = "cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&limit=100000";
+    if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
+    if (category) q += "&category=ilike." + encodeURIComponent(category);
+    if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
+    if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
+    const raw = await get(q, token);
+    return { rows: raw.map((r:any) => ({
+      brand_id: r.brand_id, category: r.category, week_ending: r.week_ending,
+      dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
+      avg_price: r.avg_price, promo_observations: r.promo_rate, observations: 1
+    })), source: "cpgist_brand_weekly" };
+  }
+
   if (mode === "retailer" || (retailer && !brand && !category)) {
     let q = "syndicate_retailer_weekly?select=week_ending,retailer_id,dollar_sales,units,acv_distribution&limit=30000";
     q += "&retailer_id=eq." + encodeURIComponent(retailer);
@@ -72,7 +109,6 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
   return { rows: await get(q, token), source: "syndicate_sales_weekly" };
 }
-
 async function tool(name: string, a: Args, token: string) {
   const filters = filtersFromArgs(a);
   const dataset = await queryDataset(a, token);
@@ -208,6 +244,27 @@ async function tool(name: string, a: Args, token: string) {
   }
 }
 
+async function groqChat(key: string, body: any) {
+  let last: Response | null = null;
+  for (let attempt=0; attempt<3; attempt++) {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      body: JSON.stringify(body),
+    });
+    last = response;
+    if (response.ok) return { response, data: await response.json() };
+    if (response.status !== 429 && response.status !== 502 && response.status !== 503 && response.status !== 504) {
+      return { response, data: await response.json().catch(()=>({error:"AI provider returned an invalid response."})) };
+    }
+    const retryAfter = Number(response.headers.get("retry-after") || 0);
+    const waitMs = retryAfter > 0 ? Math.min(retryAfter*1000, 8000) : 500 * Math.pow(2, attempt);
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+  }
+  const data = await last!.json().catch(()=>({error:"AI provider did not return a readable response."}));
+  return { response: last!, data };
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -228,20 +285,14 @@ export async function POST(req: Request) {
     ];
 
     for (let round = 0; round < 4; round++) {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-        body: JSON.stringify({
-          model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-          messages,
-          temperature: 0.1,
-          tools: CPG_TOOLS.map((t: any) => ({ type: "function", function: t })),
-          tool_choice: "auto",
-        }),
+      const { response, data } = await groqChat(key, {
+        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+        messages,
+        temperature: 0.1,
+        tools: CPG_TOOLS.map((t: any) => ({ type: "function", function: t })),
+        tool_choice: "auto",
       });
-
-      const data = await response.json();
-      if (!response.ok) return NextResponse.json(data, { status: response.status });
+      if (!response.ok) return NextResponse.json({ error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status }, { status: response.status });
 
       const message = data.choices?.[0]?.message;
       messages.push(message);
@@ -268,22 +319,17 @@ export async function POST(req: Request) {
       }
     }
 
-    const finalResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-      body: JSON.stringify({
-        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-        messages: [
-          { role: "system", content: "You are CPGist AI Analyst. You are an evidence-first CPG decision-support system. Treat natural-language CPG questions as flexible business requests: users may use informal wording, abbreviations, executive language, or combine several questions in one sentence. Map the request to the closest capabilities and controlled tools rather than requiring exact keywords. If the requested capability is not supported by the connected data, say exactly what is unavailable and answer the supported portion instead of inventing evidence. You orchestrate controlled analytical tools; you do not calculate metrics yourself.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nDecision procedure: For category improvement, growth, turnaround, leadership, or brand-priority questions, call category_growth_plan FIRST. Then call additional tools only for unresolved questions such as retailer concentration, price, anomalies, forecasts, or scenarios. Never substitute generic FMCG advice for observed evidence. Every action recommendation must reference the specific observed signal that triggered it. Clearly distinguish observed facts, diagnostic signals, hypotheses, and planning assumptions. Do not claim causality from descriptive data.\n\nFor quantitative claims, use the controlled tools and preserve their returned values exactly.\nEvidence rules:\n- Never convert rowCount into a week/period count. Use evidence.periodCount.\n- Never claim the requested date range is fully covered when evidence.periodStart/evidence.periodEnd are narrower. State actual coverage.\n- Never invent, duplicate, or silently alter ranking entries.\n- When brandName is available, use it instead of brandId.\n- Treat validation issues and warnings as authoritative.\n- Do not make causal claims from descriptive data.\n- For scenarios, preserve scenarioSales exactly and explain the price × volume × distribution mechanics and assumptions.\n\nYour final response must be a JSON object with exactly these fields:\n{\n  \"type\": \"summary\" | \"ranking\" | \"scenario\" | \"trend\" | \"diagnostic\" | \"comparison\" | \"forecast\" | \"distribution\" | \"anomaly\",\n  \"headline\": \"short business headline\",\n  \"executiveTakeaway\": \"1-3 sentence answer directly answering the user\",\n  \"metrics\": [{\"label\":\"...\", \"value\":\"...\", \"change\":\"optional\", \"tone\":\"positive|negative|neutral\"}],\n  \"table\": {\"columns\":[\"...\"], \"rows\":[[\"...\"]]} | null,\n  \"sections\": [{\"title\":\"...\", \"bullets\":[\"...\"]}],\n  \"warnings\": [\"...\"],\n  \"evidence\": {\"source\":\"...\", \"period\":\"...\", \"periodCount\":0, \"filters\":\"...\"},\n  \"decisionTrail\": [{\"type\":\"observed|diagnostic|action|limitation\",\"text\":\"...\"}],\n  \"nextBestQuestion\": \"optional follow-up question or null\"\n}\nUse null for table when no table is useful. Include a short decisionTrail grounded only in tool evidence: observed facts, diagnostic interpretation, concrete action, and limitations. Include nextBestQuestion only when a useful unresolved question remains; otherwise use null. Keep the response concise and professional. Do not output Markdown, code fences, or any fields outside this schema." },
-          ...messages.slice(1),
-          { role: "user", content: "Return the final answer now as the required JSON object. Do not call tools. Base every quantitative claim only on the tool results above. If the user asked for a capability marked planned or partial, state the data limitation explicitly rather than filling the gap with generic CPG claims." }
-        ],
-        temperature: 0.05,
-        response_format: { type: "json_object" }
-      }),
+    const { response: finalResponse, data: finalData } = await groqChat(key, {
+      model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+      messages: [
+        { role: "system", content: "You are CPGist AI Analyst. Return only the required JSON object. Base every quantitative claim only on the tool results above. Never invent metrics. If a capability is unavailable, state the limitation. Keep the answer concise and professional.\n\nRequired fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion." },
+        ...messages.slice(1),
+        { role: "user", content: "Return the final answer now as the required JSON object. Do not call tools. Use only observed tool evidence." }
+      ],
+      temperature: 0.05,
+      response_format: { type: "json_object" }
     });
-    const finalData = await finalResponse.json();
-    if (!finalResponse.ok) return NextResponse.json(finalData, { status: finalResponse.status });
+    if (!finalResponse.ok) return NextResponse.json({ error: finalData?.error?.message || finalData?.message || "AI Analyst final response failed.", providerStatus: finalResponse.status }, { status: finalResponse.status });
     const raw = finalData.choices?.[0]?.message?.content;
     try {
       const analyst = JSON.parse(raw || "{}");
