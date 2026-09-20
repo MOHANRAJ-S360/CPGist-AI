@@ -189,7 +189,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   if(!categories.length)throw new Error("Dataset master dimension error: 05_categories.csv was found but no valid category rows were parsed.");
   if(!regions.length)throw new Error("Dataset master dimension error: 10_locations.csv was found but no valid region rows were parsed.");
 
-  const brandRows:any[]=[],categoryRows:any[]=[],retailerRows:any[]=[],brandCategoryRows:any[]=[],brandRetailerRows:any[]=[],productRows:any[]=[];
+  const brandRows:any[]=[],categoryRows:any[]=[],retailerRows:any[]=[],brandCategoryRows:any[]=[];
   const categoryName=new Map<number,string>(categories.map(x=>[x.id,x.name]));
   const brandMap=new Map<number,any>(brands.map(x=>[x.id,x]));
   const productMap=new Map<number,any>(products.map(x=>[x.id,x]));
@@ -223,23 +223,8 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
     distribution:null
   }),progress);
 
-  await scanCsv(brandRetailerBytes,r=>brandRetailerRows.push({
-    brand_id:id(r,"brand_id"),retailer_id:id(r,"retailer_id"),
-    category:categoryName.get(id(r,"category_id"))||pick(r,"category_name","category")||null,
-    week_ending:dateValue(r,"week_ending","period","week"),
-    sales:num(r,"dollar_sales","sales","sales_value"),units:num(r,"units","volume_units"),
-    distribution:num(r,"distribution","acv_distribution")||null,
-    price:num(r,"average_price","avg_price","price")||null,
-    promo_rate:num(r,"promo_rate","promo_rate_pct","promotion_rate")||null
-  }),progress);
-
-  await scanCsv(productWeekBytes,r=>productRows.push({
-    product_id:id(r,"product_id"),brand_id:id(r,"brand_id"),retailer_id:id(r,"retailer_id"),
-    week_ending:dateValue(r,"week_ending","period","week"),
-    sales:num(r,"dollar_sales","sales","sales_value"),units:num(r,"units","volume_units"),
-    price:num(r,"average_price","avg_price","price")||null,
-    distribution:num(r,"distribution","acv_distribution")||null,promo_rate:null
-  }),progress);
+  // The two largest detailed cubes are kept in the ZIP and reduced to 13-week client summaries here.
+  // This prevents hundreds of thousands of browser-side objects and avoids loading unnecessary raw cubes into Free Postgres.
 
   const periods=[...new Set(brandRows.map(r=>r.week_ending).filter(Boolean))].sort();
   if(periods.length<13)throw new Error(`Only ${periods.length} weekly periods were found in 26_brand_weekly.csv; at least 13 are required.`);
@@ -263,33 +248,39 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   await upsertBatches(sb,"cpgist_category_weekly",categoryRows,"category,week_ending",progress);
   await upsertBatches(sb,"cpgist_retailer_weekly",retailerRows,"retailer_id,week_ending",progress);
   await upsertBatches(sb,"cpgist_brand_category_weekly",brandCategoryRows,"brand_id,category,week_ending",progress);
-  await upsertBatches(sb,"cpgist_brand_retailer_weekly",brandRetailerRows,"brand_id,retailer_id,week_ending",progress);
 
-  // Store only latest-13-week product detail in the compact database; the full 201k-row product-week cube stays in the ZIP.
   const productAgg=new Map<number,any>();
-  for(const r of productRows){
-    if(!latestPeriodSet.has(r.week_ending))continue;
-    const x=productAgg.get(r.product_id)||{product_id:r.product_id,brand_id:r.brand_id,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0};
-    x.sales_13w+=r.sales;x.units_13w+=r.units;
-    if(r.price!=null){x.price_sum+=r.price;x.price_n++}
-    if(r.distribution!=null){x.dist_sum+=r.distribution;x.dist_n++}
-    productAgg.set(r.product_id,x);
-  }
+  const retailerSummaryAgg=new Map<string,any>();
+
+  await scanCsv(productWeekBytes,r=>{
+    const w=dateValue(r,"week_ending","period","week");
+    if(!latestPeriodSet.has(w))return;
+    const pid=id(r,"product_id"),bid=id(r,"brand_id");
+    if(!pid)return;
+    const x=productAgg.get(pid)||{product_id:pid,brand_id:bid,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0};
+    const sales=num(r,"dollar_sales","sales","sales_value"),units=num(r,"units","volume_units"),price=num(r,"average_price","avg_price","price"),dist=num(r,"distribution","acv_distribution");
+    x.sales_13w+=sales;x.units_13w+=units;
+    if(price){x.price_sum+=price;x.price_n++}if(dist){x.dist_sum+=dist;x.dist_n++}
+    productAgg.set(pid,x);
+  },progress);
+
+  await scanCsv(brandRetailerBytes,r=>{
+    const w=dateValue(r,"week_ending","period","week");
+    if(!latestPeriodSet.has(w))return;
+    const bid=id(r,"brand_id"),rid=id(r,"retailer_id");
+    if(!bid||!rid)return;
+    const category=categoryName.get(id(r,"category_id"))||pick(r,"category_name","category")||null;
+    const k=bid+"|"+rid;
+    const x=retailerSummaryAgg.get(k)||{brand_id:bid,retailer_id:rid,category,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0,promo_sum:0,promo_n:0};
+    const sales=num(r,"dollar_sales","sales","sales_value"),units=num(r,"units","volume_units"),price=num(r,"average_price","avg_price","price"),dist=num(r,"distribution","acv_distribution"),promo=num(r,"promo_rate","promo_rate_pct","promotion_rate");
+    x.sales_13w+=sales;x.units_13w+=units;
+    if(price){x.price_sum+=price;x.price_n++}if(dist){x.dist_sum+=dist;x.dist_n++}if(promo){x.promo_sum+=promo;x.promo_n++}
+    retailerSummaryAgg.set(k,x);
+  },progress);
+
   const productSummary=[...productAgg.values()].map(x=>({product_id:x.product_id,brand_id:x.brand_id,period_end:x.period_end,sales_13w:x.sales_13w,units_13w:x.units_13w,avg_price_13w:x.price_n?x.price_sum/x.price_n:null,distribution_13w:x.dist_n?x.dist_sum/x.dist_n:null,promo_rate_13w:null}));
   if(productSummary.length)await upsertBatches(sb,"cpgist_product_summary",productSummary,"product_id",progress);
 
-  // The archive already provides the correct brand×retailer cube; use it rather than rebuilding it from product rows.
-  const retailerSummaryAgg=new Map<string,any>();
-  for(const r of brandRetailerRows){
-    if(!latestPeriodSet.has(r.week_ending))continue;
-    const k=r.brand_id+"|"+r.retailer_id;
-    const x=retailerSummaryAgg.get(k)||{brand_id:r.brand_id,retailer_id:r.retailer_id,category:r.category,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0,promo_sum:0,promo_n:0};
-    x.sales_13w+=r.sales;x.units_13w+=r.units;
-    if(r.price!=null){x.price_sum+=r.price;x.price_n++}
-    if(r.distribution!=null){x.dist_sum+=r.distribution;x.dist_n++}
-    if(r.promo_rate!=null){x.promo_sum+=r.promo_rate;x.promo_n++}
-    retailerSummaryAgg.set(k,x);
-  }
   const brandRetailerSummary=[...retailerSummaryAgg.values()].map(x=>({brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,period_end:x.period_end,sales_13w:x.sales_13w,units_13w:x.units_13w,avg_price_13w:x.price_n?x.price_sum/x.price_n:null,distribution_13w:x.dist_n?x.dist_sum/x.dist_n:null,promo_rate_13w:x.promo_n?x.promo_sum/x.promo_n:null}));
   if(brandRetailerSummary.length)await upsertBatches(sb,"cpgist_brand_retailer_summary",brandRetailerSummary,"brand_id,retailer_id",progress);
 
