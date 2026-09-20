@@ -3,6 +3,7 @@ import {useEffect,useState} from "react";
 import {BrainCircuit,Send,Loader2,Sparkles} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
 import {supabaseBrowser} from "../../lib/supabase-browser";
+import {useSearchParams} from "next/navigation";
 
 type Msg={role:"user"|"assistant";content:string};
 const safeText=(v:unknown)=>v==null?"":typeof v==="string"||typeof v==="number"||typeof v==="boolean"?String(v):(()=>{try{return JSON.stringify(v)}catch{return""}})();
@@ -31,7 +32,7 @@ export default function AIAnalyst(){
  const prompts=["What drove the latest sales movement?","Which brands are gaining or losing share?","Show me unusual weekly sales movements.","Forecast sales for the next 8 weeks.","What is the distribution situation by retailer?","Run a 5% price increase scenario."];
  return <AppShell title="AI Analyst" subtitle="Evidence-first CPG analysis"><section className="content analyst-page"><div className="intro"><div><div className="muted">AI INTELLIGENCE</div><h1>Ask the CPGist AI Analyst</h1><p>Questions are translated into controlled analytical tools so quantitative answers come from your connected dataset.</p></div>{brandScope&&<div className="scope-badge">Focused on <b>{brandName||"selected brand"}</b></div>}</div>
   <div className="card analyst-chat">{msgs.map((m,i)=><div className={"chat-row "+m.role} key={i}><div className="chat-avatar">{m.role==="assistant"?<BrainCircuit size={14}/>:<Sparkles size={14}/>}</div><div className="chat-bubble">{m.role==="assistant"?<AnalystContent text={m.content}/>:m.content}</div></div>)}{busy&&<div className="chat-row assistant"><div className="chat-avatar"><BrainCircuit size={14}/></div><div className="chat-bubble"><Loader2 size={14} className="spin"/> Analyzing source evidence…</div></div>}</div>
-  <div className="prompt-grid">{prompts.map(p=><button key={p} onClick={()=>ask(p)} disabled={busy}>{p}</button>)}</div>
+  <div className="prompt-grid">{prompts.map(p=><button key={p} onClick={()=>setInput(p)} disabled={busy}>{p}</button>)}</div>
   <div className="card analyst-input"><textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask()}}} placeholder="Ask a business question about your CPG data…"/><button className="primary" onClick={()=>ask()} disabled={busy||!input.trim()}>{busy?<Loader2 size={15} className="spin"/>:<Send size={15}/>}Ask</button></div>
  </section></AppShell>
 }
