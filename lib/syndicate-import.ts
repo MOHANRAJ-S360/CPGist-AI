@@ -165,7 +165,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   if(!bCount||!pCount||!bwCount)throw new Error("Import verification failed: the compact tables are still empty. Check Supabase RLS/write access and retry.");
   progress(`Verified live database: ${bCount.toLocaleString()} brands · ${pCount.toLocaleString()} products · ${bwCount.toLocaleString()} brand-week rows.`);
 
-  return {type:"compact",csvFiles:csvCount,brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart:periods[0],periodEnd};
+  return {type:"compact",csvFiles:Object.keys(zip).filter(n=>/\\.csv$/i.test(n)).length,brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart:periods[0],periodEnd};
 }
 
 export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
