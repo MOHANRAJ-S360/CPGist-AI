@@ -1,5 +1,5 @@
 "use client";
-import {useState} from "react";
+import {useEffect,useState} from "react";
 import {BrainCircuit,Send,Loader2,Sparkles} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
 import {supabaseBrowser} from "../../lib/supabase-browser";
