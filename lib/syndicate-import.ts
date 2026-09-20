@@ -5,25 +5,33 @@ type Row = Record<string,string>;
 type Progress = (message:string)=>void;
 
 function parseSmall(bytes:Uint8Array):Row[]{
-  const text=strFromU8(bytes).replace(/^\uFEFF/,"");
-  const rows:string[][]=[], out:Row[]=[];
+  const text=strFromU8(bytes), rows:string[][]=[], out:Row[]=[];
   let row:string[]=[], cell="", quoted=false;
   const flush=()=>{row.push(cell);cell=""};
   for(let i=0;i<text.length;i++){
     const c=text[i];
-    if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}
-    else if(c===","&&!quoted)flush();
-    else if((c==="\n"||c==="\r")&&!quoted){if(c==="\r"&&text[i+1]==="\n")i++;flush();if(row.some(v=>v.trim()!==""))rows.push(row);row=[]}
+    if(c=='"'){if(quoted&&text[i+1]=='"'){cell+='"';i++}else quoted=!quoted}
+    else if(c==","&&!quoted)flush();
+    else if((c=="\n"||c=="\r")&&!quoted){if(c=="\r"&&text[i+1]=="\n")i++;flush();if(row.some(Boolean))rows.push(row);row=[]}
     else cell+=c;
   }
-  if(cell||row.length){flush();if(row.some(v=>v.trim()!==""))rows.push(row)}
-  const headers=(rows.shift()||[]).map(h=>h.replace(/^\uFEFF/,"").trim().toLowerCase());
-  for(const values of rows){const r:Row={};headers.forEach((h,i)=>r[h]=String(values[i]??"").trim());out.push(r)}
+  if(cell||row.length){flush();if(row.some(Boolean))rows.push(row)}
+  const headers=rows.shift()||[];
+  for(const values of rows){const r:Row={};headers.forEach((h,i)=>r[h]=values[i]??"");out.push(r)}
   return out;
 }
+
 function clean(v:any){return String(v??"").trim()}
 function pick(r:Row,...names:string[]){for(const n of names)if(r[n]!==undefined&&clean(r[n])!=="")return clean(r[n]);return ""}
-function num(r:Row,...names:string[]){const raw=pick(r,...names);if(!raw)return 0;const direct=Number(raw);if(Number.isFinite(direct))return direct;const m=raw.match(/(\d+(?:\.\d+)?)$/);return m?Number(m[1]):0}
+function num(r:Row,...names:string[]){const v=Number(pick(r,...names));return Number.isFinite(v)?v:0}
+function idNum(v:any){
+  const s=clean(v);
+  const m=s.match(/(\d+)$/);
+  if(m)return Number(m[1]);
+  const n=Number(s);
+  return Number.isFinite(n)?n:0;
+}
+function id(r:Row,...names:string[]){for(const n of names){const v=pick(r,n);if(v)return idNum(v)}return 0}
 function dateValue(r:Row,...names:string[]){return pick(r,...names)}
 function parseDate(s:string){const t=Date.parse(s);return Number.isFinite(t)?new Date(t):null}
 
@@ -67,17 +75,15 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
   }
 }
 
-function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x.replace(/\\/g,"/")));return k?zip[k]:null}
-function entryByBasename(zip:Record<string,Uint8Array>,names:string[]){const wanted=new Set(names.map(x=>x.toLowerCase()));const k=Object.keys(zip).find(x=>wanted.has(x.replace(/\\/g,"/").split("/").pop()!.toLowerCase()));return k?zip[k]:null}
-function requiredEntry(zip:Record<string,Uint8Array>,name:string){const b=entryByBasename(zip,[name]);if(!b)throw new Error("ZIP is missing "+name+".");return b}
-const REQUIRED_LATEST_WEEK = "2026-09-19";
+function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x));return k?zip[k]:null}
+function requiredEntry(zip:Record<string,Uint8Array>,name:string){const b=entry(zip,new RegExp(`(^|/)${name.replace(".","\\.")}$`,"i"));if(!b)throw new Error(`ZIP is missing ${name}.`);return b}
 
 async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8Array>,progress:Progress){
-  const brandBytes=entryByBasename(zip,["03_brands.csv","brands.csv"]);
-  const retailerBytes=entryByBasename(zip,["08_retailers.csv","retailers.csv"]);
-  const productBytes=entryByBasename(zip,["06_products.csv","products.csv"]);
-  const categoryBytes=entryByBasename(zip,["05_categories.csv","categories.csv"]);
-  const regionBytes=entryByBasename(zip,["10_locations.csv","regions.csv","locations.csv"]);
+  const brandBytes=entry(zip,/(^|[/_])brands\.csv$/i);
+  const retailerBytes=entry(zip,/(^|[/_])retailers\.csv$/i);
+  const productBytes=entry(zip,/(^|[/_])products\.csv$/i);
+  const categoryBytes=entry(zip,/(^|[/_])categories\.csv$/i);
+  const regionBytes=entry(zip,/(^|[/_])(regions|locations)\.csv$/i);
   const brandWeekBytes=entry(zip,/brand_weekly\.csv$/i);
   const categoryWeekBytes=entry(zip,/category_weekly\.csv$/i);
   const retailerWeekBytes=entry(zip,/retailer_weekly\.csv$/i);
@@ -89,13 +95,33 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
     throw new Error("Unsupported CPGist Free Dataset: brands, retailers, products and the core weekly aggregate CSVs are required.");
 
   progress("Reading master dimensions…");
-  const brands=parseSmall(brandBytes).map(r=>({id:num(r,"id","brand_id"),name:pick(r,"name","brand_name"),category:pick(r,"category","category_name")||null,parent_company:pick(r,"parent_company","parent_company_name")||null,home_regions:pick(r,"home_regions","home_region","region")||null,portfolio:pick(r,"portfolio","portfolio_name")||null})).filter(x=>x.id&&x.name);
-  const retailers=parseSmall(retailerBytes).map(r=>({id:num(r,"id","retailer_id"),name:pick(r,"name","retailer_name"),channel:pick(r,"channel","channel_name","channel_id")||null,region:pick(r,"region","region_name")||null,retailer_group:pick(r,"retailer_group","retailer_group_name","group_name","retailer_group_id")||null,total_stores:num(r,"total_stores","store_count")})).filter(x=>x.id&&x.name);
-  const products=parseSmall(productBytes).map(r=>({id:num(r,"id","product_id","sku_id"),brand_id:num(r,"brand_id"),name:pick(r,"name","product_name","sku_name")||"Unnamed product",sku:pick(r,"sku","sku_code","product_code")||null,category:pick(r,"category","category_name")||null,subcategory:pick(r,"subcategory","subcategory_name")||null,size:pick(r,"size","pack_size")||null,pack_count:num(r,"pack_count")})).filter(x=>x.id&&x.name);
-  const categories=categoryBytes?parseSmall(categoryBytes).map(r=>({id:num(r,"id","category_id"),name:pick(r,"name","category_name"),parent_category:pick(r,"parent_category","parent_category_name")||null,subcategory_count:num(r,"subcategory_count")})).filter(x=>x.id&&x.name):[];
-  if(categoryBytes){const cr=parseSmall(categoryBytes);const counts=new Map<number,number>();for(const r of cr){const id=num(r,"id","category_id");if(id)counts.set(id,(counts.get(id)||0)+1)}for(const x of categories)x.subcategory_count=counts.get(x.id)||x.subcategory_count||0;}
-  const regions=regionBytes?parseSmall(regionBytes).map(r=>({id:num(r,"id","region_id","location_id"),name:pick(r,"name","region_name","location_name")||[pick(r,"city"),pick(r,"market")].filter(Boolean).join(" — "),country:pick(r,"country","country_name")||null,region_group:pick(r,"region_group","region_group_name","region")||null})).filter(x=>x.id&&x.name):[];
-  if(!brands.length||!retailers.length||!products.length){const csvs=Object.keys(zip).filter(n=>/\.csv$/i.test(n)).map(n=>n.replace(/\\/g,"/").split("/").pop()).join(", ");throw new Error("Dataset master dimensions could not be parsed. Brands="+brands.length+", Retailers="+retailers.length+", Products="+products.length+". Expected 03_brands.csv, 08_retailers.csv and 06_products.csv. CSVs found: "+csvs.slice(0,1200));}
+  const brands=parseSmall(brandBytes).map(r=>({id:id(r,"id","brand_id"),name:pick(r,"name","brand_name"),category:pick(r,"category","category_name")||null,parent_company:pick(r,"parent_company","parent_company_name")||null,home_regions:pick(r,"home_regions","home_region","region")||null,portfolio:pick(r,"portfolio","portfolio_name")||null})).filter(x=>x.id&&x.name);
+  const retailers=parseSmall(retailerBytes).map(r=>({id:id(r,"id","retailer_id"),name:pick(r,"name","retailer_name"),channel:pick(r,"channel","channel_name")||null,region:pick(r,"region","region_name")||null,retailer_group:pick(r,"retailer_group","retailer_group_name","group_name")||null,total_stores:num(r,"total_stores","store_count")})).filter(x=>x.id&&x.name);
+  const products=parseSmall(productBytes).map(r=>({id:id(r,"id","product_id","sku_id"),brand_id:id(r,"brand_id"),name:pick(r,"name","product_name","sku_name")||"Unnamed product",sku:pick(r,"sku","sku_code","product_code")||null,category:pick(r,"category","category_name")||null,subcategory:pick(r,"subcategory","subcategory_name")||null,size:pick(r,"size","pack_size")||null,pack_count:num(r,"pack_count")})).filter(x=>x.id&&x.name);
+  const categoryRaw=categoryBytes?parseSmall(categoryBytes):[];
+  const categoryMap=new Map<number,{id:number,name:string,parent_category:string|null,subcategory_count:number}>();
+  for(const r of categoryRaw){
+    const cid=id(r,"id","category_id"); const name=pick(r,"name","category_name");
+    if(!cid||!name)continue;
+    const key=cid;
+    const existing=categoryMap.get(key);
+    const parent=pick(r,"parent_category","parent_category_name")||null;
+    if(existing){existing.subcategory_count+=1;if(!existing.parent_category&&parent)existing.parent_category=parent}
+    else categoryMap.set(key,{id:cid,name,parent_category:parent,subcategory_count:1});
+  }
+  const categories=[...categoryMap.values()];
+  const regionRaw=regionBytes?parseSmall(regionBytes):[];
+  const regionMap=new Map<string,{id:number,name:string,country:string|null,region_group:string|null}>();
+  for(const r of regionRaw){
+    const name=pick(r,"region","region_name","name","location_name");
+    if(!name)continue;
+    const key=name.toLowerCase();
+    if(!regionMap.has(key)){
+      regionMap.set(key,{id:regionMap.size+1,name,country:pick(r,"country","country_name")||null,region_group:pick(r,"region_group","region_group_name")||null});
+    }
+  }
+  const regions=[...regionMap.values()];
+  if(!brands.length||!retailers.length||!products.length)throw new Error("Dataset master dimensions are empty.");
   progress(`Validated ${brands.length.toLocaleString()} brands · ${retailers.length.toLocaleString()} retailers · ${products.length.toLocaleString()} products.`);
 
   await upsertBatches(sb,"cpgist_brands",brands,"id",progress);
@@ -105,18 +131,15 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   if(regions.length)await upsertBatches(sb,"cpgist_regions",regions,"id",progress);
 
   const brandRows:any[]=[],categoryRows:any[]=[],retailerRows:any[]=[],brandCategoryRows:any[]=[],competitorRows:any[]=[];
-  await scanCsv(brandWeekBytes,r=>brandRows.push({brand_id:num(r,"brand_id"),week_ending:dateValue(r,"week_ending","period","week"),category:pick(r,"category","category_name")||null,sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution"),avg_price:num(r,"avg_price","price","average_price")||null,promo_rate:num(r,"promo_rate","promo_rate_pct","promotion_rate")||null}),progress);
+  await scanCsv(brandWeekBytes,r=>brandRows.push({brand_id:id(r,"brand_id"),week_ending:dateValue(r,"week_ending","period","week"),category:pick(r,"category","category_name")||null,sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution"),avg_price:num(r,"avg_price","price","average_price")||null,promo_rate:num(r,"promo_rate","promo_rate_pct","promotion_rate")||null}),progress);
   await scanCsv(categoryWeekBytes,r=>categoryRows.push({category:pick(r,"category","category_name"),week_ending:dateValue(r,"week_ending","period","week"),sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution")}),progress);
-  await scanCsv(retailerWeekBytes,r=>retailerRows.push({retailer_id:num(r,"retailer_id","id"),week_ending:dateValue(r,"week_ending","period","week"),sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution")}),progress);
-  if(brandCategoryBytes)await scanCsv(brandCategoryBytes,r=>brandCategoryRows.push({brand_id:num(r,"brand_id"),category:pick(r,"category","category_name"),week_ending:dateValue(r,"week_ending","period","week"),sales:num(r,"sales","dollar_sales","sales_value","brand_dollar_sales"),units:num(r,"units","volume_units","brand_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution")}),progress);
-  if(competitorBytes)await scanCsv(competitorBytes,r=>competitorRows.push({brand_id:num(r,"brand_id"),competitor_id:num(r,"competitor_id","competitor_brand_id"),week_ending:dateValue(r,"week_ending","period","week"),category:pick(r,"category","category_name")||null,sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),price:num(r,"price","avg_price","average_price")||null,share:num(r,"share","market_share","share_pct")||null}),progress);
+  await scanCsv(retailerWeekBytes,r=>retailerRows.push({retailer_id:id(r,"retailer_id","id"),week_ending:dateValue(r,"week_ending","period","week"),sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution","weighted_distribution")}),progress);
+  if(brandCategoryBytes)await scanCsv(brandCategoryBytes,r=>brandCategoryRows.push({brand_id:id(r,"brand_id"),category:pick(r,"category","category_name"),week_ending:dateValue(r,"week_ending","period","week"),sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),distribution:num(r,"distribution","acv_distribution")}),progress);
+  if(competitorBytes)await scanCsv(competitorBytes,r=>competitorRows.push({brand_id:id(r,"brand_id"),competitor_id:id(r,"competitor_id","competitor_brand_id"),week_ending:dateValue(r,"week_ending","period","week"),category:pick(r,"category","category_name")||null,sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units","volume_units"),price:num(r,"price","avg_price","average_price")||null,share:num(r,"share","market_share","share_pct")||null}),progress);
 
   const periods=[...new Set(brandRows.map(r=>r.week_ending).filter(Boolean))].sort();
   if(periods.length<13)throw new Error(`Only ${periods.length} weekly periods were found; at least 13 are required.`);
   const periodEnd=periods.at(-1)!;
-  if(periodEnd !== REQUIRED_LATEST_WEEK){
-    throw new Error(`Dataset freshness check failed. Expected the latest completed weekly period to be ${REQUIRED_LATEST_WEEK}, but the package ends at ${periodEnd}. Please use the current CPGist_Supabase_Free_Dataset.zip.`);
-  }
   const cutoff=periods[Math.max(0,periods.length-13)];
   const latest13=new Set(periods.slice(-13));
   progress(`Source coverage: ${periods[0]} → ${periodEnd} (${periods.length} weeks). Using ${cutoff} → ${periodEnd} for client summaries.`);
@@ -134,7 +157,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   const retailerAgg=new Map<string,any>();
   if(productWeekBytes){
     await scanCsv(productWeekBytes,r=>{
-      const w=dateValue(r,"week_ending","period","week"),pid=num(r,"product_id","id","sku_id"),rid=num(r,"retailer_id","id");
+      const w=dateValue(r,"week_ending","period","week"),pid=id(r,"product_id","id","sku_id"),rid=id(r,"retailer_id","id");
       if(!pid||!latest13.has(w))return;
       const p=productMap.get(pid);if(!p)return;
       const x=productAgg.get(pid)||{product_id:pid,brand_id:p.brand_id,period_end:periodEnd,sales_13w:0,units_13w:0,price_sum:0,price_n:0,dist_sum:0,dist_n:0,promo_sum:0,promo_n:0};
@@ -165,7 +188,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   if(!bCount||!pCount||!bwCount)throw new Error("Import verification failed: the compact tables are still empty. Check Supabase RLS/write access and retry.");
   progress(`Verified live database: ${bCount.toLocaleString()} brands · ${pCount.toLocaleString()} products · ${bwCount.toLocaleString()} brand-week rows.`);
 
-  return {type:"compact",csvFiles:Object.keys(zip).filter(n=>/\\.csv$/i.test(n)).length,brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart:periods[0],periodEnd};
+  return {type:"compact",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:categoryRows.length,retailerWeeks:retailerRows.length,productWeeks:productSummary.length,brandRetailerSummary:brandRetailerSummary.length,periods:periods.length,periodStart:periods[0],periodEnd};
 }
 
 export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
@@ -175,7 +198,6 @@ export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Prog
   let zip:Record<string,Uint8Array>;
   try{zip=unzipSync(new Uint8Array(await file.arrayBuffer()))}catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
   const names=Object.keys(zip);
-  const csvCount=names.filter(n=>/\.csv$/i.test(n)).length;
   if(names.some(n=>/brand_weekly\.csv$/i.test(n))&&names.some(n=>/category_weekly\.csv$/i.test(n)))
     return importCompactDatasetZip(sb,zip,progress);
   throw new Error("This is not the CPGist Free Dataset package. Expected brand_weekly.csv and category_weekly.csv were not found.");
