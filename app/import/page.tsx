@@ -14,7 +14,7 @@ export default function ImportPage(){
    <button className="primary import-btn" disabled={!file||busy} onClick={run}>{busy?<><Loader2 size={15} className="spin"/>Processing…</>:<><UploadCloud size={15}/>Validate & import</>}</button>
    {status&&<div className="form-message"><Loader2 size={14} className={busy?"spin":""}/>{status}</div>}
    {error&&<div className="form-error"><AlertCircle size={14}/>{error}</div>}
-   {result&&<div className="import-success"><CheckCircle2 size={18}/><div><b>Dataset is live.</b><span>{result.brands} brands · {result.retailers} retailers · {result.products} products · {Number(result.salesRows||0).toLocaleString()} source observations · {Number(result.brandWeeks||0).toLocaleString()} brand-weeks</span><a href="/dashboard">Open live dashboard →</a></div></div>}
+   {result&&<div className="import-success"><CheckCircle2 size={18}/><div><b>Dataset is live.</b><span>{result.brands} brands · {result.retailers} retailers · {result.products} products · {Number(result.salesRows||0).toLocaleString()} source observations · {Number(result.brandWeeks||0).toLocaleString()} brand-weeks{result.productWeeks ? " · "+Number(result.productWeeks).toLocaleString()+" product-weeks" : ""}</span><a href="/dashboard">Open live dashboard →</a></div></div>}
   </div>
  </section></AppShell>
 }
