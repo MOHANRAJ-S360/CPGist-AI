@@ -1,4 +1,8 @@
-"use client";
-import {useEffect,useState} from "react";import Link from "next/link";import {ArrowLeft,Download,RefreshCw} from "lucide-react";
-const titles:any={brands:"Brands",retailers:"Retailers",categories:"Categories",market:"Market",reports:"Reports",workflows:"Workflows",alerts:"Alerts"};
-export default function Workspace({params}:{params:Promise<{section:string}>}){const [p,setP]=useState("reports"),[d,setD]=useState<any>(null);async function load(s:string){setD(null);const r=await fetch("/api/workspace?section="+s);setD(await r.json())}useEffect(()=>{params.then(x=>{setP(x.section);load(x.section)})},[params]);const title=titles[p]||"Workspace";return <div className="app"><aside className="sidebar"><div className="brand"><div className="logo">C</div><div><b>CPGist</b><small>CPG INTELLIGENCE</small></div></div><Link className="navitem" href="/dashboard"><ArrowLeft size={15}/>Dashboard</Link><div className="navlabel">WORKSPACE</div>{Object.entries(titles).map(([k,v])=><Link key={k} href={"/"+k} className={"navitem "+(p===k?"active":"")}>{v as string}</Link>)}</aside><main className="main"><header><b>{title}</b><div className="header-actions"><button className="select" onClick={()=>load(p)}><RefreshCw size={14}/>Refresh</button>{p==="reports"&&<button className="primary" onClick={()=>window.print()}><Download size={14}/>Export / Print</button>}</div></header><section className="content"><div className="intro"><div><div className="muted">Live source data</div><h1>{title}</h1><p>{d?.subtitle||"Loading live analytics…"}</p></div></div>{d?.error?<div className="card response"><p>{d.error}</p></div>:<div className="card panel">{d?.rows?<table><thead><tr>{(d.columns||[]).map((c:string)=><th key={c}>{c}</th>)}</tr></thead><tbody>{d.rows.map((r:any,i:number)=><tr key={i}>{(d.columns||[]).map((c:string)=><td key={c}>{r[c]}</td>)}</tr>)}</tbody></table>:<p className="muted">Loading…</p>}{d?.rows?.length===0&&<p className="muted">No rows are available yet. Import the Syndicate dataset first.</p>}</div>}</section></main></div>}
+import {notFound} from "next/navigation";
+import WorkspaceSection from "../../components/workspace-section";
+const allowed=["brands","retailers","categories","market","workflows","alerts"];
+export default async function SectionPage({params}:{params:Promise<{section:string}>}){
+ const {section}=await params;
+ if(!allowed.includes(section))notFound();
+ return <WorkspaceSection section={section}/>;
+}
