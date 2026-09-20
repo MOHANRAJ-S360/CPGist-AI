@@ -81,7 +81,12 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
 function basename(path:string){const i=path.lastIndexOf("/");return i>=0?path.slice(i+1):path}
 function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x));return k?zip[k]:null}
 function entryExact(zip:Record<string,Uint8Array>,...names:string[]){
-  const wanted=new Set(names.maasync function clearCompactDataset(sb:SupabaseClient,progress:Progress){
+  const wanted=new Set(names.map(x=>x.toLowerCase()));
+  const k=Object.keys(zip).find(x=>wanted.has(basename(x).toLowerCase()));
+  return k?zip[k]:null;
+}
+
+async function clearCompactDataset(sb:SupabaseClient,progress:Progress){
   const targets:Array<[string,string]>=[
     ["cpgist_product_summary","product_id"],["cpgist_brand_retailer_summary","brand_id"],
     ["cpgist_brand_weekly","brand_id"],["cpgist_category_weekly","category"],
