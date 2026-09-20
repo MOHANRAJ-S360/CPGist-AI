@@ -7,7 +7,7 @@ import {BarChart,LineChart} from "./cpg-charts";
 import {supabaseBrowser} from "../lib/supabase-browser";
 
 const money=(n:any)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(Number(n)||0);
-const num=(n:any)=>Number(n)||0; const pct=(n:any)=>(num(n)>=0?"+":"")+num(n).toFixed(1)+"%";
+const num=(n:any)=>Number(n)||0; const pct=(n:any)=>((num(n)>=0?"+":"")+((num(n)*100).toFixed(1))+"%");
 const titles:Record<string,[string,string]>={brands:["Brands","Complete brand directory and performance"],retailers:["Retailers","Complete retailer and account directory"],categories:["Categories","Complete category directory and performance"],regions:["Regions","Geographic market directory and coverage"],market:["Market","Market pulse and competitive context"],workflows:["Workflows","Repeatable decision workflows"],alerts:["Alerts","Evidence-based performance signals"]};
 
 export default function WorkspaceSection({section}:{section:string}){
