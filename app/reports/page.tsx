@@ -63,3 +63,7 @@ function ReportsContent(){
   <div className="report-footnote">Dataset: {d.compactDataset?"CPGist Free Dataset":"Legacy Syndicate Dataset"} · Source: {d.source||"syndicate"} · Coverage: {d.periods?.[0]||"—"} → {d.periods?.at(-1)||"—"} · Scope: {d.scope==="brand"?d.brand.name:"Market"}</div>
  </section></AppShell>
 }
+
+export default function Reports(){
+ return <Suspense fallback={<AppShell title="Reports" subtitle="Decision-ready client reporting"><section className="content"><div className="card panel loading-card">Loading report workspace…</div></section></AppShell>}><ReportsContent/></Suspense>;
+}
