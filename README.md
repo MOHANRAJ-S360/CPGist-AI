@@ -25,3 +25,6 @@ Clean production build trigger after error-boundary fix.
 Build stabilization: restored the known-good Analyst server route.
 
 Importer reference fix.
+
+
+<!-- CPGist production verification: compact dataset explorer/import + brand workspace hardening -->
