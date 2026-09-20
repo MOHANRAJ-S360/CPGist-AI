@@ -1,7 +1,7 @@
 name: CPGist Build Check
 on:
   push:
-    branches: ["main"]
+    branches: ["feat/pro-cpgist-workspace"]
 jobs:
   build:
     runs-on: ubuntu-latest
