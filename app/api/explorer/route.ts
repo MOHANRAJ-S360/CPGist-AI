@@ -45,11 +45,15 @@ export async function GET(req:NextRequest){
     return {period:w,sales:rr.reduce((x,r)=>x+n(r.dollar_sales),0),units:rr.reduce((x,r)=>x+n(r.units),0)};
    });
    const products:any[]=await get("syndicate_products?brand_id=eq."+field(id)+"&select=id,name,category,subcategory,size&order=name&limit=5000").catch(()=>[]);
+   const retailerFacts:any[]=await get("syndicate_brand_retailer?brand_id=eq."+field(id)+"&select=retailer_id,category,sales,units,distribution,discount_depth_pct,observations&order=sales.desc&limit=5000").catch(()=>[]);
+   const retailerMaster:any[]=await get("syndicate_retailers?select=id,name,channel,region,total_stores&order=name&limit=1000").catch(()=>[]);
+   const retailers=retailerFacts.map(x=>{const m=retailerMaster.find(r=>String(r.id)===String(x.retailer_id));return{...x,name:m?.name||("Retailer "+x.retailer_id),channel:m?.channel||"",region:m?.region||"",total_stores:m?.total_stores||0};}).sort((a,b)=>n(b.sales)-n(a.sales)).slice(0,25);
    return NextResponse.json({
     entity,brand,periods,latestWindow:latest,priorWindow:prior,
     metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,promoRate:a.promoRate},
     weekly,
-    products:products.map(x=>({id:x.id,name:x.name,category:x.category,subcategory:x.subcategory,size:x.size}))
+    products:products.map(x=>({id:x.id,name:x.name,category:x.category,subcategory:x.subcategory,size:x.size})),
+    retailers
    });
   }
 
