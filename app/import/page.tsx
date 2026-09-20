@@ -23,7 +23,7 @@ export default function ImportPage(){
  }
  return <AppShell title="Data Import" subtitle="Load the CPGist client dataset">
   <section className="content">
-   <div className="intro"><div><div className="muted">SOURCE INGESTION</div><h1>Load CPGist Free Dataset</h1><p>Upload the current CPGist Free Dataset. The importer keeps Postgres compact by loading client-ready dimensions, weekly aggregates, product master and 13-week product/retailer summaries. The source archive remains your full analytical package.</p></div></div>
+   <div className="intro"><div><div className="muted">SOURCE INGESTION · IMPORTER V2</div><h1>Load CPGist Free Dataset</h1><p>Upload the current CPGist Free Dataset. The importer keeps Postgres compact by loading client-ready dimensions, weekly aggregates, product master and 13-week product/retailer summaries. The source archive remains your full analytical package.</p></div></div>
    <div className="card import-card">
     <div className="import-icon"><UploadCloud size={28}/></div><h2>Upload CPGist dataset</h2>
     <label className="dropzone"><input type="file" accept=".zip" onChange={e=>{setFile(e.target.files?.[0]||null);setError("");setResult(null)}}/><strong>{file?file.name:"Choose CPGist_Supabase_Free_Dataset.zip"}</strong><span>{file?((file.size/1024/1024).toFixed(1)+" MB selected"):"ZIP up to 100 MB · expected latest week: Sep 19, 2026"}</span></label>
