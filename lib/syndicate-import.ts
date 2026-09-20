@@ -128,6 +128,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
     ["30_product_weekly.csv",productWeekBytes]
   ].filter(([,v])=>!v).map(([n])=>n);
   if(missing.length)throw new Error("CPGist Free Dataset is incomplete. Missing: "+missing.join(", "));
+  if(!brandBytes||!retailerBytes||!productBytes||!categoryBytes||!regionBytes||!brandWeekBytes||!categoryWeekBytes||!retailerWeekBytes||!brandCategoryBytes||!brandRetailerBytes||!productWeekBytes)throw new Error("CPGist Free Dataset is incomplete. One or more required files could not be loaded.");
 
   progress("Reading master dimensions…");
   const brands=parseSmall(brandBytes).map(r=>({
