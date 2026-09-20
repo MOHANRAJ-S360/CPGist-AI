@@ -38,27 +38,30 @@ function parseDate(s:string){const t=Date.parse(s);return Number.isFinite(t)?new
 async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,progress?:Progress){
   const decoder=new TextDecoder();
   let headers:string[]|null=null,row:string[]=[],cellStart=0,quoted=false;
-  const emit=(end:number)=>{
-    let s=decoder.decode(bytes.subarray(cellStart,end));
-    if(s.length>=2&&s[0]=='"'&&s[s.length-1]=='"')s=s.slice(1,-1).replace(/""/g,'"');
-    row.push(s);cellStart=end+1;
-  };
+  const emit=(end:number)=>{row.push(decoder.decode(bytes.subarray(cellStart,end)));cellStart=end+1;};
   let rows=0;
   for(let i=0;i<bytes.length;i++){
     const c=bytes[i];
-    if(c===34){if(quoted&&bytes[i+1]===34)i++;else quoted=!quoted}
-    else if(c===44&&!quoted){emit(i)}
-    else if((c===10||c===13)&&!quoted){
-      if(c===13&&bytes[i+1]===10)i++;
+    if(c===34){if(quoted&&bytes[i+1]===34)i++;else quoted=!quoted;continue;}
+    if(c===44&&!quoted){emit(i);continue;}
+    if((c===10||c===13)&&!quoted){
       emit(i);
-      if(!headers)headers=row;
-      else if(row.length&&row.some(Boolean)){const r:Row={};headers.forEach((h,j)=>r[h]=row[j]??"");onRow(r,headers);rows++;if(progress&&rows%100000===0)progress(`Scanned ${rows.toLocaleString()} rows…`)}
-      row=[];cellStart=i+1;
+      if(!headers)headers=row.map(h=>String(h||"").replace(/^\uFEFF/,"").trim());
+      else if(row.length&&row.some(Boolean)){
+        const r:Row={};headers.forEach((h,j)=>r[h]=String(row[j]??"").trim());onRow(r,headers);rows++;
+        if(progress&&rows%100000===0)progress(`Scanned ${rows.toLocaleString()} rows…`);
+      }
+      row=[];
+      if(c===13&&bytes[i+1]===10)i++;
+      cellStart=i+1;
     }
   }
-  if(cellStart<bytes.length||row.length){emit(bytes.length);if(!headers)headers=row;else if(row.length&&row.some(Boolean)){const r:Row={};headers.forEach((h,j)=>r[h]=row[j]??"");onRow(r,headers)}}
+  if(cellStart<bytes.length||row.length){
+    row.push(decoder.decode(bytes.subarray(cellStart,bytes.length)));
+    if(!headers)headers=row.map(h=>String(h||"").replace(/^\uFEFF/,"").trim());
+    else if(row.length&&row.some(Boolean)){const r:Row={};headers.forEach((h,j)=>r[h]=String(row[j]??"").trim());onRow(r,headers);}
+  }
 }
-
 async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:string,progress:Progress){
   const size=500;
   for(let i=0;i<rows.length;i+=size){
