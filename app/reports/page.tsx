@@ -1,7 +1,8 @@
 "use client";
 
-import {useEffect,useState} from "react";
+import {Suspense,useEffect,useState} from "react";
 import Link from "next/link";
+import {useSearchParams} from "next/navigation";
 import {Download,FileText,Presentation,RefreshCw,Search,ShieldCheck,TrendingUp} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
 import {BarChart,Donut,LineChart} from "../../components/cpg-charts";
@@ -10,9 +11,10 @@ import {supabaseBrowser} from "../../lib/supabase-browser";
 const money=(n:any)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(Number(n)||0);
 const pct=(n:any)=>(Number(n)>=0?"+":"")+Number(n||0).toFixed(1)+"%";
 
-export default function Reports(){
+function ReportsContent(){
  const [d,setD]=useState<any>(null),[loading,setLoading]=useState(true),[q,setQ]=useState(""),[brandResults,setBrandResults]=useState<any[]>([]);
- const brandId=typeof window!=="undefined"?new URLSearchParams(window.location.search).get("brand_id"):null;
+ const searchParams=useSearchParams();
+ const brandId=searchParams.get("brand_id");
  async function auth(){const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)throw new Error("Please sign in again.");return session.access_token}
  async function load(){
   setLoading(true);
