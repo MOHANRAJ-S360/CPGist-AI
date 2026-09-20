@@ -10,11 +10,11 @@ async function get(path:string){
 }
 const n=(v:any)=>Number(v??0)||0;
 const pct=(a:number,b:number)=>b?((a-b)/b)*100:0;
-const periodSet=(rows:any[])=>[...new Set(rows.map(r=>String(r.week_ending||r.period)).filter(Boolean))].sort();
-const windowRows=(rows:any[],periods:string[])=>{const s=new Set(periods);return rows.filter(r=>s.has(String(r.week_ending||r.period)))};
+const periodSet=(rows:any[])=>[...new Set(rows.map((r:any)=>String(r.week_ending||r.period)).filter(Boolean))].sort();
+const windowRows=(rows:any[],periods:string[])=>{const s=new Set(periods);return rows.filter((r:any)=>s.has(String(r.week_ending||r.period)))};
 const agg=(rows:any[],salesKey:string)=>{
-  const sales=rows.reduce((a,r)=>a+n(r[salesKey]),0);
-  return {sales,units:rows.reduce((a,r)=>a+n(r.units),0),distribution:rows.length?rows.reduce((a,r)=>a+n(r.acv_distribution??r.distribution),0)/rows.length:null};
+  const sales=rows.reduce((a:number,r:any)=>a+n(r[salesKey]),0);
+  return {sales,units:rows.reduce((a:number,r:any)=>a+n(r.units),0),distribution:rows.length?rows.reduce((a:number,r:any)=>a+n(r.acv_distribution??r.distribution),0)/rows.length:null};
 };
 
 export async function GET(){
@@ -29,7 +29,7 @@ export async function GET(){
     ]);
     const periods=periodSet(rows),latestPeriods=periods.slice(-13),priorPeriods=periods.slice(-26,-13);
     const latest=agg(windowRows(rows,latestPeriods),"sales"),prior=agg(windowRows(rows,priorPeriods),"sales");
-    const weekly=periods.map(p=>{const rr=rows.filter(r=>String(r.week_ending)===p);return{period:p,label:new Date(p).toLocaleDateString("en-US",{month:"short",day:"numeric"}),sales:rr.reduce((a,r)=>a+n(r.sales),0),units:rr.reduce((a,r)=>a+n(r.units),0)}});
+    const weekly=periods.map(p=>{const rr=rows.filter((r:any)=>String(r.week_ending)===p);return{period:p,label:new Date(p).toLocaleDateString("en-US",{month:"short",day:"numeric"}),sales:rr.reduce((a:number,r:any)=>a+n(r.sales),0),units:rr.reduce((a:number,r:any)=>a+n(r.units),0)}});
     const brandMap=new Map<string,any>();
     for(const r of rows){const id=String(r.brand_id);const x=brandMap.get(id)||{id,name:"",salesLatest:0,salesPrior:0};x.salesLatest+=latestPeriods.includes(String(r.week_ending))?n(r.sales):0;x.salesPrior+=priorPeriods.includes(String(r.week_ending))?n(r.sales):0;brandMap.set(id,x);}
     const brandsById=new Map(brands.map((b:any)=>[String(b.id),b]));
@@ -53,7 +53,7 @@ export async function GET(){
   const brands=await get("syndicate_brands?select=id,name,category,parent_company,home_regions&order=name&limit=2000");
   const periods=periodSet(rows),latestPeriods=periods.slice(-13),priorPeriods=periods.slice(-26,-13);
   const latest=agg(windowRows(rows,latestPeriods),"dollar_sales"),prior=agg(windowRows(rows,priorPeriods),"dollar_sales");
-  const weekly=periods.map(p=>{const rr=rows.filter(r=>String(r.week_ending)===p);return{period:p,label:new Date(p).toLocaleDateString("en-US",{month:"short",day:"numeric"}),sales:rr.reduce((a,r)=>a+n(r.dollar_sales),0),units:rr.reduce((a,r)=>a+n(r.units),0)}});
+  const weekly=periods.map(p=>{const rr=rows.filter((r:any)=>String(r.week_ending)===p);return{period:p,label:new Date(p).toLocaleDateString("en-US",{month:"short",day:"numeric"}),sales:rr.reduce((a:number,r:any)=>a+n(r.dollar_sales),0),units:rr.reduce((a:number,r:any)=>a+n(r.units),0)}});
   const bm=new Map<string,any>();for(const r of rows){const id=String(r.brand_id);const x=bm.get(id)||{id,sales:0,priorSales:0};if(latestPeriods.includes(String(r.week_ending)))x.sales+=n(r.dollar_sales);else if(priorPeriods.includes(String(r.week_ending)))x.priorSales+=n(r.dollar_sales);bm.set(id,x);}
   const bmap=new Map(brands.map((b:any)=>[String(b.id),b]));const total=latest.sales;
   const topBrands=[...bm.values()].map(x=>{const b=bmap.get(x.id)||{};return{id:x.id,name:b.name||("Brand "+x.id),category:b.category||"",parent_company:b.parent_company||"",home_regions:b.home_regions||"",sales:x.sales,priorSales:x.priorSales,share:total?x.sales/total*100:0,growth:pct(x.sales,x.priorSales)}}).sort((a,b)=>b.sales-a.sales);
