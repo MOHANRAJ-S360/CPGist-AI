@@ -6,14 +6,15 @@ export type CPGQuery = {
   endDate?: string;
 };
 
+const nullableString = (description: string) => ({ type: ["string", "null"], description });
 const params = {
   type: "object",
   properties: {
-    brandId: { type: "string", description: "Brand identifier for the requested slice." },
-    categoryId: { type: "string", description: "Category identifier/name for the requested slice." },
-    retailerId: { type: "string", description: "Retailer identifier for retailer-level analysis." },
-    startDate: { type: "string", description: "Inclusive ISO date." },
-    endDate: { type: "string", description: "Inclusive ISO date." },
+    brandId: nullableString("Brand identifier for the requested slice. Omit or use null when not filtering by brand."),
+    categoryId: nullableString("Category identifier/name for the requested slice. Omit or use null when not filtering by category."),
+    retailerId: nullableString("Retailer identifier for retailer-level analysis. Omit or use null when not filtering by retailer."),
+    startDate: nullableString("Inclusive ISO date. Omit or use null when not filtering by start date."),
+    endDate: nullableString("Inclusive ISO date. Omit or use null when not filtering by end date."),
   },
   additionalProperties: false,
 } as const;
