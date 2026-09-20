@@ -6,8 +6,31 @@ async function get(path:string){
  const r=await fetch(u+"/rest/v1/"+path,{headers:{apikey:k,Authorization:"Bearer "+k},cache:"no-store"});
  if(!r.ok)throw new Error(await r.text());return r.json();
 }
+
+// Supabase/PostgREST returns at most 1,000 rows per request by default.
+// The compact dataset contains tens of thousands of weekly observations, so
+// dashboard queries must paginate instead of assuming ?limit=100000 bypasses
+// the API row cap.
+async function getPaged(path:string,pageSize=1000,maxPages=100){
+ const out:any[]=[];
+ for(let page=0;page<maxPages;page++){
+  const offset=page*pageSize;
+  const joiner=path.includes("?")?"&":"?";
+  const rows:any[]=await get(path+joiner+"limit="+pageSize+"&offset="+offset);
+  out.push(...rows);
+  if(rows.length<pageSize)break;
+ }
+ return out;
+}
+
 const n=(v:any)=>Number(v??0)||0;
 const growth=(latest:number,prior:number)=>prior?((latest-prior)/prior):0;
+
+function isoWeeksBefore(iso:string,weeks:number){
+ const d=new Date(iso+"T00:00:00Z");
+ d.setUTCDate(d.getUTCDate()-weeks*7);
+ return d.toISOString().slice(0,10);
+}
 
 export async function GET(){
  try{
@@ -19,69 +42,129 @@ export async function GET(){
    },{status:503});
   }
 
+  // Find the actual latest completed source week first. This keeps the
+  // dashboard aligned to the uploaded dataset rather than a hard-coded year.
+  const latestRow:any[]=await get("cpgist_brand_weekly?select=week_ending&order=week_ending.desc&limit=1");
+  const latestWeek=String(latestRow?.[0]?.week_ending||"");
+  if(!latestWeek)throw new Error("CPGist Free Dataset has no weekly observations.");
+  const cutoff=isoWeeksBefore(latestWeek,25);
+
+  // Pull only the latest 26 source periods, but paginate each table because
+  // Supabase Free's REST API caps each response at 1,000 rows.
   const [brandRows,categoryRows,retailerRows,brands,retailers]=await Promise.all([
-   get("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&order=week_ending.asc&limit=100000"),
-   get("cpgist_category_weekly?select=category,week_ending,sales,units,distribution&order=week_ending.asc&limit=10000"),
-   get("cpgist_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&order=week_ending.asc&limit=100000"),
+   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&week_ending=gte."+cutoff+"&order=week_ending.asc,brand_id.asc"),
+   getPaged("cpgist_category_weekly?select=category,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,category.asc"),
+   getPaged("cpgist_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,retailer_id.asc"),
    get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000"),
    get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&order=name&limit=5000")
   ]);
 
   const periods:string[]=[...new Set<string>((brandRows as any[]).map((r:any)=>String(r.week_ending)).filter(Boolean))].sort();
-  if(periods.length<13)throw new Error("CPGist Free Dataset has fewer than 13 weekly periods.");
-  const latestPeriods=periods.slice(-13),priorPeriods=periods.slice(-26,-13),latestSet=new Set<string>(latestPeriods),priorSet=new Set<string>(priorPeriods);
+  if(periods.length<13){
+   throw new Error("CPGist Free Dataset returned fewer than 13 weekly periods for the dashboard window. The uploaded dataset should contain at least 13 completed weeks.");
+  }
+
+  const latestPeriods=periods.slice(-13);
+  const priorPeriods=periods.slice(-26,-13);
+  const latestSet=new Set<string>(latestPeriods),priorSet=new Set<string>(priorPeriods);
   const periodStart=periods[0],periodEnd=periods.at(-1);
 
   const agg=(rows:any[],periodSet:Set<string>)=>{
-   const sales=rows.filter((r:any)=>periodSet.has(String(r.week_ending))).reduce((a:number,r:any)=>a+n(r.sales),0);
-   const units=rows.filter((r:any)=>periodSet.has(String(r.week_ending))).reduce((a:number,r:any)=>a+n(r.units),0);
-   const distRows=rows.filter((r:any)=>periodSet.has(String(r.week_ending))&&r.distribution!=null);
+   const scoped=rows.filter((r:any)=>periodSet.has(String(r.week_ending)));
+   const sales=scoped.reduce((a:number,r:any)=>a+n(r.sales),0);
+   const units=scoped.reduce((a:number,r:any)=>a+n(r.units),0);
+   const distRows=scoped.filter((r:any)=>r.distribution!=null);
    return {sales,units,avgDistribution:distRows.length?distRows.reduce((a:number,r:any)=>a+n(r.distribution),0)/distRows.length:null};
   };
-  const latest=agg(brandRows as any[],latestSet),prior=agg(brandRows as any[],priorSet);
+
+  const latest=agg(brandRows,latestSet),prior=agg(brandRows,priorSet);
 
   const weekly=periods.map(p=>{
-   const rs=(brandRows as any[]).filter((r:any)=>String(r.week_ending)===p);
-   return {period:p,label:new Date(p+"T00:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric"}),sales:rs.reduce((a:number,r:any)=>a+n(r.sales),0),units:rs.reduce((a:number,r:any)=>a+n(r.units),0)};
+   const rs=brandRows.filter((r:any)=>String(r.week_ending)===p);
+   return {
+    period:p,
+    label:new Date(p+"T00:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric"}),
+    sales:rs.reduce((a:number,r:any)=>a+n(r.sales),0),
+    units:rs.reduce((a:number,r:any)=>a+n(r.units),0)
+   };
   });
 
   const brandAgg=new Map<number,any>();
-  for(const r of (brandRows as any[])){
+  for(const r of brandRows){
    const id=n(r.brand_id);if(!id)continue;
-   const x=brandAgg.get(id)||{sales:0,units:0,dist:0,distN:0,category:r.category};
-   if(latestSet.has(String(r.week_ending))){x.sales+=n(r.sales);x.units+=n(r.units);if(r.distribution!=null){x.dist+=n(r.distribution);x.distN++}}
+   const x=brandAgg.get(id)||{sales:0,units:0,dist:0,distN:0,category:r.category,priorSales:0};
+   if(latestSet.has(String(r.week_ending))){
+    x.sales+=n(r.sales);x.units+=n(r.units);
+    if(r.distribution!=null){x.dist+=n(r.distribution);x.distN++}
+   }else if(priorSet.has(String(r.week_ending))){
+    x.priorSales+=n(r.sales);
+   }
    brandAgg.set(id,x);
   }
+
   const categoryAgg=new Map<string,any>();
-  for(const r of (categoryRows as any[])){
+  for(const r of categoryRows){
    const key=String(r.category||"Unclassified");
    const x=categoryAgg.get(key)||{sales:0,priorSales:0,dist:0,n:0};
-   if(latestSet.has(String(r.week_ending))){x.sales+=n(r.sales);if(r.distribution!=null){x.dist+=n(r.distribution);x.n++}}
-   else if(priorSet.has(String(r.week_ending)))x.priorSales+=n(r.sales);
+   if(latestSet.has(String(r.week_ending))){
+    x.sales+=n(r.sales);if(r.distribution!=null){x.dist+=n(r.distribution);x.n++}
+   }else if(priorSet.has(String(r.week_ending)))x.priorSales+=n(r.sales);
    categoryAgg.set(key,x);
   }
+
   const retailerAgg=new Map<number,any>();
-  for(const r of (retailerRows as any[])){
+  for(const r of retailerRows){
    const id=n(r.retailer_id);if(!id)continue;
    const x=retailerAgg.get(id)||{sales:0,priorSales:0};
    if(latestSet.has(String(r.week_ending)))x.sales+=n(r.sales);
    else if(priorSet.has(String(r.week_ending)))x.priorSales+=n(r.sales);
    retailerAgg.set(id,x);
   }
+
   const totalLatest=latest.sales;
   const topBrands=(brands as any[]).map((b:any)=>{
-   const x=brandAgg.get(n(b.id))||{sales:0,units:0,category:b.category};
-   return {...b,sales:x.sales,units:x.units,share:totalLatest?x.sales/totalLatest*100:0,growth:growth(x.sales,priorSet.size?brandRows.filter((r:any)=>n(r.brand_id)===n(b.id)&&priorSet.has(String(r.week_ending))).reduce((a:number,r:any)=>a+n(r.sales),0):0),distribution:x.distN?x.dist/x.distN:null};
+   const x=brandAgg.get(n(b.id))||{sales:0,units:0,category:b.category,priorSales:0};
+   return {
+    ...b,
+    sales:x.sales,
+    units:x.units,
+    share:totalLatest?x.sales/totalLatest*100:0,
+    growth:growth(x.sales,x.priorSales),
+    distribution:x.distN?x.dist/x.distN:null
+   };
   }).sort((a:any,b:any)=>b.sales-a.sales);
-  const categories=[...categoryAgg.entries()].map(([name,x]:[string,any])=>({name,sales:x.sales,growth:growth(x.sales,x.priorSales),distribution:x.n?x.dist/x.n:null})).sort((a:any,b:any)=>b.sales-a.sales);
+
+  const categories=[...categoryAgg.entries()]
+   .map(([name,x]:[string,any])=>({name,sales:x.sales,growth:growth(x.sales,x.priorSales),distribution:x.n?x.dist/x.n:null}))
+   .sort((a:any,b:any)=>b.sales-a.sales);
+
   const retailerById=new Map((retailers as any[]).map((r:any)=>[n(r.id),r]));
-  const retailerOut=[...retailerAgg.entries()].map(([id,x]:[number,any])=>({...retailerById.get(id),id,sales:x.sales,growth:growth(x.sales,x.priorSales)})).filter((x:any)=>x.name).sort((a:any,b:any)=>b.sales-a.sales);
+  const retailerOut=[...retailerAgg.entries()]
+   .map(([id,x]:[number,any])=>({...retailerById.get(id),id,sales:x.sales,growth:growth(x.sales,x.priorSales)}))
+   .filter((x:any)=>x.name)
+   .sort((a:any,b:any)=>b.sales-a.sales);
 
   return NextResponse.json({
-   source:"cpgist_compact",compactDataset:true,datasetName:"CPGist Free Dataset",
-   periodStart,periodEnd,periods,latestWindow:latestPeriods,priorWindow:priorPeriods,
-   totalSales:latest.sales,totalUnits:latest.units,avgDistribution:latest.avgDistribution,
-   promoRate:null,growth:growth(latest.sales,prior.sales),weekly,topBrands,categories,retailers:retailerOut
+   source:"cpgist_compact",
+   compactDataset:true,
+   datasetName:"CPGist Free Dataset",
+   latestCompletedWeek:latestWeek,
+   periodStart,
+   periodEnd,
+   periods,
+   latestWindow:latestPeriods,
+   priorWindow:priorPeriods,
+   totalSales:latest.sales,
+   totalUnits:latest.units,
+   avgDistribution:latest.avgDistribution,
+   promoRate:null,
+   growth:growth(latest.sales,prior.sales),
+   weekly,
+   topBrands,
+   categories,
+   retailers:retailerOut
   });
- }catch(e:any){return NextResponse.json({error:e?.message||"Dashboard data failed."},{status:500})}
+ }catch(e:any){
+  return NextResponse.json({error:e?.message||"Dashboard data failed."},{status:500});
+ }
 }
