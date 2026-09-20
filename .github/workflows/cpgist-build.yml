@@ -1,7 +1,7 @@
 name: CPGist Build Check
 on:
   push:
-    branches: ["main"]
+    branches: ["feat/cpgist-client-intelligence-v2"]
 jobs:
   build:
     runs-on: ubuntu-latest

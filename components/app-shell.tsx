@@ -3,7 +3,7 @@
 import {ReactNode,useEffect,useState} from "react";
 import Link from "next/link";
 import {usePathname,useRouter} from "next/navigation";
-import {LayoutDashboard,BrainCircuit,Boxes,Store,Layers3,Globe2,FileText,Workflow,TriangleAlert,Database,LogOut,ChevronRight} from "lucide-react";
+import {LayoutDashboard,BrainCircuit,Boxes,Store,Layers3,Globe2,MapPinned,FileText,Workflow,TriangleAlert,Database,LogOut,ChevronRight} from "lucide-react";
 import {supabaseBrowser} from "../lib/supabase-browser";
 
 const nav=[
@@ -12,6 +12,7 @@ const nav=[
  {label:"Brands",href:"/brands",icon:Boxes},
  {label:"Retailers",href:"/retailers",icon:Store},
  {label:"Categories",href:"/categories",icon:Layers3},
+ {label:"Regions",href:"/regions",icon:MapPinned},
  {label:"Market",href:"/market",icon:Globe2},
  {label:"Reports",href:"/reports",icon:FileText},
  {label:"Workflows",href:"/workflows",icon:Workflow},
