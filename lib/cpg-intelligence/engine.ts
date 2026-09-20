@@ -42,6 +42,36 @@ export function getSales(rows: IntelligenceRow[], filters: IntelligenceQuery): A
   );
 }
 
+export function compareBrandPeriods(rows: IntelligenceRow[], filters: IntelligenceQuery): AnalyticalResult<{
+  latestPeriod: string | null;
+  priorPeriod: string | null;
+  brands: Array<{ brandId: string; latestSales: number; priorSales: number; change: number; changePct: number | null }>;
+}> {
+  const periods = sortedPeriods(rows);
+  const latestPeriod = periods.at(-1) ?? null;
+  const priorPeriod = periods.at(-2) ?? null;
+  if (!latestPeriod || !priorPeriod) {
+    return base({ latestPeriod, priorPeriod, brands: [] }, rows, filters, ["At least two weekly periods are required for a week-over-week brand comparison."]);
+  }
+  const byBrand = new Map<string, { latestSales: number; priorSales: number }>();
+  for (const r of rows) {
+    const id = String(r.brand_id ?? "");
+    if (!id) continue;
+    const x = byBrand.get(id) ?? { latestSales: 0, priorSales: 0 };
+    if (r.week_ending === latestPeriod) x.latestSales += n(r.dollar_sales);
+    if (r.week_ending === priorPeriod) x.priorSales += n(r.dollar_sales);
+    byBrand.set(id, x);
+  }
+  const brands = [...byBrand.entries()].map(([brandId, x]) => ({
+    brandId,
+    latestSales: x.latestSales,
+    priorSales: x.priorSales,
+    change: x.latestSales - x.priorSales,
+    changePct: x.priorSales ? (x.latestSales / x.priorSales - 1) * 100 : null,
+  })).sort((a,b) => b.change - a.change);
+  return base({ latestPeriod, priorPeriod, brands }, rows, filters);
+}
+
 export function getDistribution(rows: IntelligenceRow[], filters: IntelligenceQuery): AnalyticalResult<{ averageDistribution: number | null; weightedDistribution: number | null; observations: number }> {
   let weighted = 0;
   let weight = 0;
