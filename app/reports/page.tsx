@@ -39,7 +39,8 @@ export default function Reports(){
  async function downloadPdf(){
   if(!d||d.error)return;setExporting("pdf");
   try{
-   await loadScript("https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js","cpgist-jspdf");\n   const jsPDF=window.jspdf?.jsPDF;if(!jsPDF)throw new Error("PDF export library is unavailable.");
+   await loadScript("https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js","cpgist-jspdf");
+   const jsPDF=window.jspdf?.jsPDF;if(!jsPDF)throw new Error("PDF export library is unavailable.");
    const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"}),W=297;
    const header=(heading:string,sub:string)=>{doc.setFillColor(13,20,38);doc.rect(0,0,W,24,"F");doc.setTextColor(255,255,255);doc.setFontSize(16);doc.text("C",16,15);doc.text("CPGist",23,15);doc.setFontSize(8);doc.text("CPG INTELLIGENCE",23,20);doc.setFontSize(13);doc.text(heading,65,15);doc.setFontSize(8);doc.text(sub,65,20);doc.setTextColor(20,28,45)};
    header("Executive Market Performance Review","Prepared "+reportDate);
@@ -59,7 +60,8 @@ export default function Reports(){
  async function downloadPpt(){
   if(!d||d.error)return;setExporting("pptx");
   try{
-   await loadScript("https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@4.0.1/dist/pptxgen.bundle.js","cpgist-pptx");\n   const PptxGenJS=window.PptxGenJS;if(!PptxGenJS)throw new Error("PowerPoint export library is unavailable.");
+   await loadScript("https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@4.0.1/dist/pptxgen.bundle.js","cpgist-pptx");
+   const PptxGenJS=window.PptxGenJS;if(!PptxGenJS)throw new Error("PowerPoint export library is unavailable.");
    const pptx=new PptxGenJS();pptx.layout="LAYOUT_WIDE";pptx.author="CPGist";pptx.company="CPGist";pptx.title="CPGist Executive Market Performance Review";
    const navy="0D1426",purple="6D5DFC",muted="657084",line="E3E7EE";
    const header=(slide:any,heading:string,sub:string)=>{slide.background={color:"F7F8FA"};slide.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.333,h:.55,fill:{color:navy},line:{color:navy}});slide.addText("C",{x:.28,y:.11,w:.3,h:.25,fontSize:16,bold:true,color:"FFFFFF",align:"center",valign:"mid",fill:{color:purple},margin:0});slide.addText("CPGist",{x:.68,y:.13,w:1,h:.2,fontSize:13,bold:true,color:"FFFFFF",margin:0});slide.addText(heading,{x:2.0,y:.12,w:6,h:.2,fontSize:12,bold:true,color:"FFFFFF",margin:0});slide.addText(sub,{x:9.1,y:.14,w:3.8,h:.15,fontSize:7,color:"CBD2DE",align:"right",margin:0)};
