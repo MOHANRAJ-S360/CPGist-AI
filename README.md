@@ -16,3 +16,6 @@ cp .env.example .env.local
 npm run dev
 
 Add GROQ_API_KEY to enable live AI.
+
+## CPGist data model
+The application supports the reduced CPGist Free Dataset through the compact `cpgist_*` analytical tables. The UI falls back to the legacy Syndicate tables until the compact dataset is imported.
