@@ -21,7 +21,7 @@ export default function Reports(){
    if(brandId){
     const r=await fetch("/api/explorer?entity=brand&id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"});
     const x=await r.json();if(!r.ok)throw new Error(x.error||"Brand report data failed.");
-    setD({scope:"brand",source:"syndicate",brand:x.brand,totalSales:x.metrics.sales,totalUnits:x.metrics.units,avgDistribution:x.metrics.distribution,promoRate:x.metrics.promoRate,growth:x.metrics.growth,periods:x.periods,weekly:x.weekly,topBrands:[{name:x.brand.name,sales:x.metrics.sales,share:100,growth:x.metrics.growth}],products:x.products});
+    setD({scope:"brand",source:x.source||"syndicate",compactDataset:x.source==="cpgist_compact",brand:x.brand,totalSales:x.metrics.sales,totalUnits:x.metrics.units,avgDistribution:x.metrics.distribution,promoRate:x.metrics.promoRate,growth:x.metrics.growth,periods:x.periods,weekly:x.weekly,topBrands:[{name:x.brand.name,sales:x.metrics.sales,share:100,growth:x.metrics.growth}],products:x.products});
    }else{
     const r=await fetch("/api/dashboard",{headers:{Authorization:"Bearer "+token},cache:"no-store"});
     const x=await r.json();if(!r.ok)throw new Error(x.error||"Report data failed.");setD({...x,scope:"market"});
