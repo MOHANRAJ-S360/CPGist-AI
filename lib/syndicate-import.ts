@@ -282,7 +282,7 @@ async function importCompactDatasetZip(sb: SupabaseClient, zip: Record<string, U
 
 export async function importDatasetZip(sb: SupabaseClient, file: File, progress: Progress) {
   if (!file.name.toLowerCase().endsWith(".zip")) throw new Error("Please select a CPGist dataset ZIP file.");
-  if (file.size > 50 * 1024 * 1024) throw new Error("The ZIP is above Supabase Free's 50 MB file limit. Use the reduced CPGist Free Dataset ZIP (under 50 MB).");
+  if (file.size > 100 * 1024 * 1024) throw new Error("The CPGist Free Dataset ZIP must be 100 MB or smaller for browser import.");
   progress("Reading dataset ZIP in your browser…");
   const zip = unzipSync(new Uint8Array(await file.arrayBuffer()));
   const names=Object.keys(zip);
