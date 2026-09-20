@@ -11,7 +11,7 @@ const pct=(n:number)=> (n>=0?"+":"")+n.toFixed(1)+"%";
 
 export default function Dashboard(){
  const [d,setD]=useState<any>(null),[loading,setLoading]=useState(true);
- async function load(){setLoading(true);try{const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session){location.href="/";return}const r=await fetch("/api/dashboard?source=syndicate",{headers:{Authorization:"Bearer "+session.access_token}});setD(await r.json())}catch(e:any){setD({error:e.message})}finally{setLoading(false)}}
+ async function load(){setLoading(true);try{const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session){location.href="/";return}const r=await fetch("/api/dashboard",{headers:{Authorization:"Bearer "+session.access_token}});setD(await r.json())}catch(e:any){setD({error:e.message})}finally{setLoading(false)}}
  useEffect(()=>{load()},[]);
  if(loading)return <AppShell title="Dashboard" subtitle="Executive CPG performance"><section className="content"><div className="card panel loading-card">Loading live market intelligence…</div></section></AppShell>;
  if(d?.error)return <AppShell title="Dashboard"><section className="content"><div className="card panel error-card">{d.error}</div></section></AppShell>;
