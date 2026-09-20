@@ -1,5 +1,5 @@
 "use client";
-import {useState} from "react";
+import {useEffect,useState} from "react";
 import {BrainCircuit,Send,Loader2,Sparkles} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
 import {supabaseBrowser} from "../../lib/supabase-browser";
@@ -25,7 +25,8 @@ function AnalystContent({text}:{text:string}){
 }
 
 export default function AIAnalyst(){
- const [input,setInput]=useState(""),[busy,setBusy]=useState(false),[msgs,setMsgs]=useState<Msg[]>([{role:"assistant",content:"I’m connected to the CPGist analytical layer. Ask about sales, brands, market share, distribution, pricing, anomalies, forecasts or scenarios."}]);
+ const [input,setInput]=useState(""),[busy,setBusy]=useState(false),[brandScope,setBrandScope]=useState(""),[brandName,setBrandName]=useState(""),[msgs,setMsgs]=useState<Msg[]>([{role:"assistant",content:"I’m connected to the CPGist analytical layer. Ask about sales, brands, market share, distribution, pricing, anomalies, forecasts or scenarios."}]);
+ useEffect(()=>{const id=new URLSearchParams(window.location.search).get("brand_id");if(!id)return;setBrandScope(id);(async()=>{try{const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)return;const r=await fetch("/api/explorer?entity=brand&id="+encodeURIComponent(id),{headers:{Authorization:"Bearer "+session.access_token},cache:"no-store"});const d=await r.json();if(d?.brand?.name)setBrandName(String(d.brand.name))}catch{}})()},[]);
  async function ask(q=input){if(!q.trim()||busy)return;setInput("");setBusy(true);const next=[...msgs,{role:"user" as const,content:q.trim()}];setMsgs(next);try{const {data:sessionData}=await supabaseBrowser().auth.getSession();if(!sessionData.session)throw new Error("Please sign in again.");const r=await fetch("/api/analyst",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+sessionData.session.access_token},body:JSON.stringify({messages:next.map(m=>({role:m.role,content:m.content})),scope:brandScope?{brandId:brandScope}:undefined})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Analyst request failed.");setMsgs(x=>[...x,{role:"assistant",content:d.analyst?JSON.stringify(d.analyst):"No analytical response returned."}]);}catch(e:any){setMsgs(x=>[...x,{role:"assistant",content:e?.message||"Analyst request failed."}])}finally{setBusy(false)}}
  const prompts=["What drove the latest sales movement?","Which brands are gaining or losing share?","Show me unusual weekly sales movements.","Forecast sales for the next 8 weeks.","What is the distribution situation by retailer?","Run a 5% price increase scenario."];
  return <AppShell title="AI Analyst" subtitle="Evidence-first CPG analysis"><section className="content analyst-page"><div className="intro"><div><div className="muted">AI INTELLIGENCE</div><h1>Ask the CPGist AI Analyst</h1><p>Questions are translated into controlled analytical tools so quantitative answers come from your connected dataset.</p></div>{brandScope&&<div className="scope-badge">Focused on <b>{brandName||"selected brand"}</b></div>}</div>
