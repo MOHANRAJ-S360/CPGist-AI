@@ -38,7 +38,7 @@ async function brandDetail(id:string,brand:any){
 
 export async function GET(req:NextRequest){
  try{
-  const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim(),id=p.get("id"),limit=Math.min(100,Math.max(1,Number(p.get("limit")||50)||50)),offset=Math.max(0,Number(p.get("offset")||0)||0);
+  const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim(),id=p.get("id"),limit=Math.min(5000,Math.max(1,Number(p.get("limit")||5000)||5000)),offset=Math.max(0,Number(p.get("offset")||0)||0);
   let compact=false;try{const x=await get("cpgist_brands?select=id&limit=1");compact=Array.isArray(x)&&x.length>0}catch{}
   if(!compact)return NextResponse.json({error:"CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using the client workspace.",code:"COMPACT_DATASET_REQUIRED"},{status:503});
 
