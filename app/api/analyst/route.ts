@@ -114,7 +114,7 @@ async function tool(name: string, a: Args, token: string) {
     case "cross_category_portfolio": {
       const [brands, salesRows] = await Promise.all([
         get("cpgist_brands?select=id,name,category,parent_company&limit=2000", token).catch(()=>get("syndicate_brands?select=id,name,category,parent_company&limit=2000", token)),
-        get("cpgist_brand_weekly?select=brand_id,sales,category&limit=100000").then((x:any[])=>x.map(r=>({...r,dollar_sales:r.sales}))).catch(()=>get("syndicate_sales_weekly?select=brand_id,dollar_sales,category&limit=100000", token))
+        get("cpgist_brand_weekly?select=brand_id,sales,category&limit=100000", token).then((x:any[])=>x.map(r=>({...r,dollar_sales:r.sales}))).catch(()=>get("syndicate_sales_weekly?select=brand_id,dollar_sales,category&limit=100000", token))
       ]);
       const result = crossCategoryPortfolio(brands, salesRows);
       const issues = validateAnalyticalResult(result);
