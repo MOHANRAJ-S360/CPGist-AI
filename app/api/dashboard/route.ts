@@ -41,12 +41,12 @@ export async function GET(){
     const categories=[...categoryMap.values()].map((x:any)=>({...x,growth:pct(x.sales,x.priorSales)})).sort((a:any,b:any)=>b.sales-a.sales);
     let retailers:any[]=[];
     try{
-      const rr=await get("cpgist_brand_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&order=week_ending.asc&limit=100000");
+      const rr=await get("cpgist_brand_retailer_summary?select=retailer_id,sales_13w,units_13w,distribution_13w&order=sales_13w.desc&limit=5000");
       const rm=await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&order=name&limit=2000");
-      const map=new Map<string,number>();for(const r of rr)if(latestPeriods.includes(String(r.week_ending)))map.set(String(r.retailer_id),(map.get(String(r.retailer_id))||0)+n(r.sales));
-      retailers=[...map.entries()].map(([id,sales])=>{const b=rm.find((x:any)=>String(x.id)===id)||{};return{id,name:b.name||("Retailer "+id),sales,channel:b.channel||"",region:b.region||"",retailer_group:b.retailer_group||"",total_stores:b.total_stores??null}}).sort((a,b)=>b.sales-a.sales);
+      const map=new Map<string,any>();for(const r of rr){const id=String(r.retailer_id);const x=map.get(id)||{sales:0,units:0,distribution:0,n:0};x.sales+=n(r.sales_13w);x.units+=n(r.units_13w);x.distribution+=n(r.distribution_13w);x.n++;map.set(id,x)}
+      retailers=[...map.entries()].map(([id,x])=>{const b=rm.find((v:any)=>String(v.id)===id)||{};return{id,name:b.name||("Retailer "+id),sales:x.sales,units:x.units,avgDistribution:x.n?x.distribution/x.n:null,channel:b.channel||"",region:b.region||"",retailer_group:b.retailer_group||"",total_stores:b.total_stores??null}}).sort((a,b)=>b.sales-a.sales);
     }catch{}
-    return NextResponse.json({source:"cpgist_compact",rowCount:rows.length,totalSales:latest.sales,totalUnits:latest.units,avgDistribution:latest.distribution,growth:pct(latest.sales,prior.sales),periods,periodEnd:periods.at(-1)||null,weekly,topBrands,categories,retailers,brandCount:brands.length,categoryCount:categories.length,retailerCount:retailers.length});
+    return NextResponse.json({source:"cpgist_compact",compactDataset:true,rowCount:rows.length,totalSales:latest.sales,totalUnits:latest.units,avgDistribution:latest.distribution,growth:pct(latest.sales,prior.sales),periods,periodEnd:periods.at(-1)||null,weekly,topBrands,categories,retailers,brandCount:brands.length,categoryCount:categories.length,retailerCount:retailers.length});
   }
 
   // The old Syndicate dataset is retained only for legacy import compatibility; it is
