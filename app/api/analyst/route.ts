@@ -53,47 +53,33 @@ function filtersFromArgs(a: Args): IntelligenceQuery {
 }
 
 async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" = "sales"): Promise<Dataset> {
- const brand = a.brandId ? String(a.brandId) : "";
- const category = a.categoryId ? String(a.categoryId) : "";
- const retailer = a.retailerId ? String(a.retailerId) : "";
- try {
+  const brand = a.brandId ? String(a.brandId) : "";
+  const category = a.categoryId ? String(a.categoryId) : "";
+  const retailer = a.retailerId ? String(a.retailerId) : "";
+
   if (mode === "retailer" || (retailer && !brand && !category)) {
-   let q = "cpgist_retailer_weekly?select=week_ending,retailer_id,sales,units,distribution&limit=100000";
-   if (retailer) q += "&retailer_id=eq." + encodeURIComponent(retailer);
-   if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
-   if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-   const rows = await get(q, token);
-   if (rows.length) return { rows: rows.map((r:any)=>({...r,dollar_sales:r.sales,acv_distribution:r.distribution})), source: "cpgist_retailer_weekly" };
+    let q = "syndicate_retailer_weekly?select=week_ending,retailer_id,dollar_sales,units,acv_distribution&limit=30000";
+    q += "&retailer_id=eq." + encodeURIComponent(retailer);
+    if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
+    if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
+    return { rows: await get(q, token), source: "syndicate_retailer_weekly" };
   }
-  let q = "cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&limit=100000";
+
+  let q = "syndicate_sales_weekly?select=brand_id,category,week_ending,dollar_sales,units,acv_distribution,promo_observations,avg_discount_depth_pct,observations&limit=30000";
   if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
   if (category) q += "&category=ilike." + encodeURIComponent(category);
   if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
   if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-  const rows = await get(q, token);
-  if (rows.length) return { rows: rows.map((r:any)=>({...r,dollar_sales:r.sales,acv_distribution:r.distribution,promo_observations:r.promo_rate,observations:100})), source: "cpgist_brand_weekly" };
- } catch {}
- if (mode === "retailer" || (retailer && !brand && !category)) {
-  let q = "syndicate_retailer_weekly?select=week_ending,retailer_id,dollar_sales,units,acv_distribution&limit=100000";
-  q += "&retailer_id=eq." + encodeURIComponent(retailer);
-  if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
-  if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-  return { rows: await get(q, token), source: "syndicate_retailer_weekly" };
- }
- let q = "syndicate_sales_weekly?select=brand_id,category,week_ending,dollar_sales,units,acv_distribution,promo_observations,avg_discount_depth_pct,observations&limit=100000";
- if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
- if (category) q += "&category=ilike." + encodeURIComponent(category);
- if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
- if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
- return { rows: await get(q, token), source: "syndicate_sales_weekly" };
+  return { rows: await get(q, token), source: "syndicate_sales_weekly" };
 }
+
 async function tool(name: string, a: Args, token: string) {
   const filters = filtersFromArgs(a);
   const dataset = await queryDataset(a, token);
 
   switch (name) {
     case "data_readiness": {
-      const tables = ["cpgist_brands","cpgist_products","cpgist_brand_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_competitor_weekly","syndicate_signal_notes"];
+      const tables = ["syndicate_brands","syndicate_products","syndicate_sales_weekly","syndicate_retailer_weekly","syndicate_brand_retailer","syndicate_signal_notes","syndicate_competitor_signals"];
       const counts: Record<string, number> = {};
       for (const table of tables) {
         try {
@@ -103,7 +89,7 @@ async function tool(name: string, a: Args, token: string) {
           counts[table] = range && range.includes("/") ? Number(range.split("/")[1]) || 0 : (await response.json()).length;
         } catch { counts[table] = 0; }
       }
-      return { domains: { sales: counts.cpgist_brand_weekly > 0 || counts.syndicate_sales_weekly > 0, retailerOpportunity: counts.cpgist_brand_retailer_weekly > 0 || counts.syndicate_brand_retailer > 0, products: counts.cpgist_products > 0 || counts.syndicate_products > 0, competition: counts.cpgist_competitor_weekly > 0 || counts.syndicate_competitor_signals > 0, signals: counts.syndicate_signal_notes > 0 }, counts, warnings: counts.syndicate_brand_retailer === 0 ? ["Retailer opportunity aggregation is not populated yet; re-import the Syndicate ZIP to enable retailer whitespace analysis."] : [] };
+      return { domains: { sales: counts.syndicate_sales_weekly > 0, retailerOpportunity: counts.syndicate_brand_retailer > 0, products: counts.syndicate_products > 0, competition: counts.syndicate_competitor_signals > 0, signals: counts.syndicate_signal_notes > 0 }, counts, warnings: counts.syndicate_brand_retailer === 0 ? ["Retailer opportunity aggregation is not populated yet; re-import the Syndicate ZIP to enable retailer whitespace analysis."] : [] };
     }
 
     case "business_health_scan": {
@@ -113,8 +99,8 @@ async function tool(name: string, a: Args, token: string) {
 
     case "cross_category_portfolio": {
       const [brands, salesRows] = await Promise.all([
-        get("cpgist_brands?select=id,name,category,parent_company&limit=2000", token).catch(()=>get("syndicate_brands?select=id,name,category,parent_company&limit=2000", token)),
-        get("cpgist_brand_weekly?select=brand_id,sales,category&limit=100000", token).then((x:any[])=>x.map(r=>({...r,dollar_sales:r.sales}))).catch(()=>get("syndicate_sales_weekly?select=brand_id,dollar_sales,category&limit=100000", token))
+        get("syndicate_brands?select=id,name,category,parent_company&limit=1000", token),
+        get("syndicate_sales_weekly?select=brand_id,dollar_sales&limit=12000", token)
       ]);
       const result = crossCategoryPortfolio(brands, salesRows);
       const issues = validateAnalyticalResult(result);
@@ -126,7 +112,7 @@ async function tool(name: string, a: Args, token: string) {
       const category = String(a.categoryId || "").trim();
       if (!brandId || !category) return { error: "retailer_opportunity requires brandId and categoryId." };
       const encodedCategory = encodeURIComponent(category);
-      const retailerRows = await get("cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate,week_ending&category=ilike." + encodedCategory + "&limit=100000", token).catch(()=>get("syndicate_brand_retailer?select=brand_id,retailer_id,category,sales,units,distribution,discount_depth_pct,observations&category=ilike." + encodedCategory + "&limit=10000", token));
+      const retailerRows = await get("syndicate_brand_retailer?select=brand_id,retailer_id,category,sales,units,distribution,discount_depth_pct,observations&category=ilike." + encodedCategory + "&limit=10000", token);
       const result = retailerOpportunity(retailerRows, brandId, category);
       const ids = result.data.retailers.map(x => x.retailerId).join(",");
       const retailers = ids ? await get("syndicate_retailers?select=id,name,channel,region,total_stores&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
@@ -154,7 +140,7 @@ async function tool(name: string, a: Args, token: string) {
       const result = categoryGrowthPlan(categoryDataset.rows, filtersFromArgs(a));
       const issues = validateAnalyticalResult(result);
       const ids = result.data.brands.map(x=>x.brandId).join(",");
-      const brands = ids ? await get("cpgist_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token).catch(()=>get("syndicate_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token)) : [];
+      const brands = ids ? await get("syndicate_brands?select=id,name&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
       const names = Object.fromEntries(brands.map((b:any)=>[String(b.id),b.name]));
       return {
         ...result.data,
