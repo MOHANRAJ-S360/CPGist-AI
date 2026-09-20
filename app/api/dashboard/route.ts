@@ -33,7 +33,7 @@ export async function GET(){
   const periodStart=periods[0],periodEnd=periods.at(-1);
 
   const agg=(rows:any[],periodSet:Set<string>)=>{
-   const sales=rows.filter((r:any)=>periodSet.has(String(r.week_ending))).reduce((a,r)=>a+n(r.sales),0);
+   const sales=rows.filter((r:any)=>periodSet.has(String(r.week_ending))).reduce((a:number,r:any)=>a+n(r.sales),0);
    const units=rows.filter((r:any)=>periodSet.has(String(r.week_ending))).reduce((a,r)=>a+n(r.units),0);
    const distRows=rows.filter((r:any)=>periodSet.has(String(r.week_ending))&&r.distribution!=null);
    return {sales,units,avgDistribution:distRows.length?distRows.reduce((a,r)=>a+n(r.distribution),0)/distRows.length:null};
@@ -73,7 +73,7 @@ export async function GET(){
    const x=brandAgg.get(n(b.id))||{sales:0,units:0,category:b.category};
    return {...b,sales:x.sales,units:x.units,share:totalLatest?x.sales/totalLatest*100:0,growth:growth(x.sales,priorSet.size?brandRows.filter((r:any)=>n(r.brand_id)===n(b.id)&&priorSet.has(String(r.week_ending))).reduce((a,r)=>a+n(r.sales),0):0),distribution:x.distN?x.dist/x.distN:null};
   }).sort((a:any,b:any)=>b.sales-a.sales);
-  const categories=[...categoryAgg.entries()].map(([name,x])=>({name,sales:x.sales,growth:growth(x.sales,x.priorSales),distribution:x.n?x.dist/x.n:null})).sort((a,b)=>b.sales-a.sales);
+  const categories=[...categoryAgg.entries()].map(([name,x]:[string,any])=>({name,sales:x.sales,growth:growth(x.sales,x.priorSales),distribution:x.n?x.dist/x.n:null})).sort((a:any,b:any)=>b.sales-a.sales);
   const retailerById=new Map((retailers as any[]).map((r:any)=>[n(r.id),r]));
   const retailerOut=[...retailerAgg.entries()].map(([id,x])=>({...retailerById.get(id),id,sales:x.sales,growth:growth(x.sales,x.priorSales)})).filter((x:any)=>x.name).sort((a:any,b:any)=>b.sales-a.sales);
 
