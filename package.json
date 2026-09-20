@@ -10,7 +10,7 @@
     "lucide-react":"0.468.0",
     "xlsx":"0.18.5",
     "@supabase/supabase-js":"2.57.4",
-    "fflate":"0.8.2"
+    "fflate":"0.8.2","pptxgenjs":"3.12.0"
   },
   "devDependencies":{"@types/node":"22.10.2","@types/react":"19.0.2","@types/react-dom":"19.0.2","typescript":"5.7.2","tailwindcss":"4.0.0","@tailwindcss/postcss":"4.0.0","postcss":"8.4.49"}
 }
