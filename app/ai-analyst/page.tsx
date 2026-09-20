@@ -2,7 +2,7 @@
 import {useEffect,useState} from "react";
 import {BrainCircuit,Send,Loader2,Sparkles} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
-import {supabaseBrowser} from "../../lib/supabase-browser";import {useSearchParams} from "next/navigation";
+import {supabaseBrowser} from "../../lib/supabase-browser";
 
 type Msg={role:"user"|"assistant";content:string};
 const safeText=(v:unknown)=>v==null?"":typeof v==="string"||typeof v==="number"||typeof v==="boolean"?String(v):(()=>{try{return JSON.stringify(v)}catch{return""}})();
