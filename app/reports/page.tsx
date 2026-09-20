@@ -9,7 +9,7 @@ import {BarChart,Donut,LineChart} from "../../components/cpg-charts";
 import {supabaseBrowser} from "../../lib/supabase-browser";
 
 const money=(n:any)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(Number(n)||0);
-const pct=(n:any)=>(Number(n)>=0?"+":"")+Number(n||0).toFixed(1)+"%";
+const pct=(n:any)=>((Number(n)||0)>=0?"+":"")+(((Number(n)||0)*100).toFixed(1))+"%";
 
 function ReportsContent(){
  const [d,setD]=useState<any>(null),[loading,setLoading]=useState(true),[q,setQ]=useState(""),[brandResults,setBrandResults]=useState<any[]>([]);
