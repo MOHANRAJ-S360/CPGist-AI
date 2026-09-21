@@ -1,5 +1,7 @@
 "use client";
 
+// Vercel production release: client PPT exports use anonymized competitors and separated slide headers.
+
 import {Suspense,useEffect,useState} from "react";
 import Link from "next/link";
 import {useSearchParams} from "next/navigation";
