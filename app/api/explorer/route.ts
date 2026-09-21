@@ -54,7 +54,8 @@ async function brandDetail(id:string,brand:any){
    // relying on a REST text filter for category names containing characters such as "&".
    const categoryBrands:any[]=await get("cpgist_brands?select=id,name,category&limit=5000");
    const categoryBrandIds=new Set(categoryBrands.filter((x:any)=>String(x.category||"").toLowerCase()===String(brand.category||"").toLowerCase()).map((x:any)=>String(x.id)));
-   const cr:any[]=await get("cpgist_brand_weekly?select=brand_id,week_ending,sales,units,distribution&order=week_ending.asc&limit=100000");
+   const benchmarkStart=prior[0];
+   const cr:any[]=await get("cpgist_brand_weekly?category=eq."+enc(brand.category)+"&week_ending=gte."+enc(benchmarkStart)+"&select=brand_id,week_ending,sales,units,distribution&order=week_ending.asc&limit=5000");
    const byBrand=new Map<string,any[]>();
    for(const r of cr){const k=String(r.brand_id);if(!categoryBrandIds.has(k))continue;if(!byBrand.has(k))byBrand.set(k,[]);byBrand.get(k)!.push(r);}
    const rows=[...byBrand.entries()].map(([brandId,rs])=>{
