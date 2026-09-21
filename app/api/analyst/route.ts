@@ -314,7 +314,14 @@ async function groqChat(key: string, body: any) {
       body: JSON.stringify(body),
     });
     last = response;
-    if (response.ok) return { response, data: await response.json() };
+    if (response.ok) {
+      const raw = await response.text();
+      try {
+        return { response, data: raw ? JSON.parse(raw) : { error: "AI provider returned an empty response body." } };
+      } catch {
+        return { response, data: { error: "AI provider returned an unreadable JSON response." } };
+      }
+    }
     if (response.status !== 429 && response.status !== 502 && response.status !== 503 && response.status !== 504) {
       return { response, data: await response.json().catch(()=>({error:"AI provider returned an invalid response."})) };
     }
@@ -351,11 +358,13 @@ export async function POST(req: Request) {
         model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
         messages,
         temperature: 0.1,
+        max_completion_tokens: 1200,
+        reasoning_effort: "low",
+        include_reasoning: false,
         tools: CPG_TOOLS.map((t: any) => ({ type: "function", function: t })),
         tool_choice: "auto",
         parallel_tool_calls: false,
         disable_tool_validation: true,
-        reasoning_format: "hidden",
       });
       if (!response.ok) return NextResponse.json({ error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status }, { status: response.status });
 
@@ -411,8 +420,10 @@ export async function POST(req: Request) {
         { role: "user", content: "Return the final answer now as the required JSON object. Do not call tools. Use only observed tool evidence." }
       ],
       temperature: 0.05,
-      response_format: { type: "json_object" },
-      reasoning_format: "hidden"
+      max_completion_tokens: 1000,
+      reasoning_effort: "low",
+      include_reasoning: false,
+      response_format: { type: "json_object" }
     });
     if (!finalResponse.ok) return NextResponse.json({ error: finalData?.error?.message || finalData?.message || "AI Analyst final response failed.", providerStatus: finalResponse.status }, { status: finalResponse.status });
     const raw = finalData.choices?.[0]?.message?.content;
