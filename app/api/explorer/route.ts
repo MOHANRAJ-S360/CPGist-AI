@@ -63,8 +63,8 @@ async function brandDetail(id:string,brand:any){
     const cs=cur.reduce((s,r)=>s+n(r.sales),0),psales=prev.reduce((s,r)=>s+n(r.sales),0);
     const cu=cur.reduce((s,r)=>s+n(r.units),0),pu=prev.reduce((s,r)=>s+n(r.units),0);
     const dist=cur.length?cur.reduce((s,r)=>s+n(r.distribution),0)/cur.length:null;
-    return{brandId,sales:cs,priorSales:psales,growth:psales?pct(cs,psales):null,units:cu,priorUnits:pu,unitGrowth:pu?pct(cu,pu):null,distribution:dist};
-   }).filter(r=>r.growth!=null);
+    return{brandId,sales:cs,priorSales:psales,growth:psales?pct(cs,psales):null,units:cu,priorUnits:pu,unitGrowth:pu?pct(cu,pu):null,distribution:dist,curCount:cur.length,prevCount:prev.length};
+   }).filter(r=>r.curCount===13 && r.prevCount===13 && r.growth!=null);
    const peers=rows.filter(r=>String(r.brandId)!==String(id));
    const brandNameMap=new Map(categoryBrands.map((x:any)=>[String(x.id),x.name]));
    const med=(vals:number[])=>{const a=vals.filter(Number.isFinite).sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null};
