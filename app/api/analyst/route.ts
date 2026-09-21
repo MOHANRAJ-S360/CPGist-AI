@@ -181,7 +181,7 @@ async function tool(name: string, a: Args, token: string) {
 
     case "product_sku_performance": {
       const brand = a.brandId ? "&brand_id=eq."+encodeURIComponent(String(a.brandId)) : "";
-      const rows = await get("cpgist_product_summary?select=product_id,brand_id,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&order=sales_13w.desc&limit=1000"+brand, token);
+      const rows = await get("cpgist_product_summary?select=product_id,brand_id,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&order=sales_13w.desc&limit=30"+brand, token);
       if (!rows.length) return { products: [], evidence:{source:"cpgist_product_summary",grain:"product 13-week summary",rowCount:0,periodStart:null,periodEnd:null,periodCount:0,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()}, warnings:["Product-level weekly summary data is not populated for the requested scope."] };
       const ids = rows.map((x:any)=>x.product_id).join(",");
       const products = ids ? await get("cpgist_products?select=id,name,sku,category,subcategory,size,pack_count,brand_id&id=in.("+encodeURIComponent(ids)+")", token) : [];
@@ -196,7 +196,7 @@ async function tool(name: string, a: Args, token: string) {
       if(a.brandId) clauses.push("brand_id=eq."+encodeURIComponent(String(a.brandId)));
       if(a.categoryId) clauses.push("category=ilike."+encodeURIComponent(String(a.categoryId)));
       if(a.retailerId) clauses.push("retailer_id=eq."+encodeURIComponent(String(a.retailerId)));
-      const q="syndicate_competitor_signals?select=brand_id,category,retailer_id,region,signal_date,signal_type,magnitude_pct,description&order=signal_date.desc&limit=1000"+(clauses.length?"&"+clauses.join("&"):"");
+      const q="syndicate_competitor_signals?select=brand_id,category,retailer_id,region,signal_date,signal_type,magnitude_pct,description&order=signal_date.desc&limit=50"+(clauses.length?"&"+clauses.join("&"):"");
       const rows=await get(q,token);
       const ids=[...new Set(rows.map((x:any)=>x.brand_id).filter(Boolean))].join(",");
       const brands=ids?await get("syndicate_brands?select=id,name&id=in.("+encodeURIComponent(ids)+")",token):[];
@@ -406,7 +406,7 @@ export async function POST(req: Request) {
     const { response: finalResponse, data: finalData } = await groqChat(key, {
       model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
       messages: [
-        { role: "system", content: "You are CPGist AI Analyst. Return only the required JSON object. Base every quantitative claim only on the tool results above. Never invent metrics. If a capability is unavailable, state the limitation. Keep the answer concise and professional.\n\nRequired fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion." },
+        { role: "system", content: "You are CPGist AI Analyst. Return only the required JSON object. Base every quantitative claim only on the tool results above. Never invent metrics. If a capability is unavailable, state the limitation. Keep the answer concise and professional.\n\nRequired fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. Keep the JSON under 900 tokens." },
         ...messages.slice(1),
         { role: "user", content: "Return the final answer now as the required JSON object. Do not call tools. Use only observed tool evidence." }
       ],
@@ -439,33 +439,7 @@ export async function POST(req: Request) {
       }
       analyst.warnings = [...new Set([...(analyst.warnings || []), ...toolEvidence.flatMap(x => Array.isArray(x.result?.warnings) ? x.result.warnings : [])])];
 
-      // Final verification pass: a separate low-temperature model call checks the
-      // drafted answer against the exact tool evidence and returns a corrected object.
-      // It is intentionally forbidden from introducing new analysis.
-      const verifyPayload = JSON.stringify({ draft: analyst, toolEvidence });
-      const { response: verifyResponse, data: verifyData } = await groqChat(key, {
-        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-        messages: [
-          {
-            role: "system",
-            content: "You are the CPGist answer verifier. Return only a JSON object with the exact same schema as the draft. Compare every quantitative claim, ranking, date range, and source against toolEvidence. Correct unsupported numbers, rankings, periods, names, or causal wording. Preserve valid content. Never add facts not present in toolEvidence. If evidence is insufficient, add a concise warning and use a limitation instead of guessing. Do not perform new calculations. Do not call tools."
-          },
-          { role: "user", content: verifyPayload }
-        ],
-        temperature: 0,
-        response_format: { type: "json_object" },
-        reasoning_format: "hidden"
-      });
-      if (verifyResponse.ok) {
-        try {
-          const verified = JSON.parse(verifyData.choices?.[0]?.message?.content || "{}");
-          if (verified?.headline && verified?.executiveTakeaway && Array.isArray(verified.metrics) && Array.isArray(verified.sections)) {
-            analyst = verified;
-          }
-        } catch {}
-      }
-
-      return NextResponse.json({ analyst, verification: { performed: true, toolCount: toolEvidence.length } });
+      // Deterministic evidence gate above is the final verification layer for the free/on-demand tier.\n      return NextResponse.json({ analyst, verification: { performed: false, toolCount: toolEvidence.length, mode: "deterministic-evidence-gate" } });
     } catch {
       return NextResponse.json({ error: "The analyst produced an invalid structured response. Please retry." }, { status: 502 });
     }
