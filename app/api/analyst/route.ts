@@ -155,27 +155,138 @@ async function tool(name: string, a: Args, token: string) {
     }
 
     case "monthly_business_review": {
-      const reviewRows = await queryDataset(a, token);
-      const filters = filtersFromArgs(a);
-      const health = businessHealthScan(reviewRows.rows, filters);
-      const growth = categoryGrowthPlan(reviewRows.rows, filters);
-      const latest = growth.data.brands.slice(0, 10);
-      const brandIds = latest.map(x => x.brandId).join(",");
-      const brandMaster = brandIds ? await get("cpgist_brands?select=id,name,category,parent_company&id=in.(" + encodeURIComponent(brandIds) + ")", token) : [];
-      const names = Object.fromEntries(brandMaster.map((b:any)=>[String(b.id),b]));
-      const products = a.brandId ? await get("cpgist_product_summary?select=product_id,brand_id,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&brand_id=eq."+encodeURIComponent(String(a.brandId))+"&order=sales_13w.desc&limit=10", token) : [];
-      const retailers = a.brandId ? await get("cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&brand_id=eq."+encodeURIComponent(String(a.brandId))+"&order=sales_13w.desc&limit=10", token) : [];
+      const brandId = String(a.brandId || "").trim();
+      if (!brandId) return { error: "monthly_business_review requires a brandId for a brand-scoped review." };
+
+      const brandContext = await resolveBrandContext(brandId, token);
+      const categoryName = brandContext.category;
+      if (!categoryName) return { error: "The selected brand has no category in the brand master, so category context cannot be validated." };
+
+      const brandDataset = await queryDataset({ ...a, brandId }, token);
+      const categoryDataset = await queryDataset({ ...a, brandId: undefined, categoryId: categoryName }, token);
+
+      const brandPeriods = [...new Set(brandDataset.rows.map(r => r.week_ending).filter(Boolean))].sort();
+      const latest13 = brandPeriods.slice(-13);
+      const prior13 = brandPeriods.slice(-26, -13);
+      const recentSet = new Set(latest13);
+      const priorSet = new Set(prior13);
+
+      const sum = (rows:any[], key:string) => rows.reduce((s,r)=>s + Number(r[key] || 0), 0);
+      const avg = (rows:any[], key:string) => rows.length ? rows.reduce((s,r)=>s + Number(r[key] || 0), 0) / rows.length : null;
+      const recentRows = brandDataset.rows.filter(r => recentSet.has(r.week_ending));
+      const priorRows = brandDataset.rows.filter(r => priorSet.has(r.week_ending));
+
+      const recentSales = sum(recentRows, "dollar_sales");
+      const priorSales = sum(priorRows, "dollar_sales");
+      const recentUnits = sum(recentRows, "units");
+      const priorUnits = sum(priorRows, "units");
+      const recentPrice = recentUnits ? recentSales / recentUnits : null;
+      const priorPrice = priorUnits ? priorSales / priorUnits : null;
+      const recentDistribution = avg(recentRows, "acv_distribution");
+      const priorDistribution = avg(priorRows, "acv_distribution");
+      const recentPromo = avg(recentRows, "promo_observations");
+      const priorPromo = avg(priorRows, "promo_observations");
+
+      const pct = (now:number, old:number) => old ? (now / old - 1) * 100 : null;
+      const salesGrowthPct = pct(recentSales, priorSales);
+      const unitGrowthPct = pct(recentUnits, priorUnits);
+      const priceGrowthPct = recentPrice !== null && priorPrice ? pct(recentPrice, priorPrice) : null;
+      const distributionChangePts = recentDistribution !== null && priorDistribution !== null ? recentDistribution - priorDistribution : null;
+      const promoChangePts = recentPromo !== null && priorPromo !== null ? recentPromo - priorPromo : null;
+
+      // Category metrics use the exact same 13-week and prior-13-week windows as the brand.
+      const categoryPeriods = [...new Set(categoryDataset.rows.map(r => r.week_ending).filter(Boolean))].sort();
+      const categoryLatest13 = new Set(categoryPeriods.slice(-13));
+      const categoryPrior13 = new Set(categoryPeriods.slice(-26, -13));
+      const categoryRecentRows = categoryDataset.rows.filter(r => categoryLatest13.has(r.week_ending));
+      const categoryPriorRows = categoryDataset.rows.filter(r => categoryPrior13.has(r.week_ending));
+      const categorySales = sum(categoryRecentRows, "dollar_sales");
+      const categoryPriorSales = sum(categoryPriorRows, "dollar_sales");
+      const categoryGrowthPct = pct(categorySales, categoryPriorSales);
+      const marketShare = categorySales ? recentSales / categorySales : null;
+      const priorMarketShare = categoryPriorSales ? priorSales / categoryPriorSales : null;
+      const shareChangePts = marketShare !== null && priorMarketShare !== null ? (marketShare - priorMarketShare) * 100 : null;
+
+      const categoryResult = categoryGrowthPlan(categoryDataset.rows, { categoryId: categoryName });
+      const categoryBrands = categoryResult.data.brands.slice(0, 8);
+
+      const recentAnomalies = detectAnomalies(recentRows, { brandId }).data.anomalies;
+      const anomalyDetails = recentAnomalies.map(x => ({ period:x.period, sales:x.sales, zScore:x.zScore }));
+
+      const products = await get("cpgist_product_summary?select=product_id,brand_id,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&brand_id=eq."+encodeURIComponent(brandId)+"&order=sales_13w.desc&limit=10", token);
+      const productIds = products.map((x:any)=>x.product_id).join(",");
+      const productMaster = productIds ? await get("cpgist_products?select=id,name,sku,category,subcategory,size,pack_count&id=in.("+encodeURIComponent(productIds)+")", token) : [];
+      const productNames = Object.fromEntries(productMaster.map((x:any)=>[String(x.id),x]));
+
+      const retailers = await get("cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&brand_id=eq."+encodeURIComponent(brandId)+"&order=sales_13w.desc&limit=20", token);
       const retailerIds = retailers.map((x:any)=>x.retailer_id).join(",");
       const retailerMaster = retailerIds ? await get("cpgist_retailers?select=id,name,channel,region,total_stores&id=in.("+encodeURIComponent(retailerIds)+")", token) : [];
       const retailerNames = Object.fromEntries(retailerMaster.map((x:any)=>[String(x.id),x]));
+
+      const validationIssues:any[] = [];
+      if (latest13.length !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_RECENT_13W", message:"Fewer than 13 observed weeks are available for the recent period." });
+      if (prior13.length !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_PRIOR_13W", message:"Fewer than 13 observed weeks are available for the prior comparison period." });
+      if (categoryLatest13.size !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_CATEGORY_13W", message:"Fewer than 13 category weeks are available for the recent period." });
+      if (categoryPrior13.size !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_CATEGORY_PRIOR_13W", message:"Fewer than 13 category weeks are available for the prior comparison period." });
+      if (marketShare !== null && (marketShare < 0 || marketShare > 1)) validationIssues.push({ severity:"error", code:"INVALID_SHARE", message:"Calculated brand share is outside the valid 0–100% range." });
+      if (recentSales >= 0 && recentUnits > 0 && recentPrice !== null && Math.abs(recentSales - recentUnits * recentPrice) > Math.max(1, recentSales * 1e-8)) validationIssues.push({ severity:"error", code:"PRICE_RECONCILIATION", message:"Recent sales, units and realized price do not reconcile." });
+
+      const evidence = {
+        source: "cpgist_brand_weekly + cpgist_category_weekly-equivalent brand/category scope",
+        grain: "weekly brand/category sales",
+        rowCount: brandDataset.rows.length,
+        periodStart: latest13[0] ?? null,
+        periodEnd: latest13.at(-1) ?? null,
+        periodCount: latest13.length,
+        filters: { brandId, categoryId: categoryName },
+        generatedAt: new Date().toISOString()
+      };
+
       return {
-        executive: { status: health.data.status, salesGrowthPct: health.data.salesGrowthPct, latestSales: health.data.latestSales, priorSales: health.data.priorSales, latestUnits: health.data.latestUnits, latestPrice: health.data.latestPrice, anomalyCount: health.data.anomalyCount },
-        brands: latest.map(x=>({...x,brandName:names[x.brandId]?.name ?? null,category:names[x.brandId]?.category ?? null})),
-        products: products.map((x:any)=>({...x,productId:x.product_id})),
-        retailers: retailers.map((x:any)=>({...x,retailerName:retailerNames[String(x.retailer_id)]?.name ?? null,channel:retailerNames[String(x.retailer_id)]?.channel ?? null,region:retailerNames[String(x.retailer_id)]?.region ?? null})),
-        categoryDiagnostics: growth.data.diagnostics.map(x=>({...x,brandName:names[x.brandId]?.name ?? null})),
-        evidence:{...health.evidence,source:reviewRows.source},
-        warnings:[...health.warnings,...growth.warnings]
+        brand: { brandId, brandName: brandContext.brandName, category: categoryName },
+        executive: {
+          latest13wSales: recentSales,
+          prior13wSales: priorSales,
+          salesGrowthPct,
+          latest13wUnits: recentUnits,
+          prior13wUnits: priorUnits,
+          unitGrowthPct,
+          latest13wRealizedPrice: recentPrice,
+          prior13wRealizedPrice: priorPrice,
+          priceGrowthPct,
+          distributionAcv: recentDistribution,
+          priorDistributionAcv: priorDistribution,
+          distributionChangePts,
+          promoRate: recentPromo,
+          priorPromoRate: priorPromo,
+          promoChangePts,
+          category13wSales: categorySales,
+          categoryPrior13wSales: categoryPriorSales,
+          categoryGrowthPct,
+          marketShare,
+          priorMarketShare,
+          shareChangePts,
+          anomalyCountRecent13w: anomalyDetails.length
+        },
+        categoryContext: {
+          categorySales: categorySales,
+          categoryPriorSales,
+          categoryGrowthPct,
+          topBrands: categoryBrands.map((x:any)=>({ brandId:x.brandId, sales:x.recentSales, growthPct:x.growthPct, share:x.share }))
+        },
+        products: products.map((x:any)=>({...x, productName:productNames[String(x.product_id)]?.name ?? null, sku:productNames[String(x.product_id)]?.sku ?? null, size:productNames[String(x.product_id)]?.size ?? null, packCount:productNames[String(x.product_id)]?.pack_count ?? null})),
+        retailers: retailers.map((x:any)=>({...x, retailerName:retailerNames[String(x.retailer_id)]?.name ?? null, channel:retailerNames[String(x.retailer_id)]?.channel ?? null, region:retailerNames[String(x.retailer_id)]?.region ?? null, totalStores:retailerNames[String(x.retailer_id)]?.total_stores ?? null})),
+        anomalies: anomalyDetails,
+        evidence,
+        warnings: [
+          ...(latest13.length < 13 || prior13.length < 13 ? ["The 13-week comparison is incomplete."] : []),
+          "Discount depth is not available in cpgist_brand_weekly; do not infer discounting from the promotion rate.",
+          "Promotion rate is descriptive. Incremental lift, ROI and causal promotional effectiveness are not estimated.",
+          "Retailer gaps are candidate distribution gaps, not quantified incremental sales opportunity.",
+          "No margin/cost fields are available in the supplied product summary, so margin contribution cannot be inferred.",
+          "Anomalies are statistical flags requiring underlying-record review; they do not establish a business cause."
+        ],
+        validation: validationIssues
       };
     }
 
@@ -387,7 +498,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (/scenario|what if|simulate/.test(q)) add("run_scenario");
 
   const evidence: any[] = [];
-  for (const name of selected.slice(0, 4)) {
+  for (const name of selected.slice(0, 3)) {
     try {
       const args: Args = { ...scope };
       if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share"].includes(name)) args.categoryId = categoryId;
@@ -425,7 +536,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. If evidence is unavailable, say so explicitly. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
+        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. If evidence is unavailable, say so explicitly. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
       },
       ...incoming.slice(-6).map((m: any) => ({
         role: m?.role === "assistant" ? "assistant" : "user",
