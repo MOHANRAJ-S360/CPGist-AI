@@ -2,9 +2,9 @@
 
 import {useEffect,useMemo,useState} from "react";
 import Link from "next/link";
-import {ArrowDownRight,ArrowUpRight,DollarSign,Info,Search,ShieldCheck,TrendingUp} from "lucide-react";
+import {DollarSign,Info,Search,ShieldCheck,TrendingUp} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
-import {LineChart,BarChart} from "../../components/cpg-charts";
+import {LineChart} from "../../components/cpg-charts";
 import {supabaseBrowser} from "../../lib/supabase-browser";
 
 const money=(n:any)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(Number(n)||0);
