@@ -21,6 +21,32 @@ const params = {
 
 export const CPG_TOOLS = [
   {
+    name: "category_growth_plan",
+    description: "Diagnose category and brand momentum over recent 13-week versus prior 13-week periods, including distribution signals and explicit action signals. Use first for category growth, turnaround and improvement questions.",
+    parameters: params,
+  },
+  {
+    name: "monthly_business_review",
+    description: "Build an automatic monthly CPG business review using the latest 13 weeks: executive summary, category/brand momentum, price/promotion, distribution, retailer/SKU opportunities, risks and next questions.",
+    parameters: params,
+  },
+  {
+    name: "product_sku_performance",
+    description: "Analyze product/SKU productivity using the populated CPGist product summary. Use for SKU, assortment, pack, size and product-mix questions.",
+    parameters: params,
+  },
+  {
+    name: "competitive_signals",
+    description: "Analyze populated competitive signals for the selected scope. Treat signals as observed context, not causal proof.",
+    parameters: params,
+  },
+  {
+    name: "promotion_diagnostic",
+    description: "Diagnose observed promotion rate, realized price and sales movement. This is descriptive and does not claim incremental causal lift.",
+    parameters: params,
+  },
+
+  {
     name: "data_readiness",
     description: "Check which CPG data domains are currently populated before answering a question. Use this when the requested analysis may depend on pricing, promotion, retailer opportunity, product/SKU, inventory, profitability, geography, competition, or shopper data.",
     parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
