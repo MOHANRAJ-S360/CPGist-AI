@@ -99,7 +99,7 @@ async function tool(name: string, a: Args, token: string) {
 
   switch (name) {
     case "data_readiness": {
-      const tables = ["cpgist_brands","cpgist_products","cpgist_categories","cpgist_regions","cpgist_brand_weekly","cpgist_category_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_product_weekly","cpgist_competitor_weekly"];
+      const tables = ["cpgist_brands","cpgist_products","cpgist_categories","cpgist_regions","cpgist_brand_weekly","cpgist_category_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_brand_retailer_summary","cpgist_product_weekly","cpgist_product_summary","cpgist_competitor_weekly","syndicate_competitor_signals"];
       const counts: Record<string, number> = {};
       for (const table of tables) {
         try {
@@ -109,7 +109,7 @@ async function tool(name: string, a: Args, token: string) {
           counts[table] = range && range.includes("/") ? Number(range.split("/")[1]) || 0 : (await response.json()).length;
         } catch { counts[table] = 0; }
       }
-      return { domains: { sales: counts.cpgist_brand_weekly > 0, retailerOpportunity: counts.cpgist_brand_retailer_weekly > 0, products: counts.cpgist_products > 0, competition: counts.cpgist_competitor_weekly > 0 }, counts, warnings: counts.cpgist_brand_weekly === 0 ? ["CPGist Free Dataset is not imported yet."] : [] };
+      return { domains: { sales: counts.cpgist_brand_weekly > 0, retailerOpportunity: counts.cpgist_brand_retailer_weekly > 0 || counts.cpgist_brand_retailer_summary > 0, products: counts.cpgist_product_weekly > 0 || counts.cpgist_product_summary > 0, competition: counts.cpgist_competitor_weekly > 0 || counts.syndicate_competitor_signals > 0, geography: false, shopper: false, innovation: false, ecommerce: false }, counts, warnings: counts.cpgist_brand_weekly === 0 ? ["CPGist Free Dataset is not imported yet."] : [] };
     }
 
     case "business_health_scan": {
