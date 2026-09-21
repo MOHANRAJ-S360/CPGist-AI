@@ -38,17 +38,120 @@ function ReportsContent(){
   try{
    const mod=await import("pptxgenjs"); const PptxGenJS:any=mod.default||mod; const pptx=new PptxGenJS();
    pptx.layout="LAYOUT_WIDE"; pptx.author="CPGist"; pptx.company="CPGist"; pptx.subject="Client-ready CPG business review"; pptx.title=(d.scope==="brand"?d.brand.name+" Brand Performance":"CPGist Executive Market Performance")+" Review"; pptx.lang="en-US";
-   const dark="0E1728",purple="6D5DFC",text="101828",muted="667085",line="E5E8EF",soft="F7F8FA";
-   const addHeader=(s:any,t:string)=>{s.background={color:"FFFFFF"};s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.333,h:.65,fill:{color:dark},line:{color:dark}});s.addText("CPGist",{x:.55,y:.18,w:1.2,h:.2,color:"FFFFFF",bold:true,fontSize:13});s.addText(t,{x:2,y:.18,w:9.5,h:.2,color:"FFFFFF",bold:true,fontSize:12});};
-   const footer=(s:any)=>s.addText("CPGist · Source-anchored · "+String(d.periods?.[0]||"")+" → "+String(d.periods?.at(-1)||""),{x:.5,y:7.1,w:12.3,h:.12,color:"98A2B3",fontSize:6,align:"right"});
-   const kpiSlide=(title:string,cards:any[],note:string)=>{const s=pptx.addSlide();addHeader(s,title);cards.forEach((c:any,i:number)=>{s.addShape(pptx.ShapeType.roundRect,{x:.6+i*3.05,y:1.35,w:2.75,h:1.1,rectRadius:.06,fill:{color:soft},line:{color:line}});s.addText(c[0],{x:.8+i*3.05,y:1.58,w:2.25,h:.15,fontSize:7,color:muted,bold:true});s.addText(String(c[1]),{x:.8+i*3.05,y:1.86,w:2.25,h:.25,fontSize:17,color:text,bold:true});});s.addText(note,{x:.65,y:3.0,w:11.7,h:1.0,fontSize:13,color:text,fit:"shrink"});footer(s);};
-   kpiSlide(d.scope==="brand"?d.brand.name+" — Executive Summary":"Executive Summary",d.scope==="brand"?[["Latest 13W sales",money(d.totalSales)],["13W growth",pct(d.growth)],["Category share",d.brandShare==null?"—":Number(d.brandShare).toFixed(1)+"%"],["Avg ACV",d.avgDistribution==null?"—":Number(d.avgDistribution).toFixed(1)+"%"]]:[["Latest 13W sales",money(d.totalSales)],["13W growth",pct(d.growth)],["Units",new Intl.NumberFormat().format(d.totalUnits||0)],["Avg ACV",d.avgDistribution==null?"—":Number(d.avgDistribution).toFixed(1)+"%"]],"This review separates observed performance from diagnosis. All figures are drawn from the active CPGist source and the displayed period coverage.");
-   {const s=pptx.addSlide();addHeader(s,"Market / Category Performance");const cats=(d.categories||[]).slice(0,8);if(cats.length){cats.forEach((x:any,i:number)=>{const y=1.15+i*.58;s.addText(String(x.name),{x:.65,y,w:2.7,h:.18,fontSize:8,color:text});s.addShape(pptx.ShapeType.rect,{x:3.2,y:y+.02,w:5.5,h:.16,fill:{color:"EEF0F5"},line:{color:"EEF0F5"}});s.addShape(pptx.ShapeType.rect,{x:3.2,y:y+.02,w:Math.max(.08,5.5*(Number(x.sales||0)/Math.max(...cats.map((z:any)=>Number(z.sales||0)),1))),h:.16,fill:{color:purple},line:{color:purple}});s.addText(money(x.sales),{x:8.95,y,w:1.25,h:.18,fontSize:8,color:text,bold:true});s.addText(pct(x.growth),{x:10.4,y,w:1.0,h:.18,fontSize:8,color:text,bold:true});});}else s.addText("Category-level data is not available in this report scope.",{x:.7,y:1.4,w:7,h:.4,fontSize:13,color:muted});s.addText("Growth is descriptive period-over-period movement; it is not presented as causal attribution.",{x:.65,y:6.25,w:11.5,h:.25,fontSize:9,color:muted});footer(s);}
-   {const s=pptx.addSlide();addHeader(s,d.scope==="brand"?d.brand.name+" — Sales Trend":"Market Sales Trend");const pts=(d.weekly||[]).slice(-26);if(pts.length)s.addChart(pptx.ChartType.line,[{name:"Sales",labels:pts.map((x:any)=>String(x.period).slice(5)),values:pts.map((x:any)=>Number(x.sales)||0)}],{x:.6,y:1.05,w:8.0,h:4.9,showLegend:false,showTitle:false,catAxisLabelFontSize:7,valAxisLabelFontSize:7,chartColors:[purple],showValue:false});s.addText("Read the trend first, then test drivers across distribution, price, promotion and retailer mix.",{x:9.0,y:1.35,w:3.4,h:1.2,fontSize:12,color:text,fit:"shrink"});footer(s);}
-   {const s=pptx.addSlide();addHeader(s,d.scope==="brand"?d.brand.name+" — Product / SKU Performance":"Brand Performance & Competition");const rows=d.scope==="brand"?(d.products||[]).slice(0,10):(d.topBrands||[]).slice(0,10);if(rows.length){rows.forEach((b:any,i:number)=>{const y=1.1+i*.52;s.addText(String(b.name),{x:.65,y,w:3.0,h:.16,fontSize:8,color:text});s.addShape(pptx.ShapeType.rect,{x:3.65,y:y+.02,w:5.1,h:.15,fill:{color:"EEF0F5"},line:{color:"EEF0F5"}});s.addShape(pptx.ShapeType.rect,{x:3.65,y:y+.02,w:Math.max(.08,5.1*(Number(b.sales||0)/Math.max(...rows.map((z:any)=>Number(z.sales||0)),1))),h:.15,fill:{color:purple},line:{color:purple}});s.addText(money(b.sales),{x:9.0,y,w:1.2,h:.16,fontSize:8,color:text,bold:true});if(b.growth!=null)s.addText(pct(b.growth),{x:10.35,y,w:1,h:.16,fontSize:8,color:text,bold:true});});}else s.addText("Product / brand detail is not populated for this scope.",{x:.7,y:1.4,w:7,h:.4,fontSize:13,color:muted});footer(s);}
-   {const s=pptx.addSlide();addHeader(s,d.scope==="brand"?d.brand.name+" — Retailer Footprint":"Retailer / Key Account Performance");const rows=(d.retailers||[]).slice(0,10);if(rows.length){rows.forEach((r:any,i:number)=>{const y=1.1+i*.5;s.addText(String(r.name),{x:.65,y,w:3.2,h:.16,fontSize:8,color:text});s.addText(String(r.channel||"—"),{x:4.0,y,w:1.4,h:.16,fontSize:8,color:muted});s.addText(String(r.region||"—"),{x:5.5,y,w:1.5,h:.16,fontSize:8,color:muted});s.addText(money(r.sales),{x:7.25,y,w:1.4,h:.16,fontSize:8,color:text,bold:true});if(r.growth!=null)s.addText(pct(r.growth),{x:8.8,y,w:1,h:.16,fontSize:8,color:text,bold:true});});}else s.addText("Retailer-level data is not populated in the active report scope.",{x:.7,y:1.4,w:8,h:.4,fontSize:13,color:muted});footer(s);}
-   {const s=pptx.addSlide();addHeader(s,"Pricing, Promotion & Distribution");const price=d.price==null?"—":money(d.price),promo=d.promoRate==null?"—":Number(d.promoRate).toFixed(1)+"%";s.addText("Observed commercial levers",{x:.7,y:1.15,w:5,h:.3,fontSize:20,bold:true,color:text});[["Realized price",price],["Promo rate",promo],["Average ACV",d.avgDistribution==null?"—":Number(d.avgDistribution).toFixed(1)+"%"]].forEach((x:any,i:number)=>{s.addShape(pptx.ShapeType.roundRect,{x:.7+i*4.0,y:1.85,w:3.45,h:1.15,rectRadius:.05,fill:{color:soft},line:{color:line}});s.addText(x[0],{x:.95+i*4,y:2.08,w:2.8,h:.16,fontSize:8,color:muted,bold:true});s.addText(x[1],{x:.95+i*4,y:2.38,w:2.8,h:.25,fontSize:17,color:text,bold:true});});s.addText("A dash means the current source does not expose that measure for this scope. No causal pricing or promotion conclusion is inferred from missing fields.",{x:.7,y:3.55,w:11.5,h:.7,fontSize:12,color:text,fit:"shrink"});footer(s);}
-   kpiSlide("Risks, Opportunities & Next Analysis",[["Data coverage",String(d.periods?.length||0)+" periods"],["Current source",d.compactDataset?"CPGist Free Dataset":"Source dataset"],["Scope",d.scope==="brand"?d.brand.name:"Market"],["AI follow-up","Available"]],"Use AI Analyst to test the observed movement against retailer whitespace, product productivity, price/promotion, distribution, anomalies and forecast scenarios. Unsupported domains remain explicitly labeled rather than fabricated.");
+   const dark="0E1728",accent="6D5DFC",text="101828",muted="667085",line="E5E8EF",soft="F7F8FA",green="067647",red="B42318";
+   const brandName=d.scope==="brand"?String(d.brand?.name||"Selected Brand"):"Market";
+   const categoryName=d.scope==="brand"?String(d.brand?.category||"Category not available"):"Market";
+   const periods=Array.isArray(d.periods)?d.periods:[], latest=periods.slice(-13), prior=periods.slice(-26,-13);
+   const products=Array.isArray(d.products)?d.products:[], retailers=Array.isArray(d.retailers)?d.retailers:[], signals=Array.isArray(d.competitorSignals)?d.competitorSignals:[];
+   const topProduct=products[0], topRetailer=retailers[0];
+   const topProductMix=topProduct&&Number(d.totalSales)>0?Number(topProduct.sales||0)/Number(d.totalSales)*100:null;
+   const retailerTotal=retailers.reduce((s:number,x:any)=>s+Number(x.sales||0),0);
+   const topRetailerShare=topRetailer&&retailerTotal>0?Number(topRetailer.sales||0)/retailerTotal*100:null;
+   const median=(vals:number[])=>{const a=vals.filter(Number.isFinite).sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null};
+   const retailerDistMedian=median(retailers.map((x:any)=>Number(x.distribution)).filter(Number.isFinite));
+   const money0=(n:any)=>n==null?"—":money(n);
+   const pct0=(n:any)=>n==null?"—":pct(n);
+   const addHeader=(s:any,t:string)=>{s.background={color:"FFFFFF"};s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.333,h:.68,fill:{color:dark},line:{color:dark}});s.addText("CPGist",{x:.55,y:.18,w:1.2,h:.2,color:"FFFFFF",bold:true,fontSize:13});s.addText(t,{x:2,y:.18,w:10.3,h:.2,color:"FFFFFF",bold:true,fontSize:12});};
+   const footer=(s:any)=>s.addText("CPGist · Source-anchored · "+String(periods[0]||"—")+" → "+String(periods.at(-1)||"—"),{x:.5,y:7.1,w:12.3,h:.12,color:"98A2B3",fontSize:6,align:"right"});
+   const note=(s:any,t:string)=>s.addText(t,{x:.7,y:6.35,w:11.7,h:.38,color:muted,fontSize:8,fit:"shrink"});
+   const kpis=(s:any,cards:any[])=>cards.forEach((c:any,i:number)=>{const w=2.75,g=3.02,x=.55+i*g;s.addShape(pptx.ShapeType.roundRect,{x,y:1.12,w,h:1.05,rectRadius:.05,fill:{color:soft},line:{color:line}});s.addText(c[0],{x:x+.2,y:1.35,w:w-.4,h:.16,fontSize:7,color:muted,bold:true});s.addText(String(c[1]),{x:x+.2,y:1.65,w:w-.4,h:.25,fontSize:16,color:c[2]||text,bold:true,fit:"shrink"});});
+   const unavailable=(s:any,t:string)=>s.addText(t,{x:.7,y:2.55,w:11.6,h:.55,fontSize:14,color:muted,bold:true,fit:"shrink"});
+   const bullets=(s:any,items:string[],x=.75,y=3.0,w=11.6)=>items.forEach((t,i)=>s.addText("• "+t,{x,y:y+i*.58,w,h:.38,fontSize:12,color:text,fit:"shrink"}));
+   const title=(s:any,t:string,sub?:string)=>{s.addText(t,{x:.7,y:.88,w:11.7,h:.35,fontSize:21,bold:true,color:text});if(sub)s.addText(sub,{x:.7,y:1.25,w:11.5,h:.24,fontSize:9,color:muted});};
+
+   // 1 — Executive Summary
+   {const s=pptx.addSlide();addHeader(s,"Executive Summary");title(s,brandName,categoryName);kpis(s,[["Latest 13W",money0(d.totalSales)],["13W growth",pct0(d.growth),Number(d.growth||0)<0?red:green],["Category share",d.brandShare==null?"—":Number(d.brandShare).toFixed(1)+"%"],["Distribution",d.avgDistribution==null?"—":Number(d.avgDistribution).toFixed(1)+"%"]]);
+    const takeaways=[
+      brandName+" generated "+money0(d.totalSales)+" in the latest 13 weeks, "+pct0(d.growth)+" versus the prior 13 weeks.",
+      d.brandShare==null?"Category share is unavailable in the current source.":"Observed category share is "+Number(d.brandShare).toFixed(1)+"% based on the reported category sales.",
+      topProduct?String(topProduct.name)+" contributes "+Number(topProductMix||0).toFixed(1)+"% of brand sales; product-level growth is not exposed in the current summary.":"Product driver detail is unavailable.",
+      topRetailer?String(topRetailer.name)+" is the largest observed retailer by sales in the brand scope; retailer share is "+(topRetailerShare==null?"unavailable":topRetailerShare.toFixed(1)+"% of listed retailer sales."):"Retailer contribution detail is unavailable."
+    ];
+    bullets(s,takeaways,.75,2.55,11.7);note(s,"Executive takeaways are descriptive signals from the connected source; they are not causal claims.");footer(s);}
+
+   // 2 — What Changed
+   {const s=pptx.addSlide();addHeader(s,"What Changed");title(s,"What changed in the latest 13 weeks","Observed movement versus the preceding 13-week period.");kpis(s,[["Sales",money0(d.totalSales)],["13W vs prior",pct0(d.growth),Number(d.growth||0)<0?red:green],["Units",new Intl.NumberFormat().format(Number(d.totalUnits||0))],["Realized price",money0(d.price)],["Distribution",d.avgDistribution==null?"—":Number(d.avgDistribution).toFixed(1)+"%"]]);
+    const pts=(d.weekly||[]).slice(-26);if(pts.length)s.addChart(pptx.ChartType.line,[{name:"Sales",labels:pts.map((x:any)=>String(x.period).slice(5)),values:pts.map((x:any)=>Number(x.sales)||0)}],{x:.7,y:2.55,w:8.1,h:3.35,showLegend:false,showTitle:false,catAxisLabelFontSize:7,valAxisLabelFontSize:7,chartColors:[accent],showValue:false});
+    s.addText("Interpretation",{x:9.1,y:2.6,w:3,h:.25,fontSize:11,bold:true,color:text});bullets(s,[Number(d.growth||0)<0?"Sales momentum is negative versus the prior 13 weeks.":"Sales momentum is positive versus the prior 13 weeks.","Price and distribution are observed commercial measures; the current report does not establish causal contribution.","Weekly trend shows the timing of movement without attributing the movement to a single driver."],9.1,3.0,3.3);footer(s);}
+
+   // 3 — Category Context
+   {const s=pptx.addSlide();addHeader(s,"Category Context");title(s,categoryName,"Brand position within the observed category context.");kpis(s,[["Category growth",d.metrics?.categoryGrowth==null?"—":pct(d.metrics.categoryGrowth)],["Brand share",d.brandShare==null?"—":Number(d.brandShare).toFixed(1)+"%"],["Brand growth",pct0(d.growth)],["Category sales",d.metrics?.categorySales==null?"—":money(d.metrics.categorySales)]]);
+    const catGrowth=d.metrics?.categoryGrowth;
+    if(catGrowth==null)unavailable(s,"Category growth is not available for the current source/period scope.");
+    else s.addText("Category growth is "+pct(catGrowth)+" across the latest versus prior 13 weeks.",{x:.75,y:2.55,w:11.5,h:.35,fontSize:15,color:text,bold:true});
+    if(signals.length){s.addText("Competitive movement signals",{x:.75,y:3.15,w:5,h:.25,fontSize:12,bold:true,color:text});signals.slice(0,4).forEach((x:any,i:number)=>s.addText("• "+String(x.description||x.signal_type||"Signal")+" "+(x.magnitude_pct==null?"":"("+pct(x.magnitude_pct)+")"),{x:.85,y:3.55+i*.5,w:11.2,h:.32,fontSize:10,color:text,fit:"shrink"}));}
+    else s.addText("Competitive movement: unavailable — no competitive signal records were returned for this category in the connected source.",{x:.75,y:3.2,w:11.4,h:.5,fontSize:12,color:muted,fit:"shrink"});
+    note(s,"No market-share claim is made beyond the observed brand-share calculation. Missing category/competitive fields are shown explicitly.");footer(s);}
+
+   // 4 — Brand / Product Drivers
+   {const s=pptx.addSlide();addHeader(s,"Brand / Product Drivers");title(s,brandName,"SKU contribution, mix and distribution; product growth is shown only when supported.");if(products.length){
+      const headers=["PRODUCT / SKU","SIZE","13W SALES","MIX","DISTRIBUTION","GROWTH"];headers.forEach((h,i)=>s.addText(h,{x:[.55,4.0,5.35,7.0,8.15,10.1][i],y:1.72,w:[3.3,1.1,1.35,.9,1.6,1.3][i],h:.18,fontSize:7,bold:true,color:muted}));
+      products.slice(0,8).forEach((p:any,i:number)=>{const y=2.08+i*.5;s.addText(String(p.name||"—")+" "+(p.sku?"· "+p.sku:""),{x:.55,y,w:3.3,h:.22,fontSize:8,color:text,bold:true,fit:"shrink"});s.addText(String(p.size||"—"),{x:4.0,y,w:1.1,h:.22,fontSize:8,color:muted});s.addText(money0(p.sales),{x:5.35,y,w:1.35,h:.22,fontSize:8,color:text,bold:true});s.addText(Number(d.totalSales)>0?(Number(p.sales||0)/Number(d.totalSales)*100).toFixed(1)+"%":"—",{x:7.0,y,w:.9,h:.22,fontSize:8,color:text});s.addText(p.distribution==null?"—":Number(p.distribution).toFixed(1)+"%",{x:8.15,y,w:1.6,h:.22,fontSize:8,color:text});s.addText("Unavailable",{x:10.1,y,w:1.3,h:.22,fontSize:8,color:muted});});
+    }else unavailable(s,"Product/SKU detail is not populated in the current source.");
+    note(s,"The current product summary exposes 13W sales, units, price, distribution and promotion, but not a prior-period SKU series; SKU growth/decline is therefore not fabricated.");footer(s);}
+
+   // 5 — Retailer Performance
+   {const s=pptx.addSlide();addHeader(s,"Retailer Performance");title(s,brandName,"Sales, distribution and descriptive whitespace signals by observed retailer.");if(retailers.length){
+      const headers=["RETAILER","CHANNEL","SALES","SALES SHARE","DISTRIBUTION","WHITESPACE SIGNAL"];headers.forEach((h,i)=>s.addText(h,{x:[.55,3.55,5.05,6.65,8.15,9.85][i],y:1.72,w:[2.8,1.3,1.3,1.2,1.5,2.5][i],h:.18,fontSize:7,bold:true,color:muted}));
+      retailers.slice(0,8).forEach((r:any,i:number)=>{const y=2.08+i*.5;const dist=Number(r.distribution);const whitespace=retailerDistMedian!=null&&Number.isFinite(dist)&&dist<retailerDistMedian; s.addText(String(r.name||"—"),{x:.55,y,w:2.8,h:.22,fontSize:8,color:text,bold:true,fit:"shrink"});s.addText(String(r.channel||"—"),{x:3.55,y,w:1.3,h:.22,fontSize:8,color:muted});s.addText(money0(r.sales),{x:5.05,y,w:1.3,h:.22,fontSize:8,color:text,bold:true});s.addText(retailerTotal>0?(Number(r.sales||0)/retailerTotal*100).toFixed(1)+"%":"—",{x:6.65,y,w:1.2,h:.22,fontSize:8,color:text});s.addText(r.distribution==null?"—":Number(r.distribution).toFixed(1)+"%",{x:8.15,y,w:1.5,h:.22,fontSize:8,color:text});s.addText(whitespace?"Below observed retailer median":"No signal",{x:9.85,y,w:2.5,h:.22,fontSize:8,color:whitespace?red:muted,fit:"shrink"});});
+    }else unavailable(s,"Retailer-level detail is not populated in the current source.");
+    note(s,"Whitespace signal = retailer distribution below the median of listed retailers for this brand. It is a prioritization signal, not proof of incremental opportunity.");footer(s);}
+
+   // 6 — Price & Promotion
+   {const s=pptx.addSlide();addHeader(s,"Price & Promotion");title(s,brandName,"Observed commercial levers and descriptive driver signals.");kpis(s,[["Realized price",money0(d.price)],["Promo rate",d.promoRate==null?"—":Number(d.promoRate).toFixed(1)+"%"],["Distribution",d.avgDistribution==null?"—":Number(d.avgDistribution).toFixed(1)+"%"],["13W growth",pct0(d.growth),Number(d.growth||0)<0?red:green]]);
+    bullets(s,[
+      "Realized price = latest 13W sales divided by latest 13W units for the selected brand.",
+      d.promoRate==null?"Promotion rate is unavailable in the current report scope.":"Promotion activity is observed at "+Number(d.promoRate).toFixed(1)+"% in the latest 13 weeks.",
+      "The current report does not estimate incremental promotional lift, ROI or causal price elasticity.",
+      d.growth!=null&&Number(d.growth)<0?"Negative sales growth should be tested against distribution, price, promotion and retailer mix rather than assigned to one cause.":"Positive sales growth should be tested against distribution, price, promotion and retailer mix before attributing a driver."
+    ],.75,2.65,11.5);note(s,"Driver signals are descriptive. Causal effectiveness is intentionally not inferred from the available fields.");footer(s);}
+
+   // 7 — Competitive View
+   {const s=pptx.addSlide();addHeader(s,"Competitive View");title(s,categoryName,"Competitive signals are shown only where the connected source returns them.");if(signals.length){
+      signals.slice(0,7).forEach((x:any,i:number)=>{const y=1.7+i*.62;s.addShape(pptx.ShapeType.roundRect,{x:.7,y,w:11.7,h:.48,rectRadius:.03,fill:{color:soft},line:{color:line}});s.addText(String(x.signal_date||"—"),{x:.9,y:.15+y,w:1.2,h:.16,fontSize:7,color:muted});s.addText(String(x.signal_type||"Signal"),{x:2.2,y:.15+y,w:1.7,h:.16,fontSize:8,bold:true,color:text});s.addText(String(x.description||"Competitive signal returned by source."),{x:3.95,y:.15+y,w:5.8,h:.16,fontSize:8,color:text,fit:"shrink"});s.addText(x.magnitude_pct==null?"—":pct(x.magnitude_pct),{x:10.1,y:.15+y,w:1.3,h:.16,fontSize:8,bold:true,color:text});});
+    }else unavailable(s,"No competitive signal records are available for this category in the connected source.");note(s,"This slide intentionally avoids fabricated competitor share, ranking or market-size claims.");footer(s);}
+
+   // 8 — Opportunities
+   {const s=pptx.addSlide();addHeader(s,"Opportunities");title(s,brandName,"Evidence-backed investigation opportunities from the current data.");const opps:string[]=[];
+    if(topProduct)opps.push("Review "+String(topProduct.name)+" because it contributes "+Number(topProductMix||0).toFixed(1)+"% of latest 13W brand sales; validate whether concentration is intentional and supported by distribution.");
+    const ws=retailers.filter((r:any)=>retailerDistMedian!=null&&Number.isFinite(Number(r.distribution))&&Number(r.distribution)<retailerDistMedian).slice(0,3);if(ws.length)opps.push("Investigate distribution whitespace at "+ws.map((r:any)=>String(r.name)).join(", ")+"; each is below the observed retailer distribution median.");
+    if(d.promoRate!=null)opps.push("Review promotion mix at "+Number(d.promoRate).toFixed(1)+"% observed promo rate and compare against sales movement by retailer/product before concluding on effectiveness.");
+    if(d.growth!=null&&Number(d.growth)<0)opps.push("Prioritize a driver decomposition of the "+pct(d.growth)+" sales decline across distribution, retailer mix, product mix and commercial levers.");
+    if(!opps.length)opps.push("No additional evidence-backed opportunity can be identified from the currently exposed report fields without adding more granular category, SKU or retailer history.");
+    bullets(s,opps,.75,2.0,11.6);note(s,"Opportunities are framed as actions to investigate, not guaranteed incremental growth.");footer(s);}
+
+   // 9 — Risks
+   {const s=pptx.addSlide();addHeader(s,"Risks");title(s,brandName,"Observed risks and explicit data limitations.");const risks:string[]=[];
+    if(d.growth!=null&&Number(d.growth)<0)risks.push("Sales are down "+Math.abs(Number(d.growth)).toFixed(1)+"% versus the prior 13 weeks.");
+    if(d.avgDistribution!=null&&Number(d.avgDistribution)<50)risks.push("Average distribution is "+Number(d.avgDistribution).toFixed(1)+"%; distribution may warrant deeper retailer-level investigation.");
+    if(!d.metrics?.categoryGrowth)risks.push("Category growth is unavailable, limiting separation of brand-specific movement from category movement.");
+    if(!signals.length)risks.push("Competitive movement data is unavailable for this category in the connected source.");
+    risks.push("SKU growth/decline is unavailable from the current 13W product summary; product-level trend conclusions should not be fabricated.");
+    risks.push("The current dataset does not establish causal promotion lift, price elasticity or ROI.");
+    bullets(s,risks,.75,1.95,11.6);note(s,"Risk statements distinguish observed performance from what the dataset cannot yet explain.");footer(s);}
+
+   // 10 — Management Actions
+   {const s=pptx.addSlide();addHeader(s,"Management Actions");title(s,brandName,"What to investigate, what to monitor, and the next-best questions.");const cols=[
+      ["INVESTIGATE",[
+       "Why is the latest 13W sales movement occurring?",
+       "Which retailer/product combinations explain the change?",
+       "Is distribution whitespace concentrated in specific accounts?"
+      ]],
+      ["MONITOR",[
+       "13W sales and units trend",
+       "Distribution and retailer mix",
+       "Price and promotion signals",
+       "Product concentration"
+      ]],
+      ["NEXT-BEST QUESTIONS",[
+       "Which retailers are losing momentum?",
+       "Which SKUs are growing or declining versus prior periods?",
+       "Is the category moving with or against the brand?",
+       "What competitive signals changed most recently?"
+      ]]
+    ];
+    cols.forEach((col:any,i:number)=>{const x=.65+i*4.15;s.addShape(pptx.ShapeType.roundRect,{x,y:1.65,w:3.75,h:4.5,rectRadius:.04,fill:{color:soft},line:{color:line}});s.addText(col[0],{x:x+.25,y:1.95,w:3.2,h:.2,fontSize:8,bold:true,color:accent});col[1].forEach((t:string,j:number)=>s.addText("• "+t,{x:x+.25,y:2.45+j*.78,w:3.2,h:.48,fontSize:10,color:text,fit:"shrink"}));});
+    note(s,"Use AI Analyst to answer these questions with the controlled analytical tools and source evidence; unsupported domains remain explicitly unavailable.");footer(s);}
    await pptx.writeFile({fileName:(d.scope==="brand"?String(d.brand.name).replace(/[^a-z0-9]+/gi,"_")+"_CPG_Business_Review":"CPGist_CPG_Business_Review")+".pptx"});
   }catch(e:any){alert("PowerPoint export failed: "+(e?.message||"Unknown error"))}
  }
