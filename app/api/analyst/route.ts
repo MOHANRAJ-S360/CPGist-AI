@@ -484,10 +484,17 @@ async function collectEvidence(question: string, brandId: string | undefined, to
 
   const add = (name: string) => { if (!selected.includes(name)) selected.push(name); };
 
-  // One broad deterministic review is the default evidence spine. Specialized tools
-  // are added only when the user's question explicitly needs that domain.
-  add("monthly_business_review");
-  if (categoryId && /category|growth|underperform|momentum|monthly|review|why|decline|improve|turnaround/.test(q)) add("category_growth_plan");
+  // Brand scope gets the validated 13-week business review as its evidence spine.
+  // Market scope must never call the brand-only monthly review tool.
+  if (brandId) {
+    add("monthly_business_review");
+  } else {
+    add("business_health_scan");
+    if (/category|growth|underperform|momentum|market|all brands|review|why|decline|improve|turnaround/.test(q)) {
+      add("category_growth_plan");
+    }
+  }
+  if (brandId && categoryId && /category|growth|underperform|momentum|monthly|review|why|decline|improve|turnaround/.test(q)) add("category_growth_plan");
   if (/sku|product|assortment|portfolio|item|size|pack/.test(q)) add("product_sku_performance");
   if (brandId && categoryId && /retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
   if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
