@@ -195,13 +195,17 @@ async function tool(name: string, a: Args, token: string) {
       const promoChangePts = recentPromo !== null && priorPromo !== null ? recentPromo - priorPromo : null;
 
       // Category metrics use the exact same 13-week and prior-13-week windows as the brand.
-      const categoryPeriods = [...new Set(categoryDataset.rows.map(r => r.week_ending).filter(Boolean))].sort();
+      // Category totals use the canonical category weekly table so AI Analyst,
+      // Reports and Explorer all use the same category denominator.
+      const encodedCategoryName = encodeURIComponent(categoryName);
+      const categoryWeeklyRaw:any[] = await get("cpgist_category_weekly?category=eq."+encodedCategoryName+"&select=category,week_ending,sales,units,distribution&order=week_ending.asc&limit=5000", token);
+      const categoryPeriods = [...new Set(categoryWeeklyRaw.map(r => String(r.week_ending)).filter(Boolean))].sort();
       const categoryLatest13 = new Set(categoryPeriods.slice(-13));
       const categoryPrior13 = new Set(categoryPeriods.slice(-26, -13));
-      const categoryRecentRows = categoryDataset.rows.filter(r => categoryLatest13.has(r.week_ending));
-      const categoryPriorRows = categoryDataset.rows.filter(r => categoryPrior13.has(r.week_ending));
-      const categorySales = sum(categoryRecentRows, "dollar_sales");
-      const categoryPriorSales = sum(categoryPriorRows, "dollar_sales");
+      const categoryRecentRows = categoryWeeklyRaw.filter(r => categoryLatest13.has(String(r.week_ending)));
+      const categoryPriorRows = categoryWeeklyRaw.filter(r => categoryPrior13.has(String(r.week_ending)));
+      const categorySales = categoryRecentRows.reduce((s:number,r:any)=>s + Number(r.sales || 0),0);
+      const categoryPriorSales = categoryPriorRows.reduce((s:number,r:any)=>s + Number(r.sales || 0),0);
       const categoryGrowthPct = pct(categorySales, categoryPriorSales);
       const marketShare = categorySales ? recentSales / categorySales : null;
       const priorMarketShare = categoryPriorSales ? priorSales / categoryPriorSales : null;
