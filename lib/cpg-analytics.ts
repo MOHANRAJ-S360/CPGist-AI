@@ -41,7 +41,7 @@ export const CPG_TOOLS = [
     parameters: params,
   },
   {
-    name: "price_promotion_analytics",
+    name: "promotion_diagnostic",
     description: "Run dedicated Price & Promotion Analytics: 13W vs prior-13W sales, units, realized price and promo rate; weekly commercial-lever trends; and descriptive high-promo versus low-promo diagnostics. Never treat these comparisons as causal promotion effectiveness.",
     parameters: params,
   },
