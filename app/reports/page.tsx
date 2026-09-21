@@ -52,7 +52,6 @@ function ReportsContent(){
    await pptx.writeFile({fileName:(d.scope==="brand"?String(d.brand.name).replace(/[^a-z0-9]+/gi,"_")+"_CPG_Business_Review":"CPGist_CPG_Business_Review")+".pptx"});
   }catch(e:any){alert("PowerPoint export failed: "+(e?.message||"Unknown error"))}
  }
- }
  if(loading)return <AppShell title="Reports" subtitle="Decision-ready client reporting"><section className="content"><div className="card panel loading-card">Building report from live source data…</div></section></AppShell>;
  if(d?.error)return <AppShell title="Reports"><section className="content"><div className="card panel error-card">{d.error}</div></section></AppShell>;
  const lead=(d.topBrands||[])[0];
