@@ -50,9 +50,13 @@ async function brandDetail(id:string,brand:any){
  let competitiveBenchmark:any=null;
  try{
   if(brand.category && latest.length===13 && prior.length===13){
-   const cr:any[]=await get("cpgist_brand_weekly?category=ilike."+enc(brand.category)+"&select=brand_id,week_ending,sales,units,distribution&order=week_ending.asc&limit=100000");
+   // Resolve the category membership from the brand master first. This avoids
+   // relying on a REST text filter for category names containing characters such as "&".
+   const categoryBrands:any[]=await get("cpgist_brands?select=id,name,category&limit=5000");
+   const categoryBrandIds=new Set(categoryBrands.filter((x:any)=>String(x.category||"").toLowerCase()===String(brand.category||"").toLowerCase()).map((x:any)=>String(x.id)));
+   const cr:any[]=await get("cpgist_brand_weekly?select=brand_id,week_ending,sales,units,distribution&order=week_ending.asc&limit=100000");
    const byBrand=new Map<string,any[]>();
-   for(const r of cr){const k=String(r.brand_id);if(!byBrand.has(k))byBrand.set(k,[]);byBrand.get(k)!.push(r);}
+   for(const r of cr){const k=String(r.brand_id);if(!categoryBrandIds.has(k))continue;if(!byBrand.has(k))byBrand.set(k,[]);byBrand.get(k)!.push(r);}
    const rows=[...byBrand.entries()].map(([brandId,rs])=>{
     const cur=rs.filter(r=>ls.has(String(r.week_ending))),prev=rs.filter(r=>ps.has(String(r.week_ending)));
     const cs=cur.reduce((s,r)=>s+n(r.sales),0),psales=prev.reduce((s,r)=>s+n(r.sales),0);
@@ -61,8 +65,7 @@ async function brandDetail(id:string,brand:any){
     return{brandId,sales:cs,priorSales:psales,growth:psales?pct(cs,psales):null,units:cu,priorUnits:pu,unitGrowth:pu?pct(cu,pu):null,distribution:dist};
    }).filter(r=>r.growth!=null);
    const peers=rows.filter(r=>String(r.brandId)!==String(id));
-   const brandNames:any[]=await get("cpgist_brands?category=ilike."+enc(brand.category)+"&select=id,name&limit=5000");
-   const brandNameMap=new Map(brandNames.map((x:any)=>[String(x.id),x.name]));
+   const brandNameMap=new Map(categoryBrands.map((x:any)=>[String(x.id),x.name]));
    const med=(vals:number[])=>{const a=vals.filter(Number.isFinite).sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null};
    const focalRow=rows.find(r=>String(r.brandId)===String(id));
    competitiveBenchmark={
