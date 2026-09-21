@@ -376,13 +376,14 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   // One broad deterministic review is the default evidence spine. Specialized tools
   // are added only when the user's question explicitly needs that domain.
   add("monthly_business_review");
+  if (categoryId && /category|growth|underperform|momentum|monthly|review|why|decline|improve|turnaround/.test(q)) add("category_growth_plan");
   if (/sku|product|assortment|portfolio|item|size|pack/.test(q)) add("product_sku_performance");
-  if (/retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
+  if (brandId && categoryId && /retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
   if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
   if (/competitor|competitive|competition|market movement/.test(q)) add("competitive_signals");
   if (/forecast|outlook|next 8|next 12|projection/.test(q)) add("forecast_sales");
   if (/anomal|spike|drop|unusual|outlier/.test(q)) add("detect_anomalies");
-  if (/share|market share|category context/.test(q)) add("get_market_share");
+  if (brandId && categoryId && /share|market share|category context/.test(q)) add("get_market_share");
   if (/scenario|what if|simulate/.test(q)) add("run_scenario");
 
   const evidence: any[] = [];
