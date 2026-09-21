@@ -132,7 +132,7 @@ async function tool(name: string, a: Args, token: string) {
       const category = String(a.categoryId || "").trim();
       if (!brandId || !category) return { error: "retailer_opportunity requires brandId and categoryId." };
       const encodedCategory = encodeURIComponent(category);
-      const retailerRows = await get("cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate&category=ilike." + encodedCategory + "&limit=100000", token);
+      let retailerRows = await get("cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate&category=ilike." + encodedCategory + "&limit=100000", token);\n      if (!retailerRows.length) { const summary = await get("cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,sales_13w,units_13w,distribution_13w,avg_price_13w,promo_rate_13w&category=ilike."+encodedCategory+"&limit=100000", token); retailerRows = summary.map((r:any)=>({brand_id:r.brand_id,retailer_id:r.retailer_id,category:r.category,sales:r.sales_13w,units:r.units_13w,distribution:r.distribution_13w,price:r.avg_price_13w,promo_rate:r.promo_rate_13w})); }
       const result = retailerOpportunity(retailerRows, brandId, category);
       const ids = result.data.retailers.map(x => x.retailerId).join(",");
       const retailers = ids ? await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
@@ -151,6 +151,70 @@ async function tool(name: string, a: Args, token: string) {
         warnings: [...result.warnings, ...issues.map(i => i.message)],
         validation: issues
       };
+    }
+
+    case "monthly_business_review": {
+      const reviewRows = await queryDataset(a, token);
+      const filters = filtersFromArgs(a);
+      const health = businessHealthScan(reviewRows.rows, filters);
+      const growth = categoryGrowthPlan(reviewRows.rows, filters);
+      const latest = growth.data.brands.slice(0, 10);
+      const brandIds = latest.map(x => x.brandId).join(",");
+      const brandMaster = brandIds ? await get("cpgist_brands?select=id,name,category,parent_company&id=in.(" + encodeURIComponent(brandIds) + ")", token) : [];
+      const names = Object.fromEntries(brandMaster.map((b:any)=>[String(b.id),b]));
+      const products = a.brandId ? await get("cpgist_product_summary?select=product_id,brand_id,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&brand_id=eq."+encodeURIComponent(String(a.brandId))+"&order=sales_13w.desc&limit=10", token) : [];
+      const retailers = a.brandId ? await get("cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&brand_id=eq."+encodeURIComponent(String(a.brandId))+"&order=sales_13w.desc&limit=10", token) : [];
+      const retailerIds = retailers.map((x:any)=>x.retailer_id).join(",");
+      const retailerMaster = retailerIds ? await get("cpgist_retailers?select=id,name,channel,region,total_stores&id=in.("+encodeURIComponent(retailerIds)+")", token) : [];
+      const retailerNames = Object.fromEntries(retailerMaster.map((x:any)=>[String(x.id),x]));
+      return {
+        executive: { status: health.data.status, salesGrowthPct: health.data.salesGrowthPct, latestSales: health.data.latestSales, priorSales: health.data.priorSales, latestUnits: health.data.latestUnits, latestPrice: health.data.latestPrice, anomalyCount: health.data.anomalyCount },
+        brands: latest.map(x=>({...x,brandName:names[x.brandId]?.name ?? null,category:names[x.brandId]?.category ?? null})),
+        products: products.map((x:any)=>({...x,productId:x.product_id})),
+        retailers: retailers.map((x:any)=>({...x,retailerName:retailerNames[String(x.retailer_id)]?.name ?? null,channel:retailerNames[String(x.retailer_id)]?.channel ?? null,region:retailerNames[String(x.retailer_id)]?.region ?? null})),
+        categoryDiagnostics: growth.data.diagnostics.map(x=>({...x,brandName:names[x.brandId]?.name ?? null})),
+        evidence:{...health.evidence,source:reviewRows.source},
+        warnings:[...health.warnings,...growth.warnings]
+      };
+    }
+
+    case "product_sku_performance": {
+      const brand = a.brandId ? "&brand_id=eq."+encodeURIComponent(String(a.brandId)) : "";
+      const rows = await get("cpgist_product_summary?select=product_id,brand_id,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&order=sales_13w.desc&limit=1000"+brand, token);
+      if (!rows.length) return { products: [], evidence:{source:"cpgist_product_summary",grain:"product 13-week summary",rowCount:0,periodStart:null,periodEnd:null,periodCount:0,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()}, warnings:["Product-level weekly summary data is not populated for the requested scope."] };
+      const ids = rows.map((x:any)=>x.product_id).join(",");
+      const products = ids ? await get("cpgist_products?select=id,name,sku,category,subcategory,size,pack_count,brand_id&id=in.("+encodeURIComponent(ids)+")", token) : [];
+      const master = Object.fromEntries(products.map((x:any)=>[String(x.id),x]));
+      const total = rows.reduce((s:number,x:any)=>s+Number(x.sales_13w||0),0);
+      return { products: rows.map((x:any)=>({...x,...(master[String(x.product_id)]||{}),shareOfBrand:total?Number(x.sales_13w||0)/total:0})), totalSales:total,
+        evidence:{source:"cpgist_product_summary",grain:"product 13-week summary",rowCount:rows.length,periodStart:rows[0]?.period_end??null,periodEnd:rows[0]?.period_end??null,periodCount:1,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()}, warnings:[] };
+    }
+
+    case "competitive_signals": {
+      const clauses:string[]=[];
+      if(a.brandId) clauses.push("brand_id=eq."+encodeURIComponent(String(a.brandId)));
+      if(a.categoryId) clauses.push("category=ilike."+encodeURIComponent(String(a.categoryId)));
+      if(a.retailerId) clauses.push("retailer_id=eq."+encodeURIComponent(String(a.retailerId)));
+      const q="syndicate_competitor_signals?select=brand_id,category,retailer_id,region,signal_date,signal_type,magnitude_pct,description&order=signal_date.desc&limit=1000"+(clauses.length?"&"+clauses.join("&"):"");
+      const rows=await get(q,token);
+      const ids=[...new Set(rows.map((x:any)=>x.brand_id).filter(Boolean))].join(",");
+      const brands=ids?await get("syndicate_brands?select=id,name&id=in.("+encodeURIComponent(ids)+")",token):[];
+      const names=Object.fromEntries(brands.map((x:any)=>[String(x.id),x.name]));
+      return {signals:rows.map((x:any)=>({...x,brandName:names[String(x.brand_id)]??null})),evidence:{source:"syndicate_competitor_signals",grain:"competitive signal event",rowCount:rows.length,periodStart:rows.at(-1)?.signal_date??null,periodEnd:rows[0]?.signal_date??null,periodCount:new Set(rows.map((x:any)=>x.signal_date).filter(Boolean)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:rows.length?[]:["No competitive signals are available for the requested scope."]};
+    }
+
+    case "promotion_diagnostic": {
+      const rows=await queryDataset(a,token);
+      const filters=filtersFromArgs(a);
+      const sales=getSales(rows.rows,filters).data;
+      const price=getPrice(rows.rows,filters).data;
+      const promoRows=rows.rows.filter(x=>x.promo_observations!==undefined || x.avg_discount_depth_pct!==undefined);
+      const promoRate=promoRows.length?promoRows.reduce((s,r)=>s+Number(r.promo_observations||0),0)/Math.max(1,promoRows.length):null;
+      const discountDepth=promoRows.length?promoRows.reduce((s,r)=>s+Number(r.avg_discount_depth_pct||0),0)/Math.max(1,promoRows.length):null;
+      const periods=[...new Set(rows.rows.map(x=>x.week_ending).filter(Boolean))].sort();
+      return {sales:{totalSales:sales.totalSales,totalUnits:sales.totalUnits},realizedPrice:price.averagePrice,promoRate,avgDiscountDepthPct:discountDepth,
+        evidence:{source:rows.source,grain:"brand/category/retailer week",rowCount:rows.rows.length,periodStart:periods[0]??null,periodEnd:periods.at(-1)??null,periodCount:periods.length,filters,generatedAt:new Date().toISOString()},
+        warnings:["Promotion observations are descriptive. Incremental promotional lift, ROI and causal effectiveness are not estimated by the current dataset."]};
     }
 
     case "category_growth_plan": {
