@@ -73,6 +73,7 @@ async function brandDetail(id:string,brand:any){
     peerCount:peers.length,
     focalMatched:Boolean(focalRow),
     focalGrowth:focalRow?.growth??null,
+    focalUnitGrowth:focalRow?.unitGrowth??null,
     peerMedianGrowth:med(peers.map(r=>Number(r.growth))),
     peerMedianSales:med(peers.map(r=>Number(r.sales))),
     peerMedianUnitGrowth:med(peers.map(r=>Number(r.unitGrowth))),
