@@ -374,6 +374,90 @@ export function runScenario(
 }
 
 
+
+export function pricePromotionAnalytics(
+  rows: IntelligenceRow[],
+  filters: IntelligenceQuery
+): AnalyticalResult<{
+  coverage: { recent13Count: number; prior13Count: number; complete13W: boolean };
+  latest13: { sales: number; units: number; realizedPrice: number | null; promoRate: number | null };
+  prior13: { sales: number; units: number; realizedPrice: number | null; promoRate: number | null };
+  changes: { salesGrowthPct: number | null; unitGrowthPct: number | null; priceGrowthPct: number | null; promoRateChangePts: number | null };
+  promotionIntensity: {
+    thresholdPromoRate: number | null; highPromoWeeks: number; lowPromoWeeks: number;
+    highPromoAvgSales: number | null; lowPromoAvgSales: number | null;
+    highPromoAvgUnits: number | null; lowPromoAvgUnits: number | null;
+    highPromoAvgPrice: number | null; lowPromoAvgPrice: number | null;
+  };
+  weekly: Array<{ period: string; sales: number; units: number; realizedPrice: number | null; promoRate: number | null }>;
+}> {
+  const periods = sortedPeriods(rows);
+  const recentPeriods = periods.slice(-13);
+  const priorPeriods = periods.slice(-26, -13);
+  const recentSet = new Set(recentPeriods);
+  const priorSet = new Set(priorPeriods);
+  const recentRows = rows.filter(r => recentSet.has(r.week_ending));
+  const priorRows = rows.filter(r => priorSet.has(r.week_ending));
+
+  const aggregate = (rs: IntelligenceRow[]) => {
+    const sales = rs.reduce((s,r)=>s+n(r.dollar_sales),0);
+    const units = rs.reduce((s,r)=>s+n(r.units),0);
+    const realizedPrice = units ? sales / units : null;
+    const promoRows = rs.filter(r => r.promo_observations != null && Number.isFinite(Number(r.promo_observations)));
+    const promoRate = promoRows.length ? promoRows.reduce((s,r)=>s+n(r.promo_observations),0)/promoRows.length : null;
+    return {sales,units,realizedPrice,promoRate};
+  };
+  const recent = aggregate(recentRows);
+  const prior = aggregate(priorRows);
+  const pctChange = (now:number, old:number) => old ? (now/old-1)*100 : null;
+
+  const weekly = periods.map(period => {
+    const rs = rows.filter(r => r.week_ending === period);
+    const x = aggregate(rs);
+    return {period, sales:x.sales, units:x.units, realizedPrice:x.realizedPrice, promoRate:x.promoRate};
+  });
+
+  const promoValues = weekly.map(x=>x.promoRate).filter((x): x is number => x != null && Number.isFinite(x));
+  const sortedPromo = [...promoValues].sort((a,b)=>a-b);
+  const thresholdPromoRate = sortedPromo.length ? sortedPromo[Math.floor((sortedPromo.length-1)/2)] : null;
+  const highPromo = thresholdPromoRate == null ? [] : weekly.filter(x=>x.promoRate != null && x.promoRate > thresholdPromoRate);
+  const lowPromo = thresholdPromoRate == null ? [] : weekly.filter(x=>x.promoRate != null && x.promoRate <= thresholdPromoRate);
+  const avg = (xs:any[], key:string) => xs.length ? xs.reduce((s,x)=>s+n(x[key]),0)/xs.length : null;
+
+  const warnings = [
+    recentPeriods.length !== 13 || priorPeriods.length !== 13
+      ? "The 13-week comparison is incomplete because the connected source does not contain 13 observed weeks in one or both comparison windows."
+      : "",
+    "Promotion rate measures observed promotional activity; it does not provide discount depth, baseline sales, incremental lift, trade spend or promotion ROI.",
+    "High-promotion versus low-promotion weeks are descriptive comparisons and should not be interpreted as causal promotion effectiveness.",
+    "Realized price is sales divided by units. It is not a list price or a measured discount depth."
+  ].filter(Boolean);
+
+  return base({
+    coverage:{recent13Count:recentPeriods.length,prior13Count:priorPeriods.length,complete13W:recentPeriods.length===13&&priorPeriods.length===13},
+    latest13:recent,
+    prior13:prior,
+    changes:{
+      salesGrowthPct:pctChange(recent.sales,prior.sales),
+      unitGrowthPct:pctChange(recent.units,prior.units),
+      priceGrowthPct:recent.realizedPrice!=null&&prior.realizedPrice!=null?pctChange(recent.realizedPrice,prior.realizedPrice):null,
+      promoRateChangePts:recent.promoRate!=null&&prior.promoRate!=null?recent.promoRate-prior.promoRate:null
+    },
+    promotionIntensity:{
+      thresholdPromoRate,
+      highPromoWeeks:highPromo.length,
+      lowPromoWeeks:lowPromo.length,
+      highPromoAvgSales:avg(highPromo,"sales"),
+      lowPromoAvgSales:avg(lowPromo,"sales"),
+      highPromoAvgUnits:avg(highPromo,"units"),
+      lowPromoAvgUnits:avg(lowPromo,"units"),
+      highPromoAvgPrice:avg(highPromo,"realizedPrice"),
+      lowPromoAvgPrice:avg(lowPromo,"realizedPrice")
+    },
+    weekly
+  }, rows, filters, warnings);
+}
+
 export function businessHealthScan(
   rows: IntelligenceRow[],
   filters: IntelligenceQuery
