@@ -61,7 +61,7 @@ export const ANALYST_CAPABILITIES: AnalystCapability[] = [
     label: "Promotion",
     questionPatterns: ["promotion", "promo", "discount", "deal", "trade spend", "promotional"],
     tools: ["promotion_diagnostic", "get_sales", "get_price"],
-    dataRequirements: ["promo observations", "sales", "units", "price"]
+    dataRequirements: ["promo observations", "sales", "units", "price"],
     status: "available",
   },
   {
