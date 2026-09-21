@@ -17,8 +17,16 @@ async function brandDetail(id:string,brand:any){
  const latest=periods.slice(-13),prior=periods.slice(-26,-13),ls=new Set(latest),ps=new Set(prior);
  const agg=(rs:any[])=>{const sales=rs.reduce((a,r)=>a+n(r.sales),0),units=rs.reduce((a,r)=>a+n(r.units),0);return{sales,units,distribution:rs.length?rs.reduce((a,r)=>a+n(r.distribution),0)/rs.length:null,price:units?sales/units:null,promoRate:rs.length?rs.reduce((a,r)=>a+n(r.promo_rate),0)/rs.length:null}};
  const a=agg(rows.filter(r=>ls.has(String(r.week_ending)))),b=agg(rows.filter(r=>ps.has(String(r.week_ending))));
- let categorySales=0;
- if(brand.category){try{const cr:any[]=await get("cpgist_category_weekly?category=ilike."+enc(brand.category)+"&select=week_ending,sales&order=week_ending.asc&limit=5000");categorySales=cr.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0)}catch{}}
+ let categorySales=0,categoryPriorSales=0;
+ let categoryGrowth:number|null=null;
+ let categoryWeekly:any[]=[];
+ if(brand.category){try{
+  const cr:any[]=await get("cpgist_category_weekly?category=ilike."+enc(brand.category)+"&select=week_ending,sales,units&order=week_ending.asc&limit=5000");
+  categoryWeekly=cr.map(r=>({period:String(r.week_ending),sales:n(r.sales),units:n(r.units)}));
+  categorySales=cr.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0);
+  categoryPriorSales=cr.filter(r=>ps.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0);
+  categoryGrowth=categoryPriorSales?pct(categorySales,categoryPriorSales):null;
+ }catch{}}
  const weekly=periods.map(w=>{const rr=rows.filter(r=>String(r.week_ending)===w);return{period:w,sales:rr.reduce((s,r)=>s+n(r.sales),0),units:rr.reduce((s,r)=>s+n(r.units),0)}});
  let products:any[]=[];
  try{
@@ -33,7 +41,11 @@ async function brandDetail(id:string,brand:any){
   const rm:any[]=await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&order=name&limit=2000");
   retailers=rr.map(x=>{const z=rm.find(v=>String(v.id)===String(x.retailer_id))||{};return{id:x.retailer_id,name:z.name||("Retailer "+x.retailer_id),channel:z.channel||"",region:z.region||"",retailer_group:z.retailer_group||"",total_stores:z.total_stores??null,sales:x.sales_13w,units:x.units_13w,price:x.avg_price_13w,distribution:x.distribution_13w,promoRate:x.promo_rate_13w}}).sort((x:any,y:any)=>n(y.sales)-n(x.sales));
  }catch{}
- return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,share:categorySales?a.sales/categorySales*100:null},weekly,products,retailers};
+ let competitorSignals:any[]=[];
+ try{
+  competitorSignals=await get("syndicate_competitor_signals?category=ilike."+enc(brand.category||"")+"&select=brand_id,category,retailer_id,region,signal_date,signal_type,magnitude_pct,description&order=signal_date.desc&limit=25");
+ }catch{}
+ return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null},weekly,products,retailers,categoryWeekly,competitorSignals};
 }
 
 export async function GET(req:NextRequest){
