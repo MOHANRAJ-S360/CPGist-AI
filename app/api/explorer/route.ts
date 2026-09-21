@@ -45,7 +45,44 @@ async function brandDetail(id:string,brand:any){
  try{
   competitorSignals=await get("syndicate_competitor_signals?category=ilike."+enc(brand.category||"")+"&select=brand_id,category,retailer_id,region,signal_date,signal_type,magnitude_pct,description&order=signal_date.desc&limit=25");
  }catch{}
- return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null},weekly,products,retailers,categoryWeekly,competitorSignals};
+
+ // Same-source, anonymized competitive peer benchmark. Peer brand names never leave this API.
+ let competitiveBenchmark:any=null;
+ try{
+  if(brand.category && latest.length===13 && prior.length===13){
+   const cr:any[]=await get("cpgist_brand_weekly?category=ilike."+enc(brand.category)+"&select=brand_id,week_ending,sales,units,distribution&order=week_ending.asc&limit=100000");
+   const byBrand=new Map<string,any[]>();
+   for(const r of cr){const k=String(r.brand_id);if(!byBrand.has(k))byBrand.set(k,[]);byBrand.get(k)!.push(r);}
+   const rows=[...byBrand.entries()].map(([brandId,rs])=>{
+    const cur=rs.filter(r=>ls.has(String(r.week_ending))),prev=rs.filter(r=>ps.has(String(r.week_ending)));
+    const cs=cur.reduce((s,r)=>s+n(r.sales),0),psales=prev.reduce((s,r)=>s+n(r.sales),0);
+    const cu=cur.reduce((s,r)=>s+n(r.units),0),pu=prev.reduce((s,r)=>s+n(r.units),0);
+    const dist=cur.length?cur.reduce((s,r)=>s+n(r.distribution),0)/cur.length:null;
+    return{brandId,sales:cs,priorSales:psales,growth:psales?pct(cs,psales):null,units:cu,priorUnits:pu,unitGrowth:pu?pct(cu,pu):null,distribution:dist};
+   }).filter(r=>r.growth!=null);
+   const peers=rows.filter(r=>String(r.brandId)!==String(id));
+   const med=(vals:number[])=>{const a=vals.filter(Number.isFinite).sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null};
+   const focalRow=rows.find(r=>String(r.brandId)===String(id));
+   competitiveBenchmark={
+    available:peers.length>0,
+    peerCount:peers.length,
+    focalMatched:Boolean(focalRow),
+    focalGrowth:focalRow?.growth??null,
+    peerMedianGrowth:med(peers.map(r=>Number(r.growth))),
+    peerMedianSales:med(peers.map(r=>Number(r.sales))),
+    peerMedianUnitGrowth:med(peers.map(r=>Number(r.unitGrowth))),
+    peerMedianDistribution:med(peers.map(r=>Number(r.distribution))),
+    peersGrowing:peers.filter(r=>Number(r.growth)>0).length,
+    peersDeclining:peers.filter(r=>Number(r.growth)<0).length,
+    peerGrowthRange:peers.length?{min:Math.min(...peers.map(r=>Number(r.growth))),max:Math.max(...peers.map(r=>Number(r.growth)))}:null,
+    source:"cpgist_brand_weekly",
+    periodCount:13
+   };
+  }
+ }catch{}
+
+ const priorShare=categoryPriorSales?b.sales/categoryPriorSales*100:null;
+ return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null,priorShare,shareChangePts:(categorySales&&categoryPriorSales)?(a.sales/categorySales*100)-(b.sales/categoryPriorSales*100):null},weekly,products,retailers,categoryWeekly,competitorSignals,competitiveBenchmark}
 }
 
 export async function GET(req:NextRequest){
