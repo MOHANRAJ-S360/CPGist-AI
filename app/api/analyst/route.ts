@@ -15,7 +15,6 @@ import {
   retailerOpportunity,
   crossCategoryPortfolio,
   businessHealthScan,
-  pricePromotionAnalytics,
   validateAnalyticalResult,
   type IntelligenceQuery,
   type IntelligenceRow,
@@ -320,25 +319,64 @@ async function tool(name: string, a: Args, token: string) {
       return {signals:rows.map((x:any)=>({...x,brandName:names[String(x.brand_id)]??null})),evidence:{source:"syndicate_competitor_signals",grain:"competitive signal event",rowCount:rows.length,periodStart:rows.at(-1)?.signal_date??null,periodEnd:rows[0]?.signal_date??null,periodCount:new Set(rows.map((x:any)=>x.signal_date).filter(Boolean)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:rows.length?[]:["No competitive signals are available for the requested scope."]};
     }
 
-    case "price_promotion_analytics": {
-      const datasetResult=await queryDataset(a,token);
-      const filters=filtersFromArgs(a);
-      const result=pricePromotionAnalytics(datasetResult.rows,filters);
-      return { ...result.data, evidence:{...result.evidence,source:datasetResult.source}, warnings:result.warnings };
-    }
-
     case "promotion_diagnostic": {
       const rows=await queryDataset(a,token);
       const filters=filtersFromArgs(a);
-      const sales=getSales(rows.rows,filters).data;
-      const price=getPrice(rows.rows,filters).data;
-      const promoRows=rows.rows.filter(x=>x.promo_observations!==undefined || x.avg_discount_depth_pct!==undefined);
-      const promoRate=promoRows.length?promoRows.reduce((s,r)=>s+Number(r.promo_observations||0),0)/Math.max(1,promoRows.length):null;
-      const discountDepth=promoRows.length?promoRows.reduce((s,r)=>s+Number(r.avg_discount_depth_pct||0),0)/Math.max(1,promoRows.length):null;
       const periods=[...new Set(rows.rows.map(x=>x.week_ending).filter(Boolean))].sort();
-      return {sales:{totalSales:sales.totalSales,totalUnits:sales.totalUnits},realizedPrice:price.averagePrice,promoRate,avgDiscountDepthPct:discountDepth,
+      const recentPeriods=periods.slice(-13);
+      const priorPeriods=periods.slice(-26,-13);
+      const recentSet=new Set(recentPeriods), priorSet=new Set(priorPeriods);
+      const recentRows=rows.rows.filter(x=>recentSet.has(x.week_ending));
+      const priorRows=rows.rows.filter(x=>priorSet.has(x.week_ending));
+      const aggregate=(rs:any[])=>{
+        const sales=rs.reduce((s,r)=>s+Number(r.dollar_sales||0),0);
+        const units=rs.reduce((s,r)=>s+Number(r.units||0),0);
+        const price=units?sales/units:null;
+        const promoRows=rs.filter(r=>r.promo_observations!=null);
+        const promo=promoRows.length?promoRows.reduce((s,r)=>s+Number(r.promo_observations||0),0)/promoRows.length:null;
+        return {sales,units,realizedPrice:price,promoRate:promo};
+      };
+      const recent=aggregate(recentRows), prior=aggregate(priorRows);
+      const pct=(now:number,old:number)=>old?(now/old-1)*100:null;
+      const weekly=periods.map(period=>{
+        const x=aggregate(rows.rows.filter(r=>r.week_ending===period));
+        return {period,sales:x.sales,units:x.units,realizedPrice:x.realizedPrice,promoRate:x.promoRate};
+      });
+      const promoValues=weekly.map(x=>x.promoRate).filter((x):x is number=>x!=null&&Number.isFinite(x));
+      const sortedPromo=[...promoValues].sort((a,b)=>a-b);
+      const thresholdPromoRate=sortedPromo.length?sortedPromo[Math.floor((sortedPromo.length-1)/2)]:null;
+      const highPromo=thresholdPromoRate==null?[]:weekly.filter(x=>x.promoRate!=null&&x.promoRate>thresholdPromoRate);
+      const lowPromo=thresholdPromoRate==null?[]:weekly.filter(x=>x.promoRate!=null&&x.promoRate<=thresholdPromoRate);
+      const avg=(xs:any[],key:string)=>xs.length?xs.reduce((s,x)=>s+Number(x[key]||0),0)/xs.length:null;
+      return {
+        latest13:recent,
+        prior13:prior,
+        changes:{
+          salesGrowthPct:pct(recent.sales,prior.sales),
+          unitGrowthPct:pct(recent.units,prior.units),
+          priceGrowthPct:recent.realizedPrice!=null&&prior.realizedPrice!=null?pct(recent.realizedPrice,prior.realizedPrice):null,
+          promoRateChangePts:recent.promoRate!=null&&prior.promoRate!=null?recent.promoRate-prior.promoRate:null
+        },
+        promotionIntensity:{
+          thresholdPromoRate,
+          highPromoWeeks:highPromo.length,
+          lowPromoWeeks:lowPromo.length,
+          highPromoAvgSales:avg(highPromo,"sales"),
+          lowPromoAvgSales:avg(lowPromo,"sales"),
+          highPromoAvgUnits:avg(highPromo,"units"),
+          lowPromoAvgUnits:avg(lowPromo,"units"),
+          highPromoAvgPrice:avg(highPromo,"realizedPrice"),
+          lowPromoAvgPrice:avg(lowPromo,"realizedPrice")
+        },
+        weekly:weekly.slice(-26),
         evidence:{source:rows.source,grain:"brand/category/retailer week",rowCount:rows.rows.length,periodStart:periods[0]??null,periodEnd:periods.at(-1)??null,periodCount:periods.length,filters,generatedAt:new Date().toISOString()},
-        warnings:["Promotion observations are descriptive. Incremental promotional lift, ROI and causal effectiveness are not estimated by the current dataset."]};
+        warnings:[
+          recentPeriods.length!==13||priorPeriods.length!==13?"The 13-week comparison is incomplete.":"",
+          "Promotion rate is descriptive; the current dataset does not provide discount depth, baseline sales, incremental lift, trade spend or promotion ROI.",
+          "High-promotion versus low-promotion weeks are descriptive comparisons and do not establish causal promotion effectiveness.",
+          "Realized price is sales divided by units; it is not list price or measured discount depth."
+        ].filter(Boolean)
+      };
     }
 
     case "category_growth_plan": {
@@ -509,7 +547,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (brandId && categoryId && /category|growth|underperform|momentum|monthly|review|why|decline|improve|turnaround/.test(q)) add("category_growth_plan");
   if (/sku|product|assortment|portfolio|item|size|pack/.test(q)) add("product_sku_performance");
   if (brandId && categoryId && /retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
-  if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("price_promotion_analytics");
+  if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
   if (/competitor|competitive|competition|market movement/.test(q)) add("competitive_signals");
   if (/forecast|outlook|next 8|next 12|projection/.test(q)) add("forecast_sales");
   if (/anomal|spike|drop|unusual|outlier/.test(q)) add("detect_anomalies");
