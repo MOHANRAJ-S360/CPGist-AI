@@ -15,6 +15,7 @@ import {
   retailerOpportunity,
   crossCategoryPortfolio,
   businessHealthScan,
+  pricePromotionAnalytics,
   validateAnalyticalResult,
   type IntelligenceQuery,
   type IntelligenceRow,
