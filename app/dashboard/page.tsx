@@ -26,7 +26,7 @@ export default function Dashboard(){
    </div>
    <div className="two-col">
     <div className="card panel"><div className="panel-head"><div><b>Market value trend</b><span>Weekly sales · last 26 completed periods</span></div><BarChart3 size={17}/></div><LineChart points={(d.weekly||[]).slice(-26).map((x:any)=>({label:x.label,value:x.sales}))}/></div>
-    <div className="card panel"><div className="panel-head"><div><b>Brand share structure</b><span>Latest 13-week observed value sales</span></div></div><div className="share-focus"><Donut share={Number(d.topBrands?.[0]?.share||0)} centerLabel="leader share"/><div><strong>{d.topBrands?.[0]?.name||"—"}</strong><p>{money(d.topBrands?.[0]?.sales||0)} · {d.topBrands?.[0]?.growth==null?"—":pct(d.topBrands[0].growth)}</p><span>Share is descriptive; combine with growth and distribution.</span></div></div></div>
+    <div className="card panel"><div className="panel-head"><div><b>Brand market sales structure</b><span>Latest 13-week observed market sales</span></div></div><div className="share-focus"><Donut share={Number(d.topBrands?.[0]?.share||0)} centerLabel="leader share"/><div><strong>{d.topBrands?.[0]?.name||"—"}</strong><p>{money(d.topBrands?.[0]?.sales||0)} · {d.topBrands?.[0]?.growth==null?"—":pct(d.topBrands[0].growth)}</p><span>Share is descriptive; combine with growth and distribution.</span></div></div></div>
    </div>
    <div className="two-col">
     <div className="card panel"><div className="panel-head"><div><b>Brand performance</b><span>Value sales with period comparison</span></div></div><BarChart items={(d.topBrands||[]).slice(0,8).map((x:any)=>({label:x.name,value:x.sales,change:x.growth}))}/></div>
