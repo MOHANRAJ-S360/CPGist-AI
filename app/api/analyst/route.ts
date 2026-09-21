@@ -568,20 +568,26 @@ export async function POST(req: Request) {
         throw new Error("Invalid structured analyst response.");
       }
 
-      const evidenceRows = evidence.map(x => x.result?.evidence).filter(Boolean);
-      const latestEvidence = evidenceRows.at(-1);
+      const monthlyEvidence = evidence.find(x => x.tool === "monthly_business_review")?.result?.evidence;
+      const validationIssues = evidence.flatMap(x => Array.isArray(x.result?.validation) ? x.result.validation : []);
       analyst.evidence = {
-        source: latestEvidence?.source ?? analyst.evidence?.source ?? "CPGist analytical layer",
-        period: latestEvidence?.periodStart && latestEvidence?.periodEnd
-          ? String(latestEvidence.periodStart) + " → " + String(latestEvidence.periodEnd)
+        source: monthlyEvidence?.source ?? analyst.evidence?.source ?? "CPGist analytical layer",
+        period: monthlyEvidence?.periodStart && monthlyEvidence?.periodEnd
+          ? String(monthlyEvidence.periodStart) + " → " + String(monthlyEvidence.periodEnd)
           : analyst.evidence?.period ?? "Observed source coverage",
-        periodCount: Number(latestEvidence?.periodCount ?? analyst.evidence?.periodCount ?? 0),
-        filters: JSON.stringify(latestEvidence?.filters ?? {})
+        periodCount: Number(monthlyEvidence?.periodCount ?? analyst.evidence?.periodCount ?? 0),
+        filters: JSON.stringify(monthlyEvidence?.filters ?? {})
       };
       analyst.warnings = [...new Set([
         ...(analyst.warnings || []),
-        ...evidence.flatMap(x => Array.isArray(x.result?.warnings) ? x.result.warnings : [])
+        ...evidence.flatMap(x => Array.isArray(x.result?.warnings) ? x.result.warnings : []),
+        ...validationIssues.filter((x:any) => x.severity === "warning").map((x:any) => x.message)
       ])];
+      const hardValidationErrors = validationIssues.filter((x:any) => x.severity === "error");
+      if (hardValidationErrors.length) {
+        analyst.warnings = [...new Set([...analyst.warnings, ...hardValidationErrors.map((x:any) => x.message)])];
+        analyst.decisionTrail = (analyst.decisionTrail || []).filter((x:any) => x.type !== "action");
+      }
 
       return NextResponse.json({
         analyst,
