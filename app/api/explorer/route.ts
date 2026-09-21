@@ -65,6 +65,9 @@ async function brandDetail(id:string,brand:any){
    const focalRow=rows.find(r=>String(r.brandId)===String(id));
    competitiveBenchmark={
     available:peers.length>0,
+    // Named competitors are exposed only when they are directly present in the same
+    // category/source and have complete aligned 13W + prior-13W coverage.
+    competitors: rows.filter(r=>String(r.brandId)!==String(id) && r.growth!=null).sort((a,b)=>Number(b.sales)-Number(a.sales)).slice(0,15).map(r=>({brandId:r.brandId,sales:r.sales,priorSales:r.priorSales,growth:r.growth,units:r.units,unitGrowth:r.unitGrowth,distribution:r.distribution})),
     peerCount:peers.length,
     focalMatched:Boolean(focalRow),
     focalGrowth:focalRow?.growth??null,
