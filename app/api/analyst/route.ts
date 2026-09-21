@@ -333,6 +333,74 @@ async function groqChat(key: string, body: any) {
   return { response: last!, data };
 }
 
+async function resolveBrandContext(brandId: string | undefined, token: string) {
+  if (!brandId) return { brandName: null, category: null };
+  try {
+    const rows = await get("cpgist_brands?select=id,name,category&id=eq." + encodeURIComponent(brandId) + "&limit=1", token);
+    return { brandName: rows?.[0]?.name ?? null, category: rows?.[0]?.category ?? null };
+  } catch {
+    return { brandName: null, category: null };
+  }
+}
+
+function compactForModel(value: any, maxChars = 5600): any {
+  const seen = new WeakSet();
+  const walk = (v: any, depth = 0): any => {
+    if (v == null || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
+    if (depth > 4) return "[truncated]";
+    if (typeof v === "object") {
+      if (seen.has(v)) return "[circular]";
+      seen.add(v);
+      if (Array.isArray(v)) return v.slice(0, 12).map(x => walk(x, depth + 1));
+      const out: Record<string, any> = {};
+      for (const key of Object.keys(v).slice(0, 40)) out[key] = walk(v[key], depth + 1);
+      return out;
+    }
+    return String(v);
+  };
+  const result = walk(value);
+  const json = JSON.stringify(result);
+  if (json.length <= maxChars) return result;
+  return { truncatedEvidence: json.slice(0, maxChars) + "…", note: "Evidence was compacted to preserve model capacity." };
+}
+
+async function collectEvidence(question: string, brandId: string | undefined, token: string) {
+  const q = question.toLowerCase();
+  const scope = brandId ? { brandId } : {};
+  const context = await resolveBrandContext(brandId, token);
+  const categoryId = context.category || undefined;
+  const selected: string[] = [];
+
+  const add = (name: string) => { if (!selected.includes(name)) selected.push(name); };
+
+  // One broad deterministic review is the default evidence spine. Specialized tools
+  // are added only when the user's question explicitly needs that domain.
+  add("monthly_business_review");
+  if (/sku|product|assortment|portfolio|item|size|pack/.test(q)) add("product_sku_performance");
+  if (/retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
+  if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
+  if (/competitor|competitive|competition|market movement/.test(q)) add("competitive_signals");
+  if (/forecast|outlook|next 8|next 12|projection/.test(q)) add("forecast_sales");
+  if (/anomal|spike|drop|unusual|outlier/.test(q)) add("detect_anomalies");
+  if (/share|market share|category context/.test(q)) add("get_market_share");
+  if (/scenario|what if|simulate/.test(q)) add("run_scenario");
+
+  const evidence: any[] = [];
+  for (const name of selected.slice(0, 4)) {
+    try {
+      const args: Args = { ...scope };
+      if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share"].includes(name)) args.categoryId = categoryId;
+      if (name === "forecast_sales") args.horizon = 8;
+      if (name === "run_scenario") { args.priceChangePct = 0; args.distributionChangePts = 0; }
+      const result = await tool(name, args, token);
+      evidence.push({ tool: name, result: compactForModel(result) });
+    } catch (error: any) {
+      evidence.push({ tool: name, result: { error: error?.message || "Analytical tool failed." } });
+    }
+  }
+  return { evidence, context, selected };
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -344,117 +412,72 @@ export async function POST(req: Request) {
     if (!token) return NextResponse.json({ error: "Please sign in again before using AI Analyst." }, { status: 401 });
 
     const capabilityCatalog = capabilityContext();
-    const activeScope = body?.scope?.brandId ? "\n\nActive analysis scope: brandId=" + String(body.scope.brandId) + ". Unless the user explicitly asks to change scope, pass this brandId to relevant analytical tools and keep the answer focused on this brand." : "";
-    const toolEvidence: any[] = [];
+    const incoming = Array.isArray(body.messages) ? body.messages : [];
+    const latestUser = [...incoming].reverse().find((m: any) => m?.role === "user")?.content || "";
+    const brandId = body?.scope?.brandId ? String(body.scope.brandId) : undefined;
+    const activeScope = brandId
+      ? "\nActive analysis scope: brandId=" + brandId + ". Keep the answer focused on this brand unless the user explicitly changes scope."
+      : "";
+    const { evidence, context, selected } = await collectEvidence(String(latestUser), brandId, token);
+
+    const evidenceJson = JSON.stringify(evidence);
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst. You are an evidence-first CPG decision-support system. During tool selection, NEVER call a tool named json or any tool not listed in the request. The only callable tools are the analytical functions supplied in this request. Do not try to satisfy the final JSON formatting requirement by calling a tool. Treat natural-language CPG questions as flexible business requests: users may use informal wording, abbreviations, executive language, or combine several questions in one sentence. Map the request to the closest capabilities and controlled tools rather than requiring exact keywords. If the requested capability is not supported by the connected data, say exactly what is unavailable and answer the supported portion instead of inventing evidence. You orchestrate controlled analytical tools; you do not calculate metrics yourself.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nDecision procedure: For category improvement, growth, turnaround, leadership, or brand-priority questions, call category_growth_plan FIRST. Then call additional tools only for unresolved questions such as retailer whitespace, retailer concentration, price, anomalies, forecasts, or scenarios. Never substitute generic FMCG advice for observed evidence. Every action recommendation must reference the specific observed signal that triggered it. Clearly distinguish observed facts, diagnostic signals, hypotheses, and planning assumptions. Do not claim causality from descriptive data.\n\nFor quantitative claims, use the controlled tools and preserve their returned values exactly.\nEvidence rules:\n- Never convert rowCount into a week/period count. Use evidence.periodCount.\n- Never claim the requested date range is fully covered when evidence.periodStart/evidence.periodEnd are narrower. State actual coverage.\n- Never invent, duplicate, or silently alter ranking entries.\n- When brandName is available, use it instead of brandId.\n- Treat validation issues and warnings as authoritative.\n- Do not make causal claims from descriptive data.\n- For scenarios, preserve scenarioSales exactly and explain the price × volume × distribution mechanics and assumptions.\n\nYour final response must be a JSON object with exactly these fields:\n{\n  \"type\": \"summary\" | \"ranking\" | \"scenario\" | \"trend\" | \"diagnostic\" | \"comparison\" | \"forecast\" | \"distribution\" | \"anomaly\",\n  \"headline\": \"short business headline\",\n  \"executiveTakeaway\": \"1-3 sentence answer directly answering the user\",\n  \"metrics\": [{\"label\":\"...\", \"value\":\"...\", \"change\":\"optional\", \"tone\":\"positive|negative|neutral\"}],\n  \"table\": {\"columns\":[\"...\"], \"rows\":[[\"...\"]]} | null,\n  \"sections\": [{\"title\":\"...\", \"bullets\":[\"...\"]}],\n  \"warnings\": [\"...\"],\n  \"evidence\": {\"source\":\"...\", \"period\":\"...\", \"periodCount\":0, \"filters\":\"...\"},\n  \"decisionTrail\": [{\"type\":\"observed|diagnostic|action|limitation\",\"text\":\"...\"}],\n  \"nextBestQuestion\": \"optional follow-up question or null\"\n}\nUse null for table when no table is useful. Include a short decisionTrail grounded only in tool evidence: observed facts, diagnostic interpretation, concrete action, and limitations. Include nextBestQuestion only when a useful unresolved question remains; otherwise use null. Keep the response concise and professional. For category-growth questions, include a brand action table when category_growth_plan returned brand diagnostics. For cross-category questions, use cross_category_portfolio FIRST; never claim an exact brand spans categories unless the tool returns it. If exactMultiCategoryBrands is empty, clearly distinguish parent-company portfolio breadth from exact brand breadth. If a brand is identified as needing distribution action, call retailer_opportunity before making retailer-specific recommendations. Do not output Markdown, code fences, or any fields outside this schema." + activeScope      },
-      ...(body.messages || []),
+        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. If evidence is unavailable, say so explicitly. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
+      },
+      ...incoming.slice(-6).map((m: any) => ({
+        role: m?.role === "assistant" ? "assistant" : "user",
+        content: String(m?.content || "").slice(-1600)
+      }))
     ];
 
-    for (let round = 0; round < 4; round++) {
-      const { response, data } = await groqChat(key, {
-        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-        messages,
-        temperature: 0.1,
-        max_completion_tokens: 1200,
-        reasoning_effort: "low",
-        include_reasoning: false,
-        tools: CPG_TOOLS.map((t: any) => ({ type: "function", function: t })),
-        tool_choice: "auto",
-        parallel_tool_calls: false,
-        disable_tool_validation: true,
-      });
-      if (!response.ok) return NextResponse.json({ error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status }, { status: response.status });
-
-      const message = data.choices?.[0]?.message;
-      if (!message) break;
-
-      if (!message?.tool_calls?.length) {
-        messages.push(message);
-        break;
-      }
-
-      // Groq can occasionally emit an unsupported tool name (for example "json")
-      // when a reasoning model is asked for structured output. Keep the turn valid,
-      // return a tool-level error for that call, and let the model recover instead of
-      // failing the whole request with a tool validation 400.
-      messages.push(message);
-      for (const call of message.tool_calls) {
-        try {
-          const knownTool = CPG_TOOLS.some((t: any) => t.name === call.function.name);
-          if (!knownTool) {
-            messages.push({
-              role: "tool",
-              tool_call_id: call.id,
-              name: call.function.name,
-              content: JSON.stringify({ error: "Unsupported tool name. Use only the supplied CPGist analytical tools.", is_error: true }),
-            });
-            continue;
-          }
-          const result = await tool(call.function.name, JSON.parse(call.function.arguments || "{}"), token);
-          toolEvidence.push({ tool: call.function.name, result });
-          messages.push({
-            role: "tool",
-            tool_call_id: call.id,
-            name: call.function.name,
-            content: JSON.stringify(result),
-          });
-        } catch (error: any) {
-          messages.push({
-            role: "tool",
-            tool_call_id: call.id,
-            name: call.function.name,
-            content: JSON.stringify({ error: error?.message || "Analytical tool failed." }),
-          });
-        }
-      }
-    }
-
-    const { response: finalResponse, data: finalData } = await groqChat(key, {
+    const { response, data } = await groqChat(key, {
       model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-      messages: [
-        { role: "system", content: "You are CPGist AI Analyst. Return only the required JSON object. Base every quantitative claim only on the tool results above. Never invent metrics. If a capability is unavailable, state the limitation. Keep the answer concise and professional.\n\nRequired fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. Keep the JSON under 900 tokens." },
-        ...messages.slice(1),
-        { role: "user", content: "Return the final answer now as the required JSON object. Do not call tools. Use only observed tool evidence." }
-      ],
+      messages,
       temperature: 0.05,
-      max_completion_tokens: 1000,
+      max_completion_tokens: 1400,
       reasoning_effort: "low",
       include_reasoning: false,
       response_format: { type: "json_object" }
     });
-    if (!finalResponse.ok) return NextResponse.json({ error: finalData?.error?.message || finalData?.message || "AI Analyst final response failed.", providerStatus: finalResponse.status }, { status: finalResponse.status });
-    const raw = finalData.choices?.[0]?.message?.content;
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status },
+        { status: response.status }
+      );
+    }
+
+    const raw = data.choices?.[0]?.message?.content;
     try {
-      let analyst = JSON.parse(raw || "{}");
+      const analyst = JSON.parse(raw || "{}");
       if (!analyst.headline || !analyst.executiveTakeaway || !Array.isArray(analyst.metrics) || !Array.isArray(analyst.sections) || !Array.isArray(analyst.warnings) || !Array.isArray(analyst.decisionTrail)) {
         throw new Error("Invalid structured analyst response.");
       }
 
-      // Deterministic evidence gate: every answer must expose the actual analytical
-      // coverage returned by the controlled tools. This prevents the LLM from
-      // silently widening a requested period or inventing a source.
-      const evidenceRows = toolEvidence.map(x => x.result?.evidence).filter(Boolean);
+      const evidenceRows = evidence.map(x => x.result?.evidence).filter(Boolean);
       const latestEvidence = evidenceRows.at(-1);
-      if (latestEvidence) {
-        analyst.evidence = {
-          source: latestEvidence.source ?? analyst.evidence?.source ?? "CPGist analytical layer",
-          period: latestEvidence.periodStart && latestEvidence.periodEnd
-            ? String(latestEvidence.periodStart) + " → " + String(latestEvidence.periodEnd)
-            : analyst.evidence?.period ?? "Observed source coverage",
-          periodCount: Number(latestEvidence.periodCount ?? analyst.evidence?.periodCount ?? 0),
-          filters: JSON.stringify(latestEvidence.filters ?? {})
-        };
-      }
-      analyst.warnings = [...new Set([...(analyst.warnings || []), ...toolEvidence.flatMap(x => Array.isArray(x.result?.warnings) ? x.result.warnings : [])])];
+      analyst.evidence = {
+        source: latestEvidence?.source ?? analyst.evidence?.source ?? "CPGist analytical layer",
+        period: latestEvidence?.periodStart && latestEvidence?.periodEnd
+          ? String(latestEvidence.periodStart) + " → " + String(latestEvidence.periodEnd)
+          : analyst.evidence?.period ?? "Observed source coverage",
+        periodCount: Number(latestEvidence?.periodCount ?? analyst.evidence?.periodCount ?? 0),
+        filters: JSON.stringify(latestEvidence?.filters ?? {})
+      };
+      analyst.warnings = [...new Set([
+        ...(analyst.warnings || []),
+        ...evidence.flatMap(x => Array.isArray(x.result?.warnings) ? x.result.warnings : [])
+      ])];
 
-      // Deterministic evidence gate above is the final verification layer for the free/on-demand tier.\n      return NextResponse.json({ analyst, verification: { performed: false, toolCount: toolEvidence.length, mode: "deterministic-evidence-gate" } });
+      return NextResponse.json({
+        analyst,
+        verification: { performed: false, toolCount: evidence.length, mode: "deterministic-evidence + single-model-call" }
+      });
     } catch {
       return NextResponse.json({ error: "The analyst produced an invalid structured response. Please retry." }, { status: 502 });
     }
-
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "AI Analyst request failed." }, { status: 500 });
   }
