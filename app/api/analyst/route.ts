@@ -273,6 +273,7 @@ export async function POST(req: Request) {
 
     const capabilityCatalog = capabilityContext();
     const activeScope = body?.scope?.brandId ? "\n\nActive analysis scope: brandId=" + String(body.scope.brandId) + ". Unless the user explicitly asks to change scope, pass this brandId to relevant analytical tools and keep the answer focused on this brand." : "";
+    const toolEvidence: any[] = [];
     const messages = [
       {
         role: "system",
@@ -319,6 +320,7 @@ export async function POST(req: Request) {
             continue;
           }
           const result = await tool(call.function.name, JSON.parse(call.function.arguments || "{}"), token);
+          toolEvidence.push({ tool: call.function.name, result });
           messages.push({
             role: "tool",
             tool_call_id: call.id,
@@ -350,11 +352,55 @@ export async function POST(req: Request) {
     if (!finalResponse.ok) return NextResponse.json({ error: finalData?.error?.message || finalData?.message || "AI Analyst final response failed.", providerStatus: finalResponse.status }, { status: finalResponse.status });
     const raw = finalData.choices?.[0]?.message?.content;
     try {
-      const analyst = JSON.parse(raw || "{}");
+      let analyst = JSON.parse(raw || "{}");
       if (!analyst.headline || !analyst.executiveTakeaway || !Array.isArray(analyst.metrics) || !Array.isArray(analyst.sections) || !Array.isArray(analyst.warnings) || !Array.isArray(analyst.decisionTrail)) {
         throw new Error("Invalid structured analyst response.");
       }
-      return NextResponse.json({ analyst });
+
+      // Deterministic evidence gate: every answer must expose the actual analytical
+      // coverage returned by the controlled tools. This prevents the LLM from
+      // silently widening a requested period or inventing a source.
+      const evidenceRows = toolEvidence.map(x => x.result?.evidence).filter(Boolean);
+      const latestEvidence = evidenceRows.at(-1);
+      if (latestEvidence) {
+        analyst.evidence = {
+          source: latestEvidence.source ?? analyst.evidence?.source ?? "CPGist analytical layer",
+          period: latestEvidence.periodStart && latestEvidence.periodEnd
+            ? String(latestEvidence.periodStart) + " → " + String(latestEvidence.periodEnd)
+            : analyst.evidence?.period ?? "Observed source coverage",
+          periodCount: Number(latestEvidence.periodCount ?? analyst.evidence?.periodCount ?? 0),
+          filters: JSON.stringify(latestEvidence.filters ?? {})
+        };
+      }
+      analyst.warnings = [...new Set([...(analyst.warnings || []), ...toolEvidence.flatMap(x => Array.isArray(x.result?.warnings) ? x.result.warnings : [])])];
+
+      // Final verification pass: a separate low-temperature model call checks the
+      // drafted answer against the exact tool evidence and returns a corrected object.
+      // It is intentionally forbidden from introducing new analysis.
+      const verifyPayload = JSON.stringify({ draft: analyst, toolEvidence });
+      const { response: verifyResponse, data: verifyData } = await groqChat(key, {
+        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+        messages: [
+          {
+            role: "system",
+            content: "You are the CPGist answer verifier. Return only a JSON object with the exact same schema as the draft. Compare every quantitative claim, ranking, date range, and source against toolEvidence. Correct unsupported numbers, rankings, periods, names, or causal wording. Preserve valid content. Never add facts not present in toolEvidence. If evidence is insufficient, add a concise warning and use a limitation instead of guessing. Do not perform new calculations. Do not call tools."
+          },
+          { role: "user", content: verifyPayload }
+        ],
+        temperature: 0,
+        response_format: { type: "json_object" },
+        reasoning_format: "hidden"
+      });
+      if (verifyResponse.ok) {
+        try {
+          const verified = JSON.parse(verifyData.choices?.[0]?.message?.content || "{}");
+          if (verified?.headline && verified?.executiveTakeaway && Array.isArray(verified.metrics) && Array.isArray(verified.sections)) {
+            analyst = verified;
+          }
+        } catch {}
+      }
+
+      return NextResponse.json({ analyst, verification: { performed: true, toolCount: toolEvidence.length } });
     } catch {
       return NextResponse.json({ error: "The analyst produced an invalid structured response. Please retry." }, { status: 502 });
     }
