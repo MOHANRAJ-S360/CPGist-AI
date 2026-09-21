@@ -21,7 +21,7 @@ async function brandDetail(id:string,brand:any){
  let categoryGrowth:number|null=null;
  let categoryWeekly:any[]=[];
  if(brand.category){try{
-  const cr:any[]=await get("cpgist_category_weekly?category=ilike."+enc(brand.category)+"&select=week_ending,sales,units&order=week_ending.asc&limit=5000");
+  const cr:any[]=await get("cpgist_category_weekly?category=eq."+enc(brand.category)+"&select=week_ending,sales,units&order=week_ending.asc&limit=5000");
   categoryWeekly=cr.map(r=>({period:String(r.week_ending),sales:n(r.sales),units:n(r.units)}));
   categorySales=cr.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0);
   categoryPriorSales=cr.filter(r=>ps.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0);
