@@ -106,26 +106,18 @@ function ReportsContent(){
       d.growth!=null&&Number(d.growth)<0?"Negative sales growth should be tested against distribution, price, promotion and retailer mix rather than assigned to one cause.":"Positive sales growth should be tested against distribution, price, promotion and retailer mix before attributing a driver."
     ],.75,2.65,11.5);note(s,"Driver signals are descriptive. Causal effectiveness is intentionally not inferred from the available fields.");footer(s);}
 
-   // 7 — Competitive Context (anonymized)
-   {const s=pptx.addSlide();addHeader(s,"Competitive Context");title(s,categoryName,"Relative performance against an anonymized same-category peer set — no peer brand names are shown.");const bg=peer?.available;
-    const gap=peer?.peerMedianGrowth!=null&&d.growth!=null?Number(d.growth)-Number(peer.peerMedianGrowth):null;
-    if(bg){
-      kpis(s,[["Brand growth",pct0(d.growth),Number(d.growth||0)<0?red:green],["Peer median growth",pct0(peer.peerMedianGrowth),Number(peer.peerMedianGrowth||0)<0?red:green],["Growth gap",gap==null?"—":pct(gap),gap!=null&&gap<0?red:green],["Peer set",String(peer.peerCount)],["Peers growing",String(peer.peersGrowing)]]);
-      s.addText("What the peer comparison says",{x:.75,y:2.55,w:5.2,h:.25,fontSize:12,bold:true,color:text});
-      bullets(s,[gap==null?"Relative growth gap is unavailable.":(gap<0?"Brand growth is below the anonymized peer median by "+Math.abs(gap).toFixed(1)+" pts.":"Brand growth is above the anonymized peer median by "+gap.toFixed(1)+" pts."),String(peer.peersGrowing)+" of "+String(peer.peerCount)+" observed peers grew versus the prior 13 weeks; "+String(peer.peersDeclining)+" declined.",peer.peerMedianDistribution==null?"Peer distribution benchmark is unavailable.":"Peer median distribution is "+Number(peer.peerMedianDistribution).toFixed(1)+"%, providing context for the brand's "+(d.avgDistribution==null?"—":Number(d.avgDistribution).toFixed(1)+"%")+" observed distribution."],.75,2.95,11.5);
-      s.addShape(pptx.ShapeType.roundRect,{x:.75,y:4.95,w:11.45,h:.72,rectRadius:.04,fill:{color:soft},line:{color:line}});
-      s.addText("Client story",{x:1.0,y:5.15,w:1.2,h:.18,fontSize:8,bold:true,color:accent});
-      s.addText(gap!=null&&gap<0?"The key question is what is separating brand momentum from the peer set — especially across distribution, units, price and retailer mix.":"The key question is which commercial levers are supporting or limiting performance relative to the peer set.",{x:2.25,y:5.05,w:9.5,h:.35,fontSize:10,color:text,fit:"shrink"});
-    }else{
-      const categoryGap=d.metrics?.categoryGrowth!=null&&d.growth!=null?Number(d.growth)-Number(d.metrics.categoryGrowth):null;
-      kpis(s,[["Brand growth",pct0(d.growth),Number(d.growth||0)<0?red:green],["Category growth",d.metrics?.categoryGrowth==null?"—":pct(d.metrics.categoryGrowth)],["Growth gap",categoryGap==null?"—":pct(categoryGap),categoryGap!=null&&categoryGap<0?red:green],["Share change",d.shareChangePts==null?"—":(d.shareChangePts>=0?"+":"")+Number(d.shareChangePts).toFixed(1)+" pts"]]);
-      s.addText("Competitive context",{x:.75,y:2.55,w:5.2,h:.25,fontSize:12,bold:true,color:text});
-      bullets(s,[categoryGap==null?"A same-category peer benchmark is not populated for this category.":"Brand growth is "+(categoryGap<0?"below":"above")+" category growth by "+Math.abs(categoryGap).toFixed(1)+" pts.",d.shareChangePts==null?"Share change is unavailable.":"Observed category share changed "+(d.shareChangePts>=0?"+":"")+Number(d.shareChangePts).toFixed(1)+" pts versus the prior 13 weeks.","Use retailer, product, price and distribution diagnostics to explain the relative movement; no peer brand names or unsupported rankings are shown."],.75,2.95,11.5);
-      s.addShape(pptx.ShapeType.roundRect,{x:.75,y:4.95,w:11.45,h:.72,rectRadius:.04,fill:{color:soft},line:{color:line}});
-      s.addText("Data treatment",{x:1.0,y:5.15,w:1.2,h:.18,fontSize:8,bold:true,color:accent});
-      s.addText("Peer-level comparison is not exposed when the connected source cannot produce a validated same-category peer set.",{x:2.25,y:5.05,w:9.5,h:.35,fontSize:10,color:text,fit:"shrink"});
-    }
-    note(s,"Competitive context is anonymized for client delivery. Peer comparison uses the same CPGist brand-week source and aligned 13-week periods; no peer names, rankings or causal claims are shown.");footer(s);}
+   // 7 — Competitive Context (named, validated)
+   {const s=pptx.addSlide();addHeader(s,"Competitive Context");title(s,categoryName,"Selected brand versus the top same-category brands with aligned 13W and prior-13W data.");const peers=Array.isArray(d.competitivePeers)?d.competitivePeers:[];
+    if(peers.length){
+      kpis(s,[["Selected brand",brandName],["13W sales",money0(d.totalSales)],["Brand growth",pct0(d.growth),Number(d.growth||0)<0?red:green],["Category growth",d.metrics?.categoryGrowth==null?"—":pct(d.metrics.categoryGrowth)],["Competitors shown",String(peers.length)]]);
+      s.addText("Competitive comparison",{x:.7,y:2.45,w:4,h:.25,fontSize:12,bold:true,color:text});
+      const headers=["BRAND","13W SALES","SALES GROWTH","UNIT GROWTH","DISTRIBUTION","GROWTH VS SELECTED"];headers.forEach((h,i)=>s.addText(h,{x:[.55,3.25,5.0,6.7,8.45,10.15][i],y:2.82,w:[2.5,1.55,1.45,1.45,1.45,2.45][i],h:.18,fontSize:6.5,bold:true,color:muted,fit:"shrink"}));
+      const compRows=[{name:brandName,sales:d.totalSales,growth:d.growth,unitGrowth:peer.focalUnitGrowth,distribution:d.avgDistribution,selected:true},...peers];
+      compRows.slice(0,8).forEach((r:any,i:number)=>{const y=3.18+i*.43;const gap=r.growth!=null&&d.growth!=null?Number(r.growth)-Number(d.growth):null;s.addText(String(r.name||"—"),{x:.55,y,w:2.5,h:.24,fontSize:8.5,color:text,bold:true,fit:"shrink"});s.addText(money0(r.sales),{x:3.25,y,w:1.55,h:.24,fontSize:8.5,color:text,fit:"shrink"});s.addText(pct0(r.growth),{x:5.0,y,w:1.45,h:.24,fontSize:8.5,color:r.selected?text:(Number(r.growth||0)>0?green:red),fit:"shrink"});s.addText(pct0(r.unitGrowth),{x:6.7,y,w:1.45,h:.24,fontSize:8.5,color:text,fit:"shrink"});s.addText(r.distribution==null?"—":Number(r.distribution).toFixed(1)+"%",{x:8.45,y,w:1.45,h:.24,fontSize:8.5,color:text,fit:"shrink"});s.addText(r.selected?"Selected brand":gap==null?"—":(gap>0?"+":"")+gap.toFixed(1)+" pts",{x:10.15,y,w:2.45,h:.24,fontSize:8.5,color:gap!=null&&gap>0?green:gap!=null&&gap<0?red:muted,fit:"shrink"});});
+      const top=peers[0];const gap=top?.growth!=null&&d.growth!=null?Number(top.growth)-Number(d.growth):null;
+      bullets(s,["Competitors are selected from the same category and ranked by latest 13W sales after requiring complete aligned 13W and prior-13W coverage.",top?String(top.name)+" has the largest latest-13W sales among the displayed competitors at "+money0(top.sales)+" with "+pct0(top.growth)+" sales growth.":"No validated competitor is available.",gap==null?"Relative growth versus the largest displayed competitor is unavailable.":"The largest displayed competitor's sales growth is "+(gap>0?"above":"below")+" the selected brand by "+Math.abs(gap).toFixed(1)+" pts."],.75,6.45,11.6);
+    }else unavailable(s,"No validated same-category competitors have complete aligned 13W and prior-13W data in the connected source.");
+    note(s,"Competitor names and metrics are shown only when the connected source directly identifies the brand and provides aligned periods. This comparison is descriptive; it does not establish causality.");footer(s);}
 
    // 8 — Opportunities
    {const s=pptx.addSlide();addHeader(s,"Opportunities");title(s,brandName,"Evidence-backed investigation opportunities from the current data.");const opps:string[]=[];
