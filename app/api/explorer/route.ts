@@ -61,13 +61,15 @@ async function brandDetail(id:string,brand:any){
     return{brandId,sales:cs,priorSales:psales,growth:psales?pct(cs,psales):null,units:cu,priorUnits:pu,unitGrowth:pu?pct(cu,pu):null,distribution:dist};
    }).filter(r=>r.growth!=null);
    const peers=rows.filter(r=>String(r.brandId)!==String(id));
+   const brandNames:any[]=await get("cpgist_brands?category=ilike."+enc(brand.category)+"&select=id,name&limit=5000");
+   const brandNameMap=new Map(brandNames.map((x:any)=>[String(x.id),x.name]));
    const med=(vals:number[])=>{const a=vals.filter(Number.isFinite).sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null};
    const focalRow=rows.find(r=>String(r.brandId)===String(id));
    competitiveBenchmark={
     available:peers.length>0,
     // Named competitors are exposed only when they are directly present in the same
     // category/source and have complete aligned 13W + prior-13W coverage.
-    competitors: rows.filter(r=>String(r.brandId)!==String(id) && r.growth!=null).sort((a,b)=>Number(b.sales)-Number(a.sales)).slice(0,15).map(r=>({brandId:r.brandId,sales:r.sales,priorSales:r.priorSales,growth:r.growth,units:r.units,unitGrowth:r.unitGrowth,distribution:r.distribution})),
+    competitors: rows.filter(r=>String(r.brandId)!==String(id) && r.growth!=null).sort((a,b)=>Number(b.sales)-Number(a.sales)).slice(0,15).map(r=>({brandId:r.brandId,name:brandNameMap.get(String(r.brandId))||"Competitor",sales:r.sales,priorSales:r.priorSales,growth:r.growth,units:r.units,unitGrowth:r.unitGrowth,distribution:r.distribution})),
     peerCount:peers.length,
     focalMatched:Boolean(focalRow),
     focalGrowth:focalRow?.growth??null,
