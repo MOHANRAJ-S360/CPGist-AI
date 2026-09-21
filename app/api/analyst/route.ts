@@ -319,6 +319,13 @@ async function tool(name: string, a: Args, token: string) {
       return {signals:rows.map((x:any)=>({...x,brandName:names[String(x.brand_id)]??null})),evidence:{source:"syndicate_competitor_signals",grain:"competitive signal event",rowCount:rows.length,periodStart:rows.at(-1)?.signal_date??null,periodEnd:rows[0]?.signal_date??null,periodCount:new Set(rows.map((x:any)=>x.signal_date).filter(Boolean)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:rows.length?[]:["No competitive signals are available for the requested scope."]};
     }
 
+    case "price_promotion_analytics": {
+      const datasetResult=await queryDataset(a,token);
+      const filters=filtersFromArgs(a);
+      const result=pricePromotionAnalytics(datasetResult.rows,filters);
+      return { ...result.data, evidence:{...result.evidence,source:datasetResult.source}, warnings:result.warnings };
+    }
+
     case "promotion_diagnostic": {
       const rows=await queryDataset(a,token);
       const filters=filtersFromArgs(a);
@@ -501,7 +508,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (brandId && categoryId && /category|growth|underperform|momentum|monthly|review|why|decline|improve|turnaround/.test(q)) add("category_growth_plan");
   if (/sku|product|assortment|portfolio|item|size|pack/.test(q)) add("product_sku_performance");
   if (brandId && categoryId && /retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
-  if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
+  if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("price_promotion_analytics");
   if (/competitor|competitive|competition|market movement/.test(q)) add("competitive_signals");
   if (/forecast|outlook|next 8|next 12|projection/.test(q)) add("forecast_sales");
   if (/anomal|spike|drop|unusual|outlier/.test(q)) add("detect_anomalies");
