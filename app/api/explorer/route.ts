@@ -114,8 +114,13 @@ export async function GET(req:NextRequest){
   }
   if(entity==="category"){
    const rows:any[]=await get("cpgist_categories?select=id,name,parent_category,subcategory_count&order=name&limit=5000");
-   const products:any[]=await get("cpgist_products?select=id,name,category,subcategory,brand_id&order=name&limit=10000");
-   const enriched=rows.map((c:any)=>{const ps=products.filter((p:any)=>String(p.category||"").toLowerCase()===String(c.name||"").toLowerCase());const counts=new Map<string,number>();for(const p of ps){const key=String(p.subcategory||"Unclassified");counts.set(key,(counts.get(key)||0)+1)}return{...c,product_count:ps.length,subcategories:[...counts.entries()].sort((x,y)=>y[1]-x[1]).map(([name,count])=>({name,product_count:count}))}});
+   const products:any[]=await get("cpgist_products?select=id,name,category,subcategory,size,sku,brand_id&order=name&limit=10000");
+   const enriched=rows.map((c:any)=>{
+    const ps=products.filter((p:any)=>String(p.category||"").toLowerCase()===String(c.name||"").toLowerCase());
+    const counts=new Map<string,any[]>();
+    for(const p of ps){const key=String(p.subcategory||"Unclassified");if(!counts.has(key))counts.set(key,[]);counts.get(key)!.push(p);}
+    return{...c,product_count:ps.length,subcategories:[...counts.entries()].sort((x,y)=>y[1].length-x[1].length).map(([name,items])=>({name,product_count:items.length,products:items.map(p=>({id:p.id,name:p.name,sku:p.sku||null,size:p.size||null,brand_id:p.brand_id}))}))};
+   });
    const results=enriched.filter(x=>has(x.name,q)||has(x.parent_category,q));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
   if(entity==="region"){
