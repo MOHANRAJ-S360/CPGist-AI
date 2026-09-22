@@ -145,6 +145,14 @@ export async function GET(){
    .filter((x:any)=>x.name)
    .sort((a:any,b:any)=>b.sales-a.sales);
 
+  const alerts:any[]=[];
+  for(const b of (topBrands as any[]).filter((x:any)=>Number(x.sales)>0&&Number(x.growth)<-0.05).sort((a:any,b:any)=>Number(a.growth)-Number(b.growth)).slice(0,3)){
+   alerts.push({type:"BRAND MOMENTUM",tone:"negative",title:String(b.name)+" sales declined "+Math.abs(Number(b.growth)*100).toFixed(1)+"%",text:"Latest 13W sales are below the prior 13W period. Review distribution, retailer mix, price and product drivers.",period:latestWeek});
+  }
+  for(const c of (categories as any[]).filter((x:any)=>Number(x.sales)>0&&Number(x.growth)<-0.05).sort((a:any,b:any)=>Number(a.growth)-Number(b.growth)).slice(0,2)){
+   alerts.push({type:"CATEGORY MOMENTUM",tone:"negative",title:String(c.name)+" category is down "+Math.abs(Number(c.growth)*100).toFixed(1)+"%",text:"Observed category sales declined versus the prior 13 weeks. Separate category movement from brand-specific movement.",period:latestWeek});
+  }
+  if(!alerts.length)alerts.push({type:"DATA MONITOR",tone:"positive",title:"No threshold-based performance alerts",text:"The latest 13W source data does not currently trigger the configured momentum thresholds.",period:latestWeek});
   return NextResponse.json({
    source:"cpgist_compact",
    compactDataset:true,
@@ -160,6 +168,7 @@ export async function GET(){
    avgDistribution:latest.avgDistribution,
    promoRate:null,
    growth:growth(latest.sales,prior.sales),
+   alerts,
    weekly,
    topBrands,
    categories,
