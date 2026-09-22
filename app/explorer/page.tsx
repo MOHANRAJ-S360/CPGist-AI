@@ -27,7 +27,8 @@ export default function Explorer(){
  const [rows,setRows]=useState<any[]>([]);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState("");
- const [page,setPage]=useState(1);\n const [expandedCategories,setExpandedCategories]=useState<Set<string>>(new Set());
+ const [page,setPage]=useState(1);
+ const [expandedCategories,setExpandedCategories]=useState<Set<string>>(new Set());
  const [total,setTotal]=useState(0);
 
  useEffect(()=>{setPage(1);setExpandedCategories(new Set())},[entity,q]);
