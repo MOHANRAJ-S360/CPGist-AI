@@ -210,3 +210,5 @@
 .empty-detail.compact b{color:#344054;font-size:12px}
 .empty-detail.compact span{color:#98a2b3;font-size:10px;max-width:460px;text-align:center;line-height:1.5}
 @media(max-width:760px){.brand-combobox{width:100%}.brand-combobox-menu{position:relative;top:6px;box-shadow:0 10px 24px rgba(16,24,40,.10);margin-bottom:6px}}
+
+.coverage-pill{display:inline-flex;padding:4px 8px;border-radius:999px;background:#ecfdf3;border:1px solid #ccebd8;color:#16845b;font-size:8px;font-weight:700}.region-name{display:flex;align-items:center;gap:6px}.region-name small{display:block;color:#98a2b3;font-size:8px;margin-left:2px}.report-brand-picker{width:390px}.explorer-filter-context{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid #e4e0ff;border-radius:9px;background:#f8f7ff}.explorer-filter-context b{font-size:10px;color:#3d3f68}.explorer-filter-context span{font-size:9px;color:#667085;flex:1}.explorer-filter-context .secondary-btn{font-size:9px;text-decoration:none;padding:6px 8px}
