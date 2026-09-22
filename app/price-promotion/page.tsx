@@ -44,3 +44,5 @@ export default function PricePromotion(){
   </>}
  </section></AppShell>
 }
+
+// Advanced commercial analytics reads the combined dataset's compact fields directly.
