@@ -12,7 +12,7 @@ const enc=(v:any)=>encodeURIComponent(String(v??""));
 const has=(v:any,q:string)=>!q||String(v??"").toLowerCase().includes(q.toLowerCase());
 
 async function brandDetail(id:string,brand:any){
- const rows:any[]=await get("cpgist_brand_weekly?brand_id=eq."+enc(id)+"&select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&order=week_ending.asc&limit=100000");
+ const rows:any[]=await get("cpgist_brand_weekly?brand_id=eq."+enc(id)+"&select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,regular_price,actual_price,baseline_sales,baseline_units,incremental_sales,incremental_units,gross_margin,margin_percent,trade_spend,promo_events,avg_discount_depth_pct,data_quality_status&order=week_ending.asc&limit=100000");
  const periods=[...new Set(rows.map(r=>String(r.week_ending)).filter(Boolean))].sort();
  const latest=periods.slice(-13),prior=periods.slice(-26,-13),ls=new Set(latest),ps=new Set(prior);
  const agg=(rs:any[])=>{const sales=rs.reduce((a,r)=>a+n(r.sales),0),units=rs.reduce((a,r)=>a+n(r.units),0);return{sales,units,distribution:rs.length?rs.reduce((a,r)=>a+n(r.distribution),0)/rs.length:null,price:units?sales/units:null,promoRate:rs.length?rs.reduce((a,r)=>a+n(r.promo_rate),0)/rs.length:null}};
