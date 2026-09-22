@@ -81,7 +81,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
     })), source: "cpgist_brand_retailer_weekly" };
   }
 
-  let q = "cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&limit=100000";
+  let q = "cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,regular_price,actual_price,baseline_sales,baseline_units,incremental_sales,incremental_units,gross_margin,margin_percent,trade_spend,promo_events,avg_discount_depth_pct,data_quality_status&limit=100000";
   if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
   if (category) q += "&category=ilike." + encodeURIComponent(category);
   if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
@@ -90,7 +90,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   return { rows: raw.map((r:any) => ({
     brand_id: r.brand_id, category: r.category, week_ending: r.week_ending,
     dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
-    avg_price: r.avg_price, promo_observations: r.promo_rate, observations: 1
+    avg_price: r.avg_price, promo_observations: r.promo_rate, regular_price: r.regular_price, actual_price: r.actual_price, baseline_sales: r.baseline_sales, baseline_units: r.baseline_units, incremental_sales: r.incremental_sales, incremental_units: r.incremental_units, gross_margin: r.gross_margin, margin_percent: r.margin_percent, trade_spend: r.trade_spend, promo_events: r.promo_events, avg_discount_depth_pct: r.avg_discount_depth_pct, data_quality_status: r.data_quality_status, observations: 1
   })), source: "cpgist_brand_weekly" };
 }
 async function tool(name: string, a: Args, token: string) {
@@ -327,10 +327,12 @@ async function tool(name: string, a: Args, token: string) {
       const promoRows=rows.rows.filter(x=>x.promo_observations!==undefined || x.avg_discount_depth_pct!==undefined);
       const promoRate=promoRows.length?promoRows.reduce((s,r)=>s+Number(r.promo_observations||0),0)/Math.max(1,promoRows.length):null;
       const discountDepth=promoRows.length?promoRows.reduce((s,r)=>s+Number(r.avg_discount_depth_pct||0),0)/Math.max(1,promoRows.length):null;
+      const baselineSales=rows.rows.reduce((s,r)=>s+Number(r.baseline_sales||0),0),incrementalSales=rows.rows.reduce((s,r)=>s+Number(r.incremental_sales||0),0),tradeSpend=rows.rows.reduce((s,r)=>s+Number(r.trade_spend||0),0),grossMargin=rows.rows.reduce((s,r)=>s+Number(r.gross_margin||0),0);
+      const estimatedIncrementalProfit=incrementalSales*(sales.totalSales?grossMargin/sales.totalSales:0),estimatedRoi=tradeSpend>0?(estimatedIncrementalProfit-tradeSpend)/tradeSpend*100:null;
       const periods=[...new Set(rows.rows.map(x=>x.week_ending).filter(Boolean))].sort();
-      return {sales:{totalSales:sales.totalSales,totalUnits:sales.totalUnits},realizedPrice:price.averagePrice,promoRate,avgDiscountDepthPct:discountDepth,
+      return {sales:{totalSales:sales.totalSales,totalUnits:sales.totalUnits},realizedPrice:price.averagePrice,promoRate,avgDiscountDepthPct:discountDepth,baselineSales,incrementalSales,tradeSpend,grossMargin,estimatedIncrementalProfit,estimatedPromotionROI:estimatedRoi,
         evidence:{source:rows.source,grain:"brand/category/retailer week",rowCount:rows.rows.length,periodStart:periods[0]??null,periodEnd:periods.at(-1)??null,periodCount:periods.length,filters,generatedAt:new Date().toISOString()},
-        warnings:["Promotion observations are descriptive. Incremental promotional lift, ROI and causal effectiveness are not estimated by the current dataset."]};
+        warnings:["Baseline is a supplied trailing-8-week heuristic; incremental sales are arithmetic actual-minus-baseline, not causal lift.","Promotion ROI is an analytical estimate using observed gross-margin rate and supplied trade spend; it is not an audited finance measure or proof of causal promotion effectiveness."]};
     }
 
     case "category_growth_plan": {
