@@ -29,9 +29,10 @@ export default function Explorer(){
  const [error,setError]=useState("");
  const [page,setPage]=useState(1);
  const [expandedCategories,setExpandedCategories]=useState<Set<string>>(new Set());
+ const [expandedSubcategories,setExpandedSubcategories]=useState<Set<string>>(new Set());
  const [total,setTotal]=useState(0);
 
- useEffect(()=>{setPage(1);setExpandedCategories(new Set())},[entity,q]);
+ useEffect(()=>{setPage(1);setExpandedCategories(new Set());setExpandedSubcategories(new Set())},[entity,q]);
 
  useEffect(()=>{
   let live=true;
@@ -92,11 +93,27 @@ export default function Explorer(){
           <b style={{fontSize:13}}>Subcategories in {String(x.name||"this category")}</b>
           <Link className="secondary-btn" href={"/explorer?entity=product&category="+encodeURIComponent(String(x.name||""))} onClick={e=>e.stopPropagation()}>View all products</Link>
          </div>
-         {subcategories.length?<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
-          {subcategories.map((s:any)=> <Link key={String(s.name)} href={"/explorer?entity=product&category="+encodeURIComponent(String(x.name||""))+"&subcategory="+encodeURIComponent(String(s.name||""))} onClick={e=>e.stopPropagation()} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",border:"1px solid #e6e8f0",borderRadius:10,background:"#fff",textDecoration:"none",color:"inherit"}}>
-           <span><b style={{fontSize:13}}>{String(s.name||"Unclassified")}</b><small style={{display:"block",marginTop:3,color:"#667085"}}>{Number(s.product_count||0).toLocaleString()} products</small></span>
-           <ChevronRight size={15}/>
-          </Link>)}
+         {subcategories.length?<div style={{display:"grid",gap:10}}>
+          {subcategories.map((s:any)=>{
+           const subKey=String(x.name||"")+"::"+String(s.name||"");
+           const subExpanded=expandedSubcategories.has(subKey);
+           const products=Array.isArray(s.products)?s.products:[];
+           return <div key={subKey} style={{border:"1px solid #e6e8f0",borderRadius:10,background:"#fff",overflow:"hidden"}}>
+            <button type="button" onClick={e=>{e.stopPropagation();setExpandedSubcategories(prev=>{const next=new Set(prev);if(next.has(subKey))next.delete(subKey);else next.add(subKey);return next})}} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 13px",border:0,background:"#fff",textAlign:"left",cursor:"pointer",color:"inherit"}}>
+             <span><b style={{fontSize:13}}>{String(s.name||"Unclassified")}</b><small style={{display:"block",marginTop:3,color:"#667085"}}>{Number(s.product_count||products.length||0).toLocaleString()} products · click to view SKUs</small></span>
+             {subExpanded?<ChevronUp size={15}/>:<ChevronRight size={15}/>}
+            </button>
+            {subExpanded&&<div style={{borderTop:"1px solid #eef0f5",padding:"10px 12px",background:"#fbfbfe"}}>
+             {products.length?<div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+               <thead><tr><th style={{textAlign:"left",padding:"7px 8px",color:"#667085",fontWeight:600}}>PRODUCT</th><th style={{textAlign:"left",padding:"7px 8px",color:"#667085",fontWeight:600}}>SKU</th><th style={{textAlign:"left",padding:"7px 8px",color:"#667085",fontWeight:600}}>SIZE</th></tr></thead>
+               <tbody>{products.map((p:any)=><tr key={String(p.id)}><td style={{padding:"8px",borderTop:"1px solid #eef0f5",fontWeight:600}}>{String(p.name||"Unnamed product")}</td><td style={{padding:"8px",borderTop:"1px solid #eef0f5",fontFamily:"monospace",color:"#475467"}}>{String(p.sku||"—")}</td><td style={{padding:"8px",borderTop:"1px solid #eef0f5",color:"#667085"}}>{String(p.size||"—")}</td></tr>)}</tbody>
+              </table>
+             </div>:<div className="empty-detail">No SKU-level products are available for this subcategory.</div>}
+             <div style={{display:"flex",justifyContent:"flex-end",marginTop:9}}><Link className="secondary-btn" href={"/explorer?entity=product&category="+encodeURIComponent(String(x.name||""))+"&subcategory="+encodeURIComponent(String(s.name||""))} onClick={e=>e.stopPropagation()}>Open filtered product view</Link></div>
+            </div>}
+           </div>
+          })}
          </div>:<div className="empty-detail">No subcategory records are available for this category.</div>}
         </div>}
        </div>
