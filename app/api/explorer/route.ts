@@ -27,7 +27,7 @@ async function brandDetail(id:string,brand:any){
   categoryPriorSales=cr.filter(r=>ps.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0);
   categoryGrowth=categoryPriorSales?pct(categorySales,categoryPriorSales):null;
  }catch{}}
- const weekly=periods.map(w=>{const rr=rows.filter(r=>String(r.week_ending)===w);return{period:w,sales:rr.reduce((s,r)=>s+n(r.sales),0),units:rr.reduce((s,r)=>s+n(r.units),0)}});
+ const weekly=periods.map(w=>{const rr=rows.filter(r=>String(r.week_ending)===w);return{period:w,sales:rr.reduce((s,r)=>s+n(r.sales),0),units:rr.reduce((s,r)=>s+n(r.units),0),promoRate:rr.length?rr.reduce((s,r)=>s+n(r.promo_rate),0)/rr.length:null}});
  let products:any[]=[];
  try{
   const p:any[]=await get("cpgist_products?brand_id=eq."+enc(id)+"&select=id,brand_id,name,sku,category,subcategory,size,pack_count&order=name&limit=5000");
