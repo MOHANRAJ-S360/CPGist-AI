@@ -27,7 +27,7 @@ async function brandDetail(id:string,brand:any){
   categoryPriorSales=cr.filter(r=>ps.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0);
   categoryGrowth=categoryPriorSales?pct(categorySales,categoryPriorSales):null;
  }catch{}}
- const weekly=periods.map(w=>{const rr=rows.filter(r=>String(r.week_ending)===w);return{period:w,sales:rr.reduce((s,r)=>s+n(r.sales),0),units:rr.reduce((s,r)=>s+n(r.units),0)}});
+ const weekly=periods.map(w=>{const rr=rows.filter(r=>String(r.week_ending)===w);const sales=rr.reduce((s,r)=>s+n(r.sales),0),units=rr.reduce((s,r)=>s+n(r.units),0);return{period:w,sales,units,regularPrice:units?rr.reduce((s,r)=>s+n(r.regular_price)*n(r.units),0)/units:null,actualPrice:units?rr.reduce((s,r)=>s+n(r.actual_price)*n(r.units),0)/units:null,promoRate:rr.length?rr.reduce((s,r)=>s+n(r.promo_rate),0)/rr.length:null,baselineSales:rr.reduce((s,r)=>s+n(r.baseline_sales),0),baselineUnits:rr.reduce((s,r)=>s+n(r.baseline_units),0),incrementalSales:rr.reduce((s,r)=>s+n(r.incremental_sales),0),incrementalUnits:rr.reduce((s,r)=>s+n(r.incremental_units),0),grossMargin:rr.reduce((s,r)=>s+n(r.gross_margin),0),tradeSpend:rr.reduce((s,r)=>s+n(r.trade_spend),0),promoEvents:rr.reduce((s,r)=>s+n(r.promo_events),0),discountDepth:rr.length?rr.reduce((s,r)=>s+n(r.avg_discount_depth_pct),0)/rr.length:null,dataQuality:[...new Set(rr.map(r=>r.data_quality_status).filter(Boolean))]}});
  let products:any[]=[];
  try{
   const p:any[]=await get("cpgist_products?brand_id=eq."+enc(id)+"&select=id,brand_id,name,sku,category,subcategory,size,pack_count&order=name&limit=5000");
@@ -92,7 +92,7 @@ async function brandDetail(id:string,brand:any){
  }catch{}
 
  const priorShare=categoryPriorSales?b.sales/categoryPriorSales*100:null;
- return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null,priorShare,shareChangePts:(categorySales&&categoryPriorSales)?(a.sales/categorySales*100)-(b.sales/categoryPriorSales*100):null},weekly,products,retailers,categoryWeekly,competitorSignals,competitiveBenchmark}
+ return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,regularPrice:a.regularPrice,actualPrice:a.actualPrice,baselineSales:a.baselineSales,baselineUnits:a.baselineUnits,incrementalSales:a.incrementalSales,incrementalUnits:a.incrementalUnits,grossMargin:a.grossMargin,tradeSpend:a.tradeSpend,promoEvents:a.promoEvents,discountDepth:a.discountDepth,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null,priorShare,shareChangePts:(categorySales&&categoryPriorSales)?(a.sales/categorySales*100)-(b.sales/categoryPriorSales*100):null},weekly,products,retailers,categoryWeekly,competitorSignals,competitiveBenchmark}
 }
 
 export async function GET(req:NextRequest){
