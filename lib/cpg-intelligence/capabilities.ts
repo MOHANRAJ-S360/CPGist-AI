@@ -140,9 +140,9 @@ export const ANALYST_CAPABILITIES: AnalystCapability[] = [
     id: "profitability",
     label: "Profitability and margin",
     questionPatterns: ["margin", "profit", "gross profit", "contribution", "roi", "return"],
-    tools: [],
-    dataRequirements: ["net sales", "COGS", "trade spend", "margin data"],
-    status: "planned",
+    tools: ["promotion_diagnostic"],
+    dataRequirements: ["sales", "baseline sales", "gross margin", "trade spend"],
+    status: "partial",
   },
   {
     id: "consumer",
