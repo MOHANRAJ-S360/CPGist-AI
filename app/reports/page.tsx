@@ -34,7 +34,7 @@ function ReportsContent(){
  }
  useEffect(()=>{load()},[brandId]);
  useEffect(()=>{let live=true;(async()=>{try{const token=await auth();const r=await fetch("/api/explorer?entity=brand&limit=5000",{headers:{Authorization:"Bearer "+token},cache:"no-store"});const x=await r.json();if(live)setAllBrands(Array.isArray(x.results)?x.results:[])}catch{if(live)setAllBrands([])}})();return()=>{live=false}},[]);
- useEffect(()=>{setBrandResults(allBrands.filter((b:any)=>!q||String(b.name).toLowerCase().includes(q.toLowerCase())||String(b.category||"").toLowerCase().includes(q.toLowerCase())).slice(0,50))},[q,allBrands]);
+ useEffect(()=>{setBrandResults(allBrands.filter((b:any)=>!q||String(b.name).toLowerCase().includes(q.toLowerCase())||String(b.category||"").toLowerCase().includes(q.toLowerCase())))},[q,allBrands]);
  function printPdf(){window.print()}
  async function powerpoint(){
   if(!d||d.error)return;
