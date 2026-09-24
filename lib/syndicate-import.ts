@@ -425,8 +425,8 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     unit_cost:x.units?x.cost/x.units:null
   }));
   await upsertBatches(sb,"cpgist_brand_weekly",brandRows,"brand_id,week_ending",progress);
-  await upsertBatches(sb,"cpgist_category_weekly",[...CA.values()].map(x=>({category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null,is_actual:isActual(x.week_ending)})),"category,week_ending",progress);
-  await upsertBatches(sb,"cpgist_retailer_weekly",[...RA.values()].map(x=>({retailer_id:x.retailer_id,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null,is_actual:isActual(x.week_ending)})),"retailer_id,week_ending",progress);
+  await upsertBatches(sb,"cpgist_category_weekly",[...CA.values()].map(x=>({category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null,is_actual:x.is_actual})),"category,week_ending",progress);
+  await upsertBatches(sb,"cpgist_retailer_weekly",[...RA.values()].map(x=>({retailer_id:x.retailer_id,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null,is_actual:x.is_actual})),"retailer_id,week_ending",progress);
   await upsertBatches(sb,"cpgist_brand_category_weekly",[...BCA.values()].map(x=>({brand_id:x.brand_id,category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null})),"brand_id,category,week_ending",progress);
 
   // Product + retailer detail is intentionally limited to the latest 26 weeks: enough for
