@@ -9,6 +9,7 @@ export type IntelligenceRow = {
   promo_observations?: number | string | null;
   avg_discount_depth_pct?: number | string | null;
   observations?: number | string | null;
+  is_actual?: boolean | null;
 };
 
 export type IntelligenceQuery = {
