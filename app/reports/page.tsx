@@ -39,6 +39,10 @@ function ReportsContent(){
  async function powerpoint(){
   if(!d||d.error)return;
   try{
+   const token=await auth();
+   const advTypes=["promo_lift","sku_growth","channel_breakdown","margin","launch","panel","macro"];
+   const adv:any={};
+   for(const type of advTypes){try{const qs=new URLSearchParams({type});if(brandId)qs.set("brandId",String(brandId));if(type==="panel"&&d.scope==="brand")qs.set("brand",String(d.brand.name));const rr=await fetch("/api/advanced-analytics?"+qs.toString(),{headers:{Authorization:"Bearer "+token},cache:"no-store"});adv[type]=rr.ok?await rr.json():{};}catch{adv[type]={};}}
    const mod=await import("pptxgenjs"); const PptxGenJS:any=mod.default||mod; const pptx=new PptxGenJS();
    pptx.layout="LAYOUT_WIDE"; pptx.author="CPGist"; pptx.company="CPGist"; pptx.subject="Client-ready CPG business review"; pptx.title=(d.scope==="brand"?d.brand.name+" Brand Performance":"CPGist Executive Market Performance")+" Review"; pptx.lang="en-US";
    const dark="0E1728",accent="6D5DFC",text="101828",muted="667085",line="E5E8EF",soft="F7F8FA",green="067647",red="B42318";
