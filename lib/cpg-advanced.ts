@@ -98,7 +98,7 @@ export function getCategoryContext(categoryRows:AdvancedRow[], brandRows:Advance
   return {available:Boolean(current),observed,context:current,disclaimer:observed?"Observed category is bounded by tracked category aggregates; it is not a total-market category claim.":"Projected category context is based on the same-status weekly source layer; it is not an observed total-market category claim."};
 }
 
-export function getChannelBreakdown(rows:AdvancedRow[], retailers:AdvancedRow[], periods?:string[], isActual?:boolean) {
+export function getChannelBreakdown(rows:AdvancedRow[], retailers:AdvancedRow[], periods?:string[], statusFilter?:boolean) {
   const scoped=periods?.length?rows.filter(r=>periods.includes(String(r.week_ending)) && (isActual==null || isActual(r.is_actual)===isActual)):rows.filter(r=>isActual==null || r.is_actual===isActual);
   const names=new Map(retailers.map(r=>[String(r.id),r]));
   const map=new Map<string,{channel:string;sales:number;units:number;distributionSum:number;distributionCount:number;retailers:Set<string>}>();
