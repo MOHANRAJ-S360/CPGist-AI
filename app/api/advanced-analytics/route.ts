@@ -37,6 +37,10 @@ export async function GET(req:NextRequest){
   const competitorPrice:any[]=await get("cpgist_competitor_price_sales?brand="+enc(brand.name||"")+"&select=*&order=week.asc&limit=100000").catch(()=>[]);
 
   const provenance=actualSyntheticProvenance(brandRows,startDate||null,endDate||null);
+  const brandPeriods=[...new Set(brandRows.map(r=>String(r.week_ending)).filter(Boolean))].sort();
+  const brandLatest=brandPeriods.slice(-13),brandPrior=brandPeriods.slice(-26,-13);
+  const sumBrand=(periods:string[])=>brandRows.filter(r=>periods.includes(String(r.week_ending))).reduce((s,r)=>s+Number(r.sales||0),0);
+  const brandSummary={latestSales:sumBrand(brandLatest),priorSales:sumBrand(brandPrior),growthPct:sumBrand(brandPrior)?(sumBrand(brandLatest)/sumBrand(brandPrior)-1)*100:null,latestPeriodCount:brandLatest.length,priorPeriodCount:brandPrior.length};
   const promoLift=getPromoLift(events,productWeekly,baseline,trade);
   const skuGrowth=getSkuGrowth(productWeekly);
   const categoryContextRows=categoryRows.length?categoryRows:categoryWeekly.map(r=>({week:r.week_ending,category:r.category,subcategory:"ALL",region:"ALL",total_category_sales:r.sales,total_category_units:r.units,brand_count_in_category:null,is_actual:r.is_actual}));
@@ -60,6 +64,7 @@ export async function GET(req:NextRequest){
 
   return NextResponse.json({
     brand:{id:brand.id,name:brand.name,category:categoryName},
+    brandSummary,
     provenance,
     promoLift,
     skuGrowth,
