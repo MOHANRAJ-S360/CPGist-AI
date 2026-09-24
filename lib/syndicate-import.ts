@@ -67,19 +67,29 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
   }
 }
 async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:string,progress:Progress){
-  const size=4000;
-  for(let i=0;i<rows.length;i+=size){
-    const batch=rows.slice(i,i+size);
-    let last="";
-    for(let attempt=0;attempt<5;attempt++){
-      const {error}=await sb.from(table).upsert(batch,{onConflict:conflict});
-      if(!error){last="";break}
-      last=error.message;
-      if(attempt<4)await new Promise(r=>setTimeout(r,500*2**attempt));
+  if(!rows.length)return;
+  const size=5000;
+  const concurrency=Math.min(3,Math.max(1,Math.ceil(rows.length/size)));
+  let next=0,completed=0;
+  const load=async()=>{
+    while(true){
+      const i=next;
+      next+=size;
+      if(i>=rows.length)return;
+      const batch=rows.slice(i,Math.min(i+size,rows.length));
+      let last="";
+      for(let attempt=0;attempt<5;attempt++){
+        const {error}=await sb.from(table).upsert(batch,{onConflict:conflict});
+        if(!error){last="";break}
+        last=error.message;
+        if(attempt<4)await new Promise(r=>setTimeout(r,500*2**attempt));
+      }
+      if(last)throw new Error(`\${table}: \${last}`);
+      completed+=batch.length;
+      progress("Loading "+table+": "+Math.min(completed,rows.length).toLocaleString()+" / "+rows.length.toLocaleString()+"…");
     }
-    if(last)throw new Error(`${table}: ${last}`);
-    if(i===0||i+size>=rows.length||i%(size*20)===0)progress(`Loading ${table}: ${Math.min(i+size,rows.length).toLocaleString()} / ${rows.length.toLocaleString()}…`);
-  }
+  };
+  await Promise.all(Array.from({length:concurrency},()=>load()));
 }
 
 function basename(path:string){const i=path.lastIndexOf("/");return i>=0?path.slice(i+1):path}
@@ -91,22 +101,10 @@ function entryExact(zip:Record<string,Uint8Array>,...names:string[]){
 }
 
 async function clearCompactDataset(sb:SupabaseClient,progress:Progress){
-  const targets:Array<[string,string]>=[
-    ["cpgist_promotion_events","promotion_id"],["cpgist_baseline_sales","id"],["cpgist_trade_spend","id"],
-    ["cpgist_category_aggregates","week"],["cpgist_trial_repeat","sku"],["cpgist_panel_household","household_id"],
-    ["cpgist_panel_weekly","week"],["cpgist_macro_signals","region"],["cpgist_competitor_price_sales","id"],
-    ["cpgist_product_summary","product_id"],["cpgist_brand_retailer_summary","brand_id"],
-    ["cpgist_brand_weekly","brand_id"],["cpgist_category_weekly","category"],
-    ["cpgist_retailer_weekly","retailer_id"],["cpgist_brand_retailer_weekly","brand_id"],
-    ["cpgist_product_weekly","product_id"],["cpgist_brand_category_weekly","brand_id"],
-    ["cpgist_competitor_weekly","brand_id"],["cpgist_products","id"],["cpgist_categories","id"],
-    ["cpgist_regions","id"],["cpgist_retailers","id"],["cpgist_brands","id"]
-  ];
-  for(const [table,key] of targets){
-    const {error}=await sb.from(table).delete().not(key,"is",null);
-    if(error)throw new Error(`Could not reset ${table}: ${error.message}`);
-  }
-  progress("Cleared previous compact dataset safely; loading the new archive from scratch…");
+  // One server-side TRUNCATE replaces 23 sequential browser DELETE requests.
+  const {error}=await sb.rpc("cpgist_reset_import_dataset");
+  if(error)throw new Error("Could not reset CPGist dataset: "+error.message);
+  progress("Cleared previous compact dataset in one server-side operation; loading the new archive from scratch…");
 }
 
 async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8Array>,progress:Progress){
