@@ -91,6 +91,30 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
   };
   await Promise.all(Array.from({length:concurrency},()=>load()));
 }
+async function insertBatches(sb:SupabaseClient,table:string,rows:any[],progress:Progress){
+  if(!rows.length)return;
+  const size=5000;
+  const concurrency=Math.min(3,Math.max(1,Math.ceil(rows.length/size)));
+  let next=0,completed=0;
+  const load=async()=>{
+    while(true){
+      const i=next;next+=size;
+      if(i>=rows.length)return;
+      const batch=rows.slice(i,Math.min(i+size,rows.length));
+      let last="";
+      for(let attempt=0;attempt<5;attempt++){
+        const {error}=await sb.from(table).insert(batch);
+        if(!error){last="";break}
+        last=error.message;
+        if(attempt<4)await new Promise(r=>setTimeout(r,500*2**attempt));
+      }
+      if(last)throw new Error(table+": "+last);
+      completed+=batch.length;
+      if(completed===rows.length||completed%50000===0)progress("Loading "+table+": "+completed.toLocaleString()+" / "+rows.length.toLocaleString()+"…");
+    }
+  };
+  await Promise.all(Array.from({length:concurrency},()=>load()));
+}
 
 function basename(path:string){const i=path.lastIndexOf("/");return i>=0?path.slice(i+1):path}
 function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x));return k?zip[k]:null}
@@ -476,19 +500,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   const baselineRows=[...baselineMap.values()];
   if(baselineRows.length){
     progress("Loading baseline_sales: "+baselineRows.length.toLocaleString()+" unique product/brand/retailer-weeks…");
-    const size=4000;
-    for(let i=0;i<baselineRows.length;i+=size){
-      const batch=baselineRows.slice(i,i+size);
-      let last="";
-      for(let attempt=0;attempt<5;attempt++){
-        const {error}=await sb.from("cpgist_baseline_sales").insert(batch);
-        if(!error){last="";break}
-        last=error.message;
-        if(attempt<4)await new Promise(r=>setTimeout(r,500*2**attempt));
-      }
-      if(last)throw new Error("cpgist_baseline_sales: "+last);
-      if(i===0||i+size>=baselineRows.length||i%(size*10)===0)progress("Loading cpgist_baseline_sales: "+Math.min(i+size,baselineRows.length).toLocaleString()+" / "+baselineRows.length.toLocaleString()+"…");
-    }
+    await insertBatches(sb,"cpgist_baseline_sales",baselineRows,progress);
   }
 
   const tradeRows:any[]=[];const tradeByPromo=new Map<string,number>();
@@ -627,7 +639,7 @@ async function unzipFiltered(file:File,wanted:string[]):Promise<Record<string,Ui
     }));
   });
   unzipper.register(AsyncUnzipInflate);
-  const chunkSize=4*1024*1024;
+  const chunkSize=8*1024*1024;
   for(let offset=0;offset<file.size;offset+=chunkSize){
     const end=Math.min(file.size,offset+chunkSize);
     const chunk=new Uint8Array(await file.slice(offset,end).arrayBuffer());
