@@ -12,7 +12,7 @@ const enc=(v:any)=>encodeURIComponent(String(v??""));
 const has=(v:any,q:string)=>!q||String(v??"").toLowerCase().includes(q.toLowerCase());
 
 async function brandDetail(id:string,brand:any){
- const rows:any[]=await get("cpgist_brand_weekly?brand_id=eq."+enc(id)+"&select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual,data_quality_status&order=week_ending.asc&limit=100000");
+ const rows:any[]=await get("cpgist_brand_weekly?brand_id=eq."+enc(id)+"&select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&order=week_ending.asc&limit=100000");
  const periods=[...new Set(rows.map(r=>String(r.week_ending)).filter(Boolean))].sort();
  const latest=periods.slice(-13),prior=periods.slice(-26,-13),ls=new Set(latest),ps=new Set(prior);
  const agg=(rs:any[])=>{const sales=rs.reduce((a,r)=>a+n(r.sales),0),units=rs.reduce((a,r)=>a+n(r.units),0);return{sales,units,distribution:rs.length?rs.reduce((a,r)=>a+n(r.distribution),0)/rs.length:null,price:units?sales/units:null,promoRate:rs.length?rs.reduce((a,r)=>a+n(r.promo_rate),0)/rs.length:null}};
@@ -27,7 +27,7 @@ async function brandDetail(id:string,brand:any){
   categoryPriorSales=cr.filter(r=>ps.has(String(r.week_ending))).reduce((s,r)=>s+n(r.sales),0);
   categoryGrowth=categoryPriorSales?pct(categorySales,categoryPriorSales):null;
  }catch{}}
- const weekly=periods.map(w=>{const rr=rows.filter(r=>String(r.week_ending)===w);return{period:w,sales:rr.reduce((s,r)=>s+n(r.sales),0),units:rr.reduce((s,r)=>s+n(r.units),0),promoRate:rr.length?rr.reduce((s,r)=>s+n(r.promo_rate),0)/rr.length:null,is_actual:rr.every(r=>r.is_actual===true)?true:(rr.some(r=>r.is_actual===false)?false:null)}});
+ const weekly=periods.map(w=>{const rr=rows.filter(r=>String(r.week_ending)===w);return{period:w,sales:rr.reduce((s,r)=>s+n(r.sales),0),units:rr.reduce((s,r)=>s+n(r.units),0),promoRate:rr.length?rr.reduce((s,r)=>s+n(r.promo_rate),0)/rr.length:null}});
  let products:any[]=[];
  try{
   const p:any[]=await get("cpgist_products?brand_id=eq."+enc(id)+"&select=id,brand_id,name,sku,category,subcategory,size,pack_count&order=name&limit=5000");
@@ -92,7 +92,7 @@ async function brandDetail(id:string,brand:any){
  }catch{}
 
  const priorShare=categoryPriorSales?b.sales/categoryPriorSales*100:null;
- const actualWeeks=periods.filter(w=>rows.filter(r=>String(r.week_ending)===w).every(r=>r.is_actual===true));\n const syntheticWeeks=periods.filter(w=>rows.filter(r=>String(r.week_ending)===w).some(r=>r.is_actual===false));\n const provenance={actualWeeks:actualWeeks.length,syntheticWeeks:syntheticWeeks.length,totalWeeks:periods.length,mixed:actualWeeks.length>0&&syntheticWeeks.length>0,status:syntheticWeeks.length?"mixed":"actual",label:syntheticWeeks.length?`${syntheticWeeks.length} of ${periods.length} weeks in this view are projected, not observed`:null};\n return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null,priorShare,shareChangePts:(categorySales&&categoryPriorSales)?(a.sales/categorySales*100)-(b.sales/categoryPriorSales*100):null},provenance,weekly,products,retailers,categoryWeekly,competitorSignals,competitiveBenchmark}
+ return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null,priorShare,shareChangePts:(categorySales&&categoryPriorSales)?(a.sales/categorySales*100)-(b.sales/categoryPriorSales*100):null},weekly,products,retailers,categoryWeekly,competitorSignals,competitiveBenchmark}
 }
 
 export async function GET(req:NextRequest){
