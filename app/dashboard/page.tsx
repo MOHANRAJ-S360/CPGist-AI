@@ -20,7 +20,7 @@ export default function Dashboard(){
    <div className="intro"><div><div className="muted">LIVE PORTFOLIO WORKSPACE</div><h1>Executive overview</h1><p>Latest 13-week performance window · source coverage {d.periodStart} → {d.periodEnd} · <b>{d.compactDataset?"CPGist Free Dataset":"Legacy Syndicate Dataset"}</b></p></div><div className="dashboard-actions"><button className="secondary-btn" onClick={load}><RefreshCw size={14}/>Refresh</button><Link className="primary" href="/reports"><FileText size={14}/>Client report</Link></div></div>
    <div className="kpis">
     <div className="card kpi"><span>Latest 13W sales</span><strong>{money(d.totalSales)}</strong><small className={d.growth>=0?"positive":"negative"}>{d.growth>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>} {pct(Number(d.growth||0)*100)} vs prior 13W</small></div>
-    <div className="card kpi"><span>Units</span><strong>{new Intl.NumberFormat().format(d.totalUnits)}</strong><small>Observed volume in latest 13W</small></div>
+    <div className="card kpi"><span>Units</span><strong>{new Intl.NumberFormat().format(d.totalUnits)}</strong><small>Source volume in latest 13W</small></div>
     <div className="card kpi"><span>Avg. ACV distribution</span><strong>{d.avgDistribution==null?"—":d.avgDistribution.toFixed(1)+"%"}</strong><small>Across source observations</small></div>
     <div className="card kpi"><span>Promo rate</span><strong>{d.promoRate==null?"—":d.promoRate.toFixed(1)+"%"}</strong><small>Observed promotional activity</small></div>
    </div>
@@ -33,7 +33,7 @@ export default function Dashboard(){
     <div className="card panel"><div className="panel-head"><div><b>Category performance</b><span>Latest 13W vs prior 13W</span></div></div><BarChart items={(d.categories||[]).slice(0,8).map((x:any)=>({label:x.name,value:x.sales,change:x.growth}))}/></div>
    </div>
    <div className="two-col">
-    <div className="card panel"><div className="panel-head"><div><b>Retailer performance</b><span>Latest 13-week observed value sales</span></div></div><table><thead><tr><th>RETAILER</th><th>SALES</th><th>GROWTH</th></tr></thead><tbody>{(d.retailers||[]).slice(0,8).map((x:any)=><tr key={x.id}><td>{x.name}</td><td>{money(x.sales)}</td><td className={x.growth>=0?"positive":"negative"}>{pct(x.growth||0)}</td></tr>)}</tbody></table></div>
+    <div className="card panel"><div className="panel-head"><div><b>Retailer performance</b><span>Latest 13-week source value sales</span></div></div><table><thead><tr><th>RETAILER</th><th>SALES</th><th>GROWTH</th></tr></thead><tbody>{(d.retailers||[]).slice(0,8).map((x:any)=><tr key={x.id}><td>{x.name}</td><td>{money(x.sales)}</td><td className={x.growth>=0?"positive":"negative"}>{pct(Number(x.growth||0)*100)}</td></tr>)}</tbody></table></div>
     <div className="card panel"><div className="panel-head"><div><b>AI decision pulse</b><span>Same evidence layer used by reports</span></div><BrainCircuit size={17}/></div><div className="insight purple"><div><ShieldCheck size={15}/>Evidence-first workspace</div><p>CPGist keeps the story anchored to source periods, exact metrics and explicit limitations. Use the Analyst when the next question needs diagnosis, retailer whitespace, price, promotion, anomalies or scenarios.</p><Link href="/ai-analyst">Open AI Analyst →</Link></div></div>
    </div>
   </section>
