@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { CPG_TOOLS } from "../../../lib/cpg-analytics";
-import { runAdvancedAnalytics } from "../advanced-analytics/route";
+import { runAdvancedAnalytics } from "../../../lib/advanced-analytics";
 import { capabilityContext } from "../../../lib/cpg-intelligence/capabilities";
 import {
   analyzeDrivers,
