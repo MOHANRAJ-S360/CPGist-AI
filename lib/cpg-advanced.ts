@@ -178,8 +178,8 @@ export function getPromoLift(events:AdvancedRow[], salesRows:AdvancedRow[], base
   const eventRows=events.map(e=>{
     const start=String(e.date_start||""),end=String(e.date_end||"");
     const matchesFor=(status:boolean)=>{
-      const sales=salesRows.filter(s=>String(s.product_id)===String(e.product_id)&&String(s.brand_id)===String(e.brand_id)&&String(s.retailer_id)===String(e.retailer_id)&&String(s.week_ending)>=start&&String(s.week_ending)<=end&&s.is_actual===status);
-      const base=baselineRows.filter(b=>String(b.product_id)===String(e.product_id)&&String(b.brand_id)===String(e.brand_id)&&String(b.retailer_id)===String(e.retailer_id)&&String(b.week)>=start&&String(b.week)<=end&&b.is_actual===status);
+      const sales=salesRows.filter(s=>String(s.product_id)===String(e.product_id)&&String(s.brand_id)===String(e.brand_id)&&String(s.retailer_id)===String(e.retailer_id)&&String(s.week_ending)>=start&&String(s.week_ending)<=end&&isActual(s.is_actual)===status);
+      const base=baselineRows.filter(b=>String(b.product_id)===String(e.product_id)&&String(b.brand_id)===String(e.brand_id)&&String(b.retailer_id)===String(e.retailer_id)&&String(b.week)>=start&&String(b.week)<=end&&isActual(b.is_actual)===status);
       return {sales,base};
     };
     const eventActual=isActual(e.is_actual),preferred=matchesFor(eventActual),alternate=matchesFor(!eventActual);
