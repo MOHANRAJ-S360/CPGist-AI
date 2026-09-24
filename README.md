@@ -28,20 +28,3 @@ Importer reference fix.
 
 
 <!-- CPGist production verification: compact dataset explorer/import + brand workspace hardening -->
-
-
-## Advanced analytics layer
-The extended combined dataset can now populate:
-- actual vs synthetic provenance through `is_actual`
-- promotion-event economics: incremental sales, incremental margin and ROI
-- SKU growth from product-week time series with same-status period comparisons
-- observed category context from `category_aggregates`
-- retailer-channel rollups
-- gross-margin / P&L diagnostics
-- launch performance from `launch_date` and `trial_repeat.csv`
-- clearly labeled synthetic household-panel penetration/frequency
-- clearly labeled illustrative synthetic macro overlays
-
-The browser importer keeps the compact analytical layer in Supabase and derives product-week, brand-retailer-week and panel-week aggregates rather than loading unnecessary raw cubes. Advanced reports expose an explicit actual/projected coverage label whenever a view contains synthetic weeks.
-
-AI Analyst tool descriptions now route promotion ROI, SKU growth, category context, channel, margin, launch, synthetic panel and macro-overlay questions to controlled analytical functions.
