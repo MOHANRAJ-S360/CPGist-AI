@@ -183,7 +183,7 @@ export function getPromoLift(events:AdvancedRow[], salesRows:AdvancedRow[], base
     const incrementalUnits=actualUnits-baselineUnits;
     const marginRate=actualSales?actualMargin/actualSales:null;
     const incrementalMargin=marginRate!=null?incrementalSales*marginRate:null;
-    const tradeSpend=baseRows.length?baseRows.reduce((s,r)=>s+tradeByKey.get([r.product_id,r.brand_id,r.retailer_id,r.week].join("|"))||0,0):n(e.trade_spend)||0;
+    const tradeSpend=baseRows.length?baseRows.reduce((s,r)=>s+(tradeByKey.get([r.product_id,r.brand_id,r.retailer_id,r.week].join("|")) ?? 0),0):n(e.trade_spend)||0;
     const roi=tradeSpend>0&&incrementalMargin!=null?incrementalMargin/tradeSpend:null;
     return {promotionId:e.promotion_id,brandId:e.brand_id,productId:e.product_id,retailerId:e.retailer_id,promoType:e.promo_type,dateStart:start,dateEnd:end,is_actual:e.is_actual,actualSales,actualUnits,baselineSales,baselineUnits,incrementalSales,incrementalUnits,grossMargin:actualMargin,incrementalMargin,tradeSpend,roi,discountPct:e.discount_pct,promoPrice:e.promo_price,source:"promotion + sales_weekly + baseline_sales + trade_spend"};
   });
