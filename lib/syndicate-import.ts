@@ -84,7 +84,7 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
         last=error.message;
         if(attempt<4)await new Promise(r=>setTimeout(r,500*2**attempt));
       }
-      if(last)throw new Error(`\${table}: \${last}`);
+      if(last)throw new Error(table+": "+last);
       completed+=batch.length;
       progress("Loading "+table+": "+Math.min(completed,rows.length).toLocaleString()+" / "+rows.length.toLocaleString()+"…");
     }
