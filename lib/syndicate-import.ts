@@ -78,6 +78,22 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
   }
 }
 
+async function insertBatches(sb:SupabaseClient,table:string,rows:any[],progress:Progress){
+  const size=500;
+  for(let i=0;i<rows.length;i+=size){
+    const batch=rows.slice(i,i+size);
+    let last="";
+    for(let attempt=0;attempt<5;attempt++){
+      const {error}=await sb.from(table).insert(batch);
+      if(!error){last="";break}
+      last=error.message;
+      if(attempt<4)await new Promise(r=>setTimeout(r,500*2**attempt));
+    }
+    if(last)throw new Error(`${table}: ${last}`);
+    if(i===0||i+size>=rows.length||i%(size*20)===0)progress(`Loading ${table}: ${Math.min(i+size,rows.length).toLocaleString()} / ${rows.length.toLocaleString()}…`);
+  }
+}
+
 function basename(path:string){const i=path.lastIndexOf("/");return i>=0?path.slice(i+1):path}
 function entry(zip:Record<string,Uint8Array>,re:RegExp){const k=Object.keys(zip).find(x=>re.test(x));return k?zip[k]:null}
 function entryExact(zip:Record<string,Uint8Array>,...names:string[]){
@@ -394,18 +410,18 @@ async function importAdvancedCombinedFiles(sb:SupabaseClient,zip:Record<string,U
 
   if(baselineBytes){
     const rows:any[]=[];await scanCsv(baselineBytes,r=>{const week=pick(r,"week","week_ending","period"),pid=id(r,"product_id"),bid=id(r,"brand_id"),rid=id(r,"retailer_id"),ia=boolish(pick(r,"is_actual"));if(!week||(!pid&&!bid))return;rows.push({product_id:pid||null,brand_id:bid||null,retailer_id:rid||null,week,baseline_sales:num(r,"baseline_sales","sales"),baseline_units:num(r,"baseline_units","units"),is_actual:ia})},progress);
-    await sb.from("cpgist_baseline_sales").delete().not("id","is",null);if(rows.length)await upsertBatches(sb,"cpgist_baseline_sales",rows,"id",progress);
+    await sb.from("cpgist_baseline_sales").delete().not("id","is",null);if(rows.length)await insertBatches(sb,"cpgist_baseline_sales",rows,progress);
   }
   if(tradeBytes){
     const rows:any[]=[];await scanCsv(tradeBytes,r=>{const week=pick(r,"week","week_ending","period","start_date"),pid=id(r,"product_id"),bid=id(r,"brand_id"),rid=id(r,"retailer_id"),ia=boolish(pick(r,"is_actual"));if(!week||(!pid&&!bid))return;rows.push({promotion_id:pick(r,"promotion_id")||null,product_id:pid||null,brand_id:bid||null,retailer_id:rid||null,week,trade_spend:num(r,"trade_spend"),is_actual:ia})},progress);
-    await sb.from("cpgist_trade_spend").delete().not("id","is",null);if(rows.length)await upsertBatches(sb,"cpgist_trade_spend",rows,"id",progress);
+    await sb.from("cpgist_trade_spend").delete().not("id","is",null);if(rows.length)await insertBatches(sb,"cpgist_trade_spend",rows,progress);
   }
   if(promoBytes){
     const rows:any[]=[];await scanCsv(promoBytes,r=>{const promotionId=pick(r,"promotion_id","id");if(!promotionId)return;rows.push({promotion_id:promotionId,date_start:pick(r,"date_start","start_date")||null,date_end:pick(r,"date_end","end_date")||null,product_id:id(r,"product_id")||null,brand_id:id(r,"brand_id")||null,retailer_id:id(r,"retailer_id")||null,promo_type:pick(r,"promo_type","promotion_type")||null,feature_flag:boolish(pick(r,"feature_flag")),display_flag:boolish(pick(r,"display_flag")),endcap_flag:boolish(pick(r,"endcap_flag")),coupon_flag:boolish(pick(r,"coupon_flag")),digital_flag:boolish(pick(r,"digital_flag")),discount_pct:num(r,"discount_pct","discount_percent"),promo_price:num(r,"promo_price"),baseline_units:num(r,"baseline_units"),promo_units:num(r,"promo_units"),incremental_units:num(r,"incremental_units"),incremental_sales:num(r,"incremental_sales"),trade_spend:num(r,"trade_spend"),gross_margin:num(r,"gross_margin"),is_actual:boolish(pick(r,"is_actual"))})},progress);
     await sb.from("cpgist_promotion_events").delete().not("promotion_id","is",null);if(rows.length)await upsertBatches(sb,"cpgist_promotion_events",rows,"promotion_id",progress);
   }
   if(categoryAggBytes){
-    const rows:any[]=[];await scanCsv(categoryAggBytes,r=>{const week=pick(r,"week","week_ending","period"),cat=pick(r,"category");if(!week||!cat)return;rows.push({week,category:cat,subcategory:pick(r,"subcategory")||null,region:pick(r,"region")||null,total_category_sales:num(r,"total_category_sales"),total_category_units:num(r,"total_category_units"),brand_count_in_category:num(r,"brand_count_in_category"),is_actual:boolish(pick(r,"is_actual"))})},progress);
+    const rows:any[]=[];await scanCsv(categoryAggBytes,r=>{const week=pick(r,"week","week_ending","period"),cat=pick(r,"category");if(!week||!cat)return;rows.push({week,category:cat,subcategory:pick(r,"subcategory")||"",region:pick(r,"region")||"",total_category_sales:num(r,"total_category_sales"),total_category_units:num(r,"total_category_units"),brand_count_in_category:num(r,"brand_count_in_category"),is_actual:boolish(pick(r,"is_actual"))})},progress);
     await sb.from("cpgist_category_aggregates").delete().not("week","is",null);if(rows.length)await upsertBatches(sb,"cpgist_category_aggregates",rows,"week,category,subcategory,region",progress);
   }
   if(trialBytes){
@@ -424,7 +440,7 @@ async function importAdvancedCombinedFiles(sb:SupabaseClient,zip:Record<string,U
   }
   if(competitorPriceBytes){
     const rows:any[]=[];await scanCsv(competitorPriceBytes,r=>{const week=pick(r,"week","week_ending","period");if(!week)return;rows.push({brand:pick(r,"brand","brand_name")||null,retailer:pick(r,"retailer","retailer_name")||null,region:pick(r,"region")||null,category:pick(r,"category")||null,week,sales:num(r,"sales","dollar_sales","sales_value"),units:num(r,"units"),price:num(r,"price","actual_price"),is_actual:boolish(pick(r,"is_actual"))})},progress);
-    await sb.from("cpgist_competitor_price_sales").delete().not("id","is",null);if(rows.length)await upsertBatches(sb,"cpgist_competitor_price_sales",rows,"id",progress);
+    await sb.from("cpgist_competitor_price_sales").delete().not("id","is",null);if(rows.length)await insertBatches(sb,"cpgist_competitor_price_sales",rows,progress);
   }
   progress("Advanced dataset layer loaded: provenance, SKU growth, channel, promotion economics, category context, margin, launch, synthetic panel and macro signals are ready.");
 }
