@@ -311,31 +311,24 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   // Keeping it out of the compact tables prevents invented brand IDs and preserves analytical integrity.
   if(competitorBytes)progress("Competitor weekly data validated as archive-only; no invented competitor-to-brand mapping was written.");
 
-  const checks=[
-    {name:"cpgist_brands",query:sb.from("cpgist_brands").select("id",{count:"exact",head:true})},
-    {name:"cpgist_retailers",query:sb.from("cpgist_retailers").select("id",{count:"exact",head:true})},
-    {name:"cpgist_products",query:sb.from("cpgist_products").select("id",{count:"exact",head:true})},
-    {name:"cpgist_brand_weekly",query:sb.from("cpgist_brand_weekly").select("brand_id",{count:"exact",head:true})},
-    {name:"cpgist_product_summary",query:sb.from("cpgist_product_summary").select("product_id",{count:"exact",head:true})},
-    {name:"cpgist_brand_retailer_summary",query:sb.from("cpgist_brand_retailer_summary").select("brand_id",{count:"exact",head:true})},
-    {name:"cpgist_promotion_events",query:sb.from("cpgist_promotion_events").select("promotion_id",{count:"exact",head:true})},
-    {name:"cpgist_baseline_sales",query:sb.from("cpgist_baseline_sales").select("id",{count:"exact",head:true})},
-    {name:"cpgist_trade_spend",query:sb.from("cpgist_trade_spend").select("id",{count:"exact",head:true})},
-    {name:"cpgist_product_weekly",query:sb.from("cpgist_product_weekly").select("product_id",{count:"exact",head:true})},
-    {name:"cpgist_brand_retailer_weekly",query:sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true})}
-  ];
-  const results=await Promise.all(checks.map(x=>x.query));
-  const badIndex=results.findIndex(x=>x.error!==null);
-  if(badIndex>=0){
-    const error=results[badIndex].error;
-    if(error)throw new Error("Import verification failed for "+checks[badIndex].name+": "+error.message);
+  const checks=await Promise.all([
+    sb.from("cpgist_brands").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_retailers").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_products").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_brand_weekly").select("brand_id",{count:"exact",head:true}),
+    sb.from("cpgist_product_summary").select("product_id",{count:"exact",head:true}),
+    sb.from("cpgist_brand_retailer_summary").select("brand_id",{count:"exact",head:true}),
+    sb.from("cpgist_promotion_events").select("promotion_id",{count:"exact",head:true}),
+    sb.from("cpgist_category_aggregates").select("week",{count:"exact",head:true}),
+    sb.from("cpgist_product_weekly").select("product_id",{count:"exact",head:true}),
+    sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true})
+  ]);
+  const bad=checks.find(x=>x.error);if(bad?.error)throw new Error("Import verification failed: "+bad.error.message);
+  const counts=checks.map(x=>x.count||0);
+  if(!counts[0]||!counts[1]||!counts[2]||!counts[3]||!counts[4]||!counts[5]||!counts[6]||!counts[7]||!counts[8]||!counts[9]){
+    throw new Error("Import verification failed: one or more compact/extended analytical tables are empty.");
   }
-  const counts=results.map(x=>x.count||0);
-  const empty=checks.filter((x,i)=>(results[i].count||0)===0).map(x=>x.name);
-  if(empty.length){
-    throw new Error("Import verification failed: empty required tables: "+empty.join(", ")+". The source ZIP was accepted, but these analytical layers were not populated; no partial import is treated as successful.");
-  }
-  progress("Verified live database: "+counts[0].toLocaleString()+" brands · "+counts[1].toLocaleString()+" retailers · "+counts[2].toLocaleString()+" products · "+counts[3].toLocaleString()+" brand-weeks · "+counts[4].toLocaleString()+" product summaries · "+counts[5].toLocaleString()+" retailer summaries · "+counts[6].toLocaleString()+" promotion events · "+counts[7].toLocaleString()+" baseline rows · "+counts[8].toLocaleString()+" trade-spend rows.");
+  progress("Verified live database: "+counts[0].toLocaleString()+" brands · "+counts[1].toLocaleString()+" retailers · "+counts[2].toLocaleString()+" products · "+counts[3].toLocaleString()+" brand-weeks · "+counts[4].toLocaleString()+" product summaries · "+counts[5].toLocaleString()+" retailer summaries · "+counts[6].toLocaleString()+" promotion events · "+counts[7].toLocaleString()+" category aggregates.");
   return {
     type:"combined",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,
     brandWeeks:brandRows.length,categoryWeeks:CA.size,retailerWeeks:RA.size,productWeeks:productWeekly.length,brandRetailerWeeks:brandRetailerWeekly.length,
