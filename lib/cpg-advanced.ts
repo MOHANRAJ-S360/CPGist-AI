@@ -6,6 +6,7 @@ const n = (v:any) => {
 };
 const pct = (now:number, old:number) => old ? (now / old - 1) * 100 : null;
 const uniq = (xs:any[]) => [...new Set(xs.map(x=>String(x ?? "")).filter(Boolean))].sort();
+const isActual = (v:any) => v === true || String(v).toLowerCase() === "true";
 
 export function actualSyntheticProvenance(rows:AdvancedRow[], dateStart?:string|null, dateEnd?:string|null) {
   const filtered = rows.filter(r => (!dateStart || String(r.week ?? r.week_ending) >= dateStart) && (!dateEnd || String(r.week ?? r.week_ending) <= dateEnd));
@@ -42,7 +43,7 @@ export function actualSyntheticProvenance(rows:AdvancedRow[], dateStart?:string|
 
 function sameStatusWindows(rows:AdvancedRow[], weekKey="week_ending") {
   const statuses = [true,false].map(status => {
-    const filtered=rows.filter(r=>r.is_actual===status);
+    const filtered=rows.filter(r=>isActual(r.is_actual)===status);
     const periods=uniq(filtered.map(r=>r[weekKey])).sort();
     const latest=periods.slice(-13);
     const prior=periods.slice(-26,-13);
@@ -57,7 +58,7 @@ export function getSkuGrowth(rows:AdvancedRow[]) {
   for(const w of windows){
     const latestSet=new Set(w.latest),priorSet=new Set(w.prior);
     const byProduct=new Map<string,{latestSales:number;priorSales:number;latestUnits:number;priorUnits:number}>();
-    rows.filter(r=>r.is_actual===w.is_actual).forEach(r=>{
+    rows.filter(r=>isActual(r.is_actual)===w.is_actual).forEach(r=>{
       const id=String(r.product_id ?? r.sku ?? "");
       if(!id)return;
       const x=byProduct.get(id) ?? {latestSales:0,priorSales:0,latestUnits:0,priorUnits:0};
@@ -77,7 +78,7 @@ export function getSkuGrowth(rows:AdvancedRow[]) {
 export function getCategoryContext(categoryRows:AdvancedRow[], brandRows:AdvancedRow[], brandId?:string) {
   const rows=categoryRows;
   const byStatus=(status:boolean)=>{
-    const cr=rows.filter(r=>r.is_actual===status), br=brandRows.filter(r=>r.is_actual===status && (!brandId || String(r.brand_id)===String(brandId)));
+    const cr=rows.filter(r=>isActual(r.is_actual)===status), br=brandRows.filter(r=>isActual(r.is_actual)===status && (!brandId || String(r.brand_id)===String(brandId)));
     const periods=uniq(cr.map(r=>r.week_ending)).sort();
     const latest=periods.slice(-13),prior=periods.slice(-26,-13),ls=new Set(latest),ps=new Set(prior);
     if(latest.length!==13 || prior.length!==13)return null;
@@ -90,7 +91,7 @@ export function getCategoryContext(categoryRows:AdvancedRow[], brandRows:Advance
     const priorShare=categoryPriorSales?brandPriorSales/categoryPriorSales*100:null;
     return {is_actual:status,categorySales,categoryPriorSales,categoryGrowthPct:pct(categorySales,categoryPriorSales),brandSales,brandPriorSales,brandGrowthPct:pct(brandSales,brandPriorSales),brandSharePct:share,priorBrandSharePct:priorShare,shareChangePts:share!=null&&priorShare!=null?share-priorShare:null,periodCount:13,periods:latest};
   };
-  const brandStatuses=new Set(brandRows.filter(r=>!brandId || String(r.brand_id)===String(brandId)).map(r=>r.is_actual));
+  const brandStatuses=new Set(brandRows.filter(r=>!brandId || String(r.brand_id)===String(brandId)).map(r=>isActual(r.is_actual)));
   const preferred=brandStatuses.has(false)?false:true;
   const current=byStatus(preferred) ?? byStatus(!preferred);
   const observed=current?.is_actual===true;
@@ -98,7 +99,7 @@ export function getCategoryContext(categoryRows:AdvancedRow[], brandRows:Advance
 }
 
 export function getChannelBreakdown(rows:AdvancedRow[], retailers:AdvancedRow[], periods?:string[], isActual?:boolean) {
-  const scoped=periods?.length?rows.filter(r=>periods.includes(String(r.week_ending)) && (isActual==null || r.is_actual===isActual)):rows.filter(r=>isActual==null || r.is_actual===isActual);
+  const scoped=periods?.length?rows.filter(r=>periods.includes(String(r.week_ending)) && (isActual==null || isActual(r.is_actual)===isActual)):rows.filter(r=>isActual==null || r.is_actual===isActual);
   const names=new Map(retailers.map(r=>[String(r.id),r]));
   const map=new Map<string,{channel:string;sales:number;units:number;distributionSum:number;distributionCount:number;retailers:Set<string>}>();
   scoped.forEach(r=>{
@@ -180,7 +181,7 @@ export function getPromoLift(events:AdvancedRow[], salesRows:AdvancedRow[], base
       const base=baselineRows.filter(b=>String(b.product_id)===String(e.product_id)&&String(b.brand_id)===String(e.brand_id)&&String(b.retailer_id)===String(e.retailer_id)&&String(b.week)>=start&&String(b.week)<=end&&b.is_actual===status);
       return {sales,base};
     };
-    const preferred=matchesFor(e.is_actual===true),alternate=matchesFor(e.is_actual!==true);
+    const eventActual=isActual(e.is_actual),preferred=matchesFor(eventActual),alternate=matchesFor(!eventActual);
     const chosen=preferred.sales.length&&preferred.base.length?{...preferred,status:e.is_actual===true}:alternate.sales.length&&alternate.base.length?{...alternate,status:e.is_actual!==true}:null;
     const relevant=chosen?.sales||[],baseRows=chosen?.base||[];
     const actualSales=relevant.reduce((s,r)=>s+n(r.sales),0),actualUnits=relevant.reduce((s,r)=>s+n(r.units),0),actualMargin=relevant.reduce((s,r)=>s+n(r.gross_margin),0);
