@@ -90,6 +90,9 @@ function entryExact(zip:Record<string,Uint8Array>,...names:string[]){
 
 async function clearCompactDataset(sb:SupabaseClient,progress:Progress){
   const targets:Array<[string,string]>=[
+    ["cpgist_promotion_events","promotion_id"],["cpgist_baseline_sales","id"],["cpgist_trade_spend","id"],
+    ["cpgist_category_aggregates","week"],["cpgist_trial_repeat","sku"],["cpgist_panel_household","household_id"],
+    ["cpgist_panel_weekly","week"],["cpgist_macro_signals","region"],["cpgist_competitor_price_sales","id"],
     ["cpgist_product_summary","product_id"],["cpgist_brand_retailer_summary","brand_id"],
     ["cpgist_brand_weekly","brand_id"],["cpgist_category_weekly","category"],
     ["cpgist_retailer_weekly","retailer_id"],["cpgist_brand_retailer_weekly","brand_id"],
@@ -316,43 +319,266 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
 async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8Array>,progress:Progress){
   const B=(n:string)=>entryExact(zip,n);
   const brandsBytes=B("brands.csv"),retailersBytes=B("retailers.csv"),productsBytes=B("products.csv"),salesBytes=B("sales_weekly.csv"),baselineBytes=B("baseline_sales.csv"),promoBytes=B("promotion.csv"),tradeBytes=B("trade_spend.csv");
+  const categoryAggBytes=B("category_aggregates.csv"),trialBytes=B("trial_repeat.csv"),panelBytes=B("panel_household_synthetic.csv"),macroBytes=B("macro_signals.csv"),competitorPriceBytes=B("competitor_price_sales.csv"),relationshipsBytes=B("brand_relationships.csv");
   if(!brandsBytes||!retailersBytes||!productsBytes||!salesBytes||!baselineBytes||!promoBytes||!tradeBytes)throw new Error("Combined CPGist package is incomplete. Required master, sales, baseline, promotion and trade-spend files are missing.");
-  const brands=parseSmall(brandsBytes).map(r=>({id:id(r,"id","brand_id"),name:pick(r,"name","brand_name"),category:pick(r,"category")||null,parent_company:pick(r,"parent_company")||null,home_regions:pick(r,"home_regions","region")||null,portfolio:null})).filter(x=>x.id&&x.name);
-  const retailers=parseSmall(retailersBytes).map(r=>({id:id(r,"id","retailer_id"),name:pick(r,"name","retailer_name"),channel:pick(r,"channel")||null,region:pick(r,"region")||null,retailer_group:null,total_stores:num(r,"total_stores","store_count")})).filter(x=>x.id&&x.name);
-  const products=parseSmall(productsBytes).map(r=>({id:id(r,"id","product_id","sku_id"),brand_id:id(r,"brand_id"),name:pick(r,"name","product_name","sku_name")||"Unnamed product",sku:pick(r,"sku","sku_code","product_code")||null,category:pick(r,"category")||null,subcategory:pick(r,"subcategory")||null,size:pick(r,"size","pack_size")||null,pack_count:null})).filter(x=>x.id&&x.name);
+
+  // Keep the browser responsive: the large CSVs are streamed row-by-row instead of
+  // being expanded into millions of JavaScript objects with parseSmall().
+  progress("Reading master dimensions…");
+  const brands=parseSmall(brandsBytes).map(r=>({
+    id:id(r,"id","brand_id"),name:pick(r,"name","brand_name"),category:pick(r,"category")||null,
+    parent_company:pick(r,"parent_company")||null,home_regions:pick(r,"home_regions","region")||null,portfolio:null
+  })).filter(x=>x.id&&x.name);
+
+  const retailers=parseSmall(retailersBytes).map(r=>({
+    id:id(r,"id","retailer_id"),name:pick(r,"name","retailer_name"),channel:pick(r,"channel")||null,
+    region:pick(r,"region")||null,retailer_group:pick(r,"retailer_group","retailer_group_name")||null,
+    total_stores:num(r,"total_stores","store_count")
+  })).filter(x=>x.id&&x.name);
+
+  const products=parseSmall(productsBytes).map(r=>({
+    id:id(r,"id","product_id","sku_id"),brand_id:id(r,"brand_id"),name:pick(r,"name","product_name","sku_name")||"Unnamed product",
+    sku:pick(r,"sku","sku_code","product_code")||null,category:pick(r,"category")||null,
+    subcategory:pick(r,"subcategory")||null,size:pick(r,"size","pack_size")||null,pack_count:null,
+    launch_date:pick(r,"launch_date")||null
+  })).filter(x=>x.id&&x.name);
+
   if(!brands.length||!retailers.length||!products.length)throw new Error("Combined package master dimensions are empty or invalid.");
-  const bm=new Map(brands.map(x=>[x.name.toLowerCase(),x])),rm=new Map(retailers.map(x=>[x.name.toLowerCase(),x])),pm=new Map(products.map(x=>[x.name.toLowerCase(),x]));
-  const cats=[...new Set(products.map(x=>x.category).filter(Boolean))] as string[],categories=cats.map((name,i)=>({id:i+1,name,parent_category:null,subcategory_count:new Set(products.filter(x=>x.category===name).map(x=>x.subcategory).filter(Boolean)).size}));
+
+  const bm=new Map(brands.map(x=>[x.name.toLowerCase(),x]));
+  const rm=new Map(retailers.map(x=>[x.name.toLowerCase(),x]));
+  const pm=new Map(products.map(x=>[x.name.toLowerCase(),x]));
+  const cats=[...new Set(products.map(x=>x.category).filter(Boolean))] as string[];
+  const categories=cats.map((name,i)=>({id:i+1,name,parent_category:null,subcategory_count:new Set(products.filter(x=>x.category===name).map(x=>x.subcategory).filter(Boolean)).size}));
   const regions=[...new Set(retailers.map(x=>x.region).filter(Boolean))].map((name,i)=>({id:i+1,name:String(name),country:null,region_group:null}));
-  const BA=new Map<string,any>(),CA=new Map<string,any>(),RA=new Map<string,any>(),PA=new Map<string,any>();
-  const agg=(m:Map<string,any>,k:string,s:any)=>{let x=m.get(k);if(!x){x={...s};m.set(k,x)}return x};
+
+  const BA=new Map<string,any>(),CA=new Map<string,any>(),RA=new Map<string,any>(),BCA=new Map<string,any>();
+  const DETAIL_START="2026-03-29", LATEST13_START="2026-06-28";
+  const detail=new Map<string,any>();
   const weeks=new Set<string>();
-  progress("Scanning combined sales, price, margin and promotion flags…");
+  const agg=(m:Map<string,any>,k:string,s:any)=>{let x=m.get(k);if(!x){x={...s};m.set(k,x)}return x};
+  const isActual=(v:any)=>String(v??"").toLowerCase()==="true";
+
+  progress("Streaming sales_weekly.csv and building the compact analytical layer…");
   await scanCsv(salesBytes,r=>{
-    const w=pick(r,"week"),b=bm.get(pick(r,"brand").toLowerCase()),rt=rm.get(pick(r,"retailer").toLowerCase()),p=pm.get(pick(r,"sku").toLowerCase());if(!w||!b)return;weeks.add(w);
-    const sales=num(r,"sales_value"),units=num(r,"units"),reg=num(r,"regular_price"),act=num(r,"actual_price"),margin=num(r,"gross_margin"),promo=pick(r,"promo_flag")==="1",dist=num(r,"ACV_distribution");
-    const x=agg(BA,b.id+"|"+w,{brand_id:b.id,week_ending:w,category:pick(r,"category")||b.category||null,sales:0,units:0,dist:0,n:0,promo:0,reg:0,act:0,margin:0,disc:0,discN:0});x.sales+=sales;x.units+=units;x.dist+=dist;x.n++;if(promo)x.promo++;x.reg+=reg*units;x.act+=act*units;x.margin+=margin;if(promo&&reg>0){x.disc+=(reg-act)/reg;x.discN++}
-    const c=agg(CA,(pick(r,"category")||"Unclassified")+"|"+w,{category:pick(r,"category")||"Unclassified",week_ending:w,sales:0,units:0,dist:0,n:0});c.sales+=sales;c.units+=units;c.dist+=dist;c.n++;
-    if(rt){const q=agg(RA,rt.id+"|"+w,{retailer_id:rt.id,week_ending:w,sales:0,units:0,dist:0,n:0});q.sales+=sales;q.units+=units;q.dist+=dist;q.n++}
-    if(p){const q=agg(PA,p.id+"|"+w,{product_id:p.id,brand_id:b.id,week_ending:w,sales:0,units:0,dist:0,n:0,promo:0,price:0});q.sales+=sales;q.units+=units;q.dist+=dist;q.n++;if(promo)q.promo++;q.price+=act*units}
+    const w=pick(r,"week"),brand=bm.get(pick(r,"brand").toLowerCase()),retailer=rm.get(pick(r,"retailer").toLowerCase()),product=pm.get(pick(r,"sku").toLowerCase());
+    if(!w||!brand)return;
+    weeks.add(w);
+    const category=pick(r,"category")||brand.category||"Unclassified";
+    const sales=num(r,"sales_value"),units=num(r,"units"),reg=num(r,"regular_price"),act=num(r,"actual_price"),dist=num(r,"ACV_distribution","distribution"),promo=pick(r,"promo_flag")==="1",cost=num(r,"unit_cost"),margin=num(r,"gross_margin"),marginPct=num(r,"margin_percent");
+
+    const b=agg(BA,brand.id+"|"+w,{brand_id:brand.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,reg:0,act:0,cost:0,margin:0,marginPct:0,marginPctN:0});
+    b.sales+=sales;b.units+=units;b.dist+=dist;b.n++;if(promo)b.promo++;b.reg+=reg*units;b.act+=act*units;b.cost+=cost*units;b.margin+=margin;
+    if(marginPct)b.marginPct+=marginPct;b.marginPctN++;
+
+    const c=agg(CA,category+"|"+w,{category,week_ending:w,sales:0,units:0,dist:0,n:0});
+    c.sales+=sales;c.units+=units;c.dist+=dist;c.n++;
+
+    if(retailer){
+      const rr=agg(RA,retailer.id+"|"+w,{retailer_id:retailer.id,week_ending:w,sales:0,units:0,dist:0,n:0});
+      rr.sales+=sales;rr.units+=units;rr.dist+=dist;rr.n++;
+    }
+
+    if(product&&retailer&&w>=DETAIL_START){
+      const k=product.id+"|"+retailer.id+"|"+w;
+      const q=agg(detail,k,{product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,cost:0,margin:0,marginPct:0,marginPctN:0,reg:0,act:0});
+      q.sales+=sales;q.units+=units;q.dist+=dist;q.n++;if(promo)q.promo++;q.cost+=cost*units;q.margin+=margin;q.reg+=reg*units;q.act+=act*units;if(marginPct){q.marginPct+=marginPct;q.marginPctN++}
+    }
+
+    const bc=agg(BCA,brand.id+"|"+category+"|"+w,{brand_id:brand.id,category,week_ending:w,sales:0,units:0,dist:0,n:0});
+    bc.sales+=sales;bc.units+=units;bc.dist+=dist;bc.n++;
   },progress);
-  const BL=new Map<string,any>();progress("Scanning baseline sales…");
-  await scanCsv(baselineBytes,r=>{const w=pick(r,"week"),b=bm.get(pick(r,"brand").toLowerCase());if(!w||!b)return;const x=agg(BL,b.id+"|"+w,{sales:0,units:0});x.sales+=num(r,"baseline_sales");x.units+=num(r,"baseline_units")},progress);
-  const PR=new Map<string,any>();progress("Scanning promotion events…");
-  await scanCsv(promoBytes,r=>{const w=pick(r,"start_date"),b=bm.get(pick(r,"brand").toLowerCase());if(!w||!b)return;const x=agg(PR,b.id+"|"+w,{events:0,disc:0,n:0});x.events++;x.disc+=num(r,"discount_percent");x.n++},progress);
-  const TS=new Map<string,any>();progress("Scanning trade spend…");
-  await scanCsv(tradeBytes,r=>{const w=pick(r,"start_date"),b=bm.get(pick(r,"brand").toLowerCase());if(!w||!b)return;const x=agg(TS,b.id+"|"+w,{spend:0});x.spend+=num(r,"trade_spend")},progress);
-  const periods=[...weeks].sort();if(periods.length<26)throw new Error("Only "+periods.length+" weekly periods were found; at least 26 are required.");const end=periods.at(-1)!;if(end>"2026-09-20")throw new Error("Dataset contains a future period ("+end+"). Latest allowed period is 2026-09-20.");
-  const latest=new Set(periods.slice(-13)),productSummary=new Map<string,any>();
-  const brandRows=[...BA.values()].map(x=>{const bl=BL.get(x.brand_id+"|"+x.week_ending)||{sales:0,units:0},pr=PR.get(x.brand_id+"|"+x.week_ending)||{events:0,disc:0,n:0},ts=TS.get(x.brand_id+"|"+x.week_ending)||{spend:0};return{brand_id:x.brand_id,week_ending:x.week_ending,category:x.category,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null,avg_price:x.units?x.sales/x.units:null,promo_rate:x.n?x.promo/x.n*100:null,regular_price:x.units?x.reg/x.units:null,actual_price:x.units?x.act/x.units:null,baseline_sales:bl.sales,baseline_units:bl.units,incremental_sales:x.sales-bl.sales,incremental_units:x.units-bl.units,gross_margin:x.margin,margin_percent:x.sales?x.margin/x.sales:null,trade_spend:ts.spend,promo_events:pr.events,promoted_sales:x.promo?x.sales:null,promoted_units:x.promo?x.units:null,avg_discount_depth_pct:pr.n?pr.disc/pr.n:null,data_quality_status:x.week_ending>="2026-01-04"?"synthetic":"observed",source_package:"CPGist_Combined_Dataset"}});
-  for(const x of PA.values())if(latest.has(x.week_ending)){const k=String(x.product_id),q=productSummary.get(k)||{product_id:x.product_id,brand_id:x.brand_id,period_end:end,sales:0,units:0,dist:0,n:0,promo:0,price:0};q.sales+=x.sales;q.units+=x.units;q.dist+=x.dist;q.n+=x.n;q.promo+=x.promo;q.price+=x.price;productSummary.set(k,q)}
-  const productRows=[...productSummary.values()].map(x=>({product_id:x.product_id,brand_id:x.brand_id,period_end:x.period_end,sales_13w:x.sales,units_13w:x.units,avg_price_13w:x.units?x.price/x.units:null,distribution_13w:x.n?x.dist/x.n:null,promo_rate_13w:x.n?x.promo/x.n*100:null}));
+
+  const periods=[...weeks].sort();
+  if(periods.length<26)throw new Error("Only "+periods.length+" weekly periods were found; at least 26 are required.");
+  const end=periods.at(-1)!;
+  if(end!=="2026-09-20")throw new Error("Unexpected latest source period "+end+". This importer expects the uploaded CPGist Extended Dataset v3 ending 2026-09-20.");
+  const latest13=periods.slice(-13),prior13=periods.slice(-26,-13);
+  const latest13Set=new Set(latest13),detailPeriods=new Set(periods.slice(-26));
+  progress("Sales scan complete: "+brands.length.toLocaleString()+" brands · "+retailers.length.toLocaleString()+" retailers · "+products.length.toLocaleString()+" products · "+periods.length.toLocaleString()+" weeks.");
+
+  // The archive is the source of truth. Reset the compact + extended analytical layer
+  // before loading so a re-upload cannot leave stale rows from an older package.
   await clearCompactDataset(sb,progress);
-  await upsertBatches(sb,"cpgist_brands",brands,"id",progress);await upsertBatches(sb,"cpgist_retailers",retailers,"id",progress);await upsertBatches(sb,"cpgist_products",products,"id",progress);await upsertBatches(sb,"cpgist_categories",categories,"id",progress);await upsertBatches(sb,"cpgist_regions",regions,"id",progress);await upsertBatches(sb,"cpgist_brand_weekly",brandRows,"brand_id,week_ending",progress);await upsertBatches(sb,"cpgist_category_weekly",[...CA.values()].map(x=>({category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null})),"category,week_ending",progress);await upsertBatches(sb,"cpgist_retailer_weekly",[...RA.values()].map(x=>({retailer_id:x.retailer_id,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null})),"retailer_id,week_ending",progress);
-  if(productRows.length)await upsertBatches(sb,"cpgist_product_summary",productRows,"product_id",progress);
-  const checks=await Promise.all([sb.from("cpgist_brands").select("id",{count:"exact",head:true}),sb.from("cpgist_retailers").select("id",{count:"exact",head:true}),sb.from("cpgist_products").select("id",{count:"exact",head:true}),sb.from("cpgist_brand_weekly").select("brand_id",{count:"exact",head:true})]);const bad=checks.find(x=>x.error);if(bad?.error)throw new Error("Import verification failed: "+bad.error.message);if(checks.some(x=>!x.count))throw new Error("Import verification failed: compact tables are empty.");
-  progress("Combined package imported and verified. Advanced commercial fields are now available in cpgist_brand_weekly.");
-  return{type:"combined",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:CA.size,retailerWeeks:RA.size,productWeeks:productRows.length,periods:periods.length,periodStart:periods[0],periodEnd:end};
+  await upsertBatches(sb,"cpgist_brands",brands,"id",progress);
+  await upsertBatches(sb,"cpgist_retailers",retailers,"id",progress);
+  await upsertBatches(sb,"cpgist_products",products,"id",progress);
+  await upsertBatches(sb,"cpgist_categories",categories,"id",progress);
+  await upsertBatches(sb,"cpgist_regions",regions,"id",progress);
+
+  const brandRows=[...BA.values()].map(x=>({
+    brand_id:x.brand_id,week_ending:x.week_ending,category:x.category,sales:x.sales,units:x.units,
+    distribution:x.n?x.dist/x.n:null,avg_price:x.units?x.sales/x.units:null,promo_rate:x.n?x.promo/x.n*100:null,
+    regular_price:x.units?x.reg/x.units:null,actual_price:x.units?x.act/x.units:null,
+    baseline_sales:0,baseline_units:0,incremental_sales:0,incremental_units:0,
+    gross_margin:x.margin,margin_percent:x.sales?x.margin/x.sales:null,trade_spend:0,promo_events:0,
+    promoted_sales:x.promo?x.sales:null,promoted_units:x.promo?x.units:null,avg_discount_depth_pct:null,
+    data_quality_status:isActual(x.week_ending)?"observed":"synthetic",source_package:"CPGist_Extended_Dataset_v3",is_actual:isActual(x.week_ending),
+    unit_cost:x.units?x.cost/x.units:null
+  }));
+  await upsertBatches(sb,"cpgist_brand_weekly",brandRows,"brand_id,week_ending",progress);
+  await upsertBatches(sb,"cpgist_category_weekly",[...CA.values()].map(x=>({category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null,is_actual:isActual(x.week_ending)})),"category,week_ending",progress);
+  await upsertBatches(sb,"cpgist_retailer_weekly",[...RA.values()].map(x=>({retailer_id:x.retailer_id,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null,is_actual:isActual(x.week_ending)})),"retailer_id,week_ending",progress);
+  await upsertBatches(sb,"cpgist_brand_category_weekly",[...BCA.values()].map(x=>({brand_id:x.brand_id,category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,distribution:x.n?x.dist/x.n:null})),"brand_id,category,week_ending",progress);
+
+  // Product + retailer detail is intentionally limited to the latest 26 weeks: enough for
+  // current-vs-prior 13W diagnostics without recreating the full 2.07M-row raw cube in Postgres.
+  const productWeekly=[...detail.values()].map(x=>({
+    product_id:x.product_id,brand_id:x.brand_id,retailer_id:x.retailer_id,week_ending:x.week_ending,
+    sales:x.sales,units:x.units,price:x.units?x.sales/x.units:null,distribution:x.n?x.dist/x.n:null,
+    promo_rate:x.n?x.promo/x.n*100:null,is_actual:isActual(x.week_ending),
+    unit_cost:x.units?x.cost/x.units:null,gross_margin:x.margin,margin_percent:x.sales?x.margin/x.sales:null,
+    regular_price:x.units?x.reg/x.units:null,actual_price:x.units?x.act/x.units:null
+  }));
+  const brandRetailerWeeklyMap=new Map<string,any>();
+  for(const x of detail.values()){
+    const k=x.brand_id+"|"+x.retailer_id+"|"+x.week_ending;
+    const q=agg(brandRetailerWeeklyMap,k,{brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,week_ending:x.week_ending,sales:0,units:0,dist:0,n:0,promo:0,cost:0,margin:0,reg:0,act:0});
+    q.sales+=x.sales;q.units+=x.units;q.dist+=x.dist;q.n+=x.n;q.promo+=x.promo;q.cost+=x.cost;q.margin+=x.margin;q.reg+=x.reg;q.act+=x.act;
+  }
+  const brandRetailerWeekly=[...brandRetailerWeeklyMap.values()].map(x=>({
+    brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,
+    distribution:x.n?x.dist/x.n:null,price:x.units?x.sales/x.units:null,promo_rate:x.n?x.promo/x.n*100:null,is_actual:isActual(x.week_ending),
+    unit_cost:x.units?x.cost/x.units:null,gross_margin:x.margin,margin_percent:x.sales?x.margin/x.sales:null
+  }));
+  if(productWeekly.length)await upsertBatches(sb,"cpgist_product_weekly",productWeekly,"product_id,retailer_id,week_ending",progress);
+  if(brandRetailerWeekly.length)await upsertBatches(sb,"cpgist_brand_retailer_weekly",brandRetailerWeekly,"brand_id,retailer_id,week_ending",progress);
+
+  const productSummaryMap=new Map<number,any>(), retailerSummaryMap=new Map<string,any>();
+  for(const x of detail.values()){
+    if(!latest13Set.has(x.week_ending))continue;
+    const p=productSummaryMap.get(x.product_id)||{product_id:x.product_id,brand_id:x.brand_id,period_end:end,sales:0,units:0,dist:0,n:0,promo:0};
+    p.sales+=x.sales;p.units+=x.units;p.dist+=x.dist;p.n+=x.n;p.promo+=x.promo;productSummaryMap.set(x.product_id,p);
+    const k=x.brand_id+"|"+x.retailer_id;
+    const r=retailerSummaryMap.get(k)||{brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,period_end:end,sales:0,units:0,dist:0,n:0,promo:0};
+    r.sales+=x.sales;r.units+=x.units;r.dist+=x.dist;r.n+=x.n;r.promo+=x.promo;retailerSummaryMap.set(k,r);
+  }
+  await upsertBatches(sb,"cpgist_product_summary",[...productSummaryMap.values()].map(x=>({product_id:x.product_id,brand_id:x.brand_id,period_end:x.period_end,sales_13w:x.sales,units_13w:x.units,avg_price_13w:x.units?x.sales/x.units:null,distribution_13w:x.n?x.dist/x.n:null,promo_rate_13w:x.n?x.promo/x.n*100:null})),"product_id",progress);
+  await upsertBatches(sb,"cpgist_brand_retailer_summary",[...retailerSummaryMap.values()].map(x=>({brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,period_end:x.period_end,sales_13w:x.sales,units_13w:x.units,avg_price_13w:x.units?x.sales/x.units:null,distribution_13w:x.n?x.dist/x.n:null,promo_rate_13w:x.n?x.promo/x.n*100:null})),"brand_id,retailer_id",progress);
+
+  // Baseline rows are kept for the latest 13 weeks, matching the active commercial diagnostics window.
+  const baselineRows:any[]=[];
+  const baselineMap=new Map<string,any>();
+  progress("Streaming baseline_sales.csv…");
+  await scanCsv(baselineBytes,r=>{
+    const w=pick(r,"week");if(!w||!latest13Set.has(w))return;
+    const product=pm.get(pick(r,"sku").toLowerCase()),brand=bm.get(pick(r,"brand").toLowerCase()),retailer=rm.get(pick(r,"retailer").toLowerCase());
+    if(!product||!brand||!retailer)return;
+    const bu=num(r,"baseline_units"),bs=num(r,"baseline_sales");
+    baselineRows.push({product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week:w,baseline_sales:bs,baseline_units:bu,is_actual:isActual(pick(r,"is_actual"))});
+    baselineMap.set(product.id+"|"+retailer.id+"|"+w,{baseline_sales:bs,baseline_units:bu});
+  },progress);
+  if(baselineRows.length)await upsertBatches(sb,"cpgist_baseline_sales",baselineRows,"id",progress);
+
+  const tradeRows:any[]=[];const tradeByPromo=new Map<string,number>();
+  progress("Streaming trade_spend.csv…");
+  await scanCsv(tradeBytes,r=>{
+    const w=pick(r,"start_date");if(!w||w<LATEST13_START)return;
+    const spend=num(r,"trade_spend"),pid=pick(r,"promotion_id");if(pid)tradeByPromo.set(pid,spend);
+    const product=pm.get(pick(r,"sku").toLowerCase()),brand=bm.get(pick(r,"brand").toLowerCase()),retailer=rm.get(pick(r,"retailer").toLowerCase());
+    if(product&&brand&&retailer)tradeRows.push({promotion_id:pid||null,product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week:w,trade_spend:spend,is_actual:w<="2025-12-28"});
+  },progress);
+  if(tradeRows.length)await upsertBatches(sb,"cpgist_trade_spend",tradeRows,"id",progress);
+
+  // Promotion events are populated from the actual event file and enriched with the matching
+  // SKU/retailer sales + baseline + trade-spend records for the same start week.
+  const promotionRows:any[]=[];
+  progress("Streaming promotion.csv and merging event-level commercial fields…");
+  await scanCsv(promoBytes,r=>{
+    const w=pick(r,"start_date");if(!w||w<LATEST13_START)return;
+    const product=pm.get(pick(r,"sku").toLowerCase()),brand=bm.get(pick(r,"brand").toLowerCase()),retailer=rm.get(pick(r,"retailer").toLowerCase());
+    if(!product||!brand||!retailer)return;
+    const k=product.id+"|"+retailer.id+"|"+w,baseRow=baselineMap.get(k),detailRow=detail.get(k);
+    const promoUnits=detailRow?.units??0, promoSales=detailRow?.sales??0, baselineUnits=baseRow?.baseline_units??0, baselineSales=baseRow?.baseline_sales??0;
+    promotionRows.push({
+      promotion_id:pick(r,"promotion_id"),date_start:w,date_end:pick(r,"end_date")||w,product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,
+      promo_type:pick(r,"promo_type")||null,feature_flag:pick(r,"feature_flag")==="1",display_flag:pick(r,"display_flag")==="1",
+      endcap_flag:false,coupon_flag:false,digital_flag:false,discount_pct:num(r,"discount_percent")||null,promo_price:num(r,"promo_price")||null,
+      baseline_units:baselineUnits||null,promo_units:promoUnits||null,incremental_units:promoUnits-baselineUnits,
+      incremental_sales:promoSales-baselineSales,trade_spend:tradeByPromo.get(pick(r,"promotion_id"))??null,gross_margin:detailRow?.margin??null,
+      is_actual:w<="2025-12-28"
+    });
+  },progress);
+  if(promotionRows.length)await upsertBatches(sb,"cpgist_promotion_events",promotionRows,"promotion_id",progress);
+
+  if(categoryAggBytes){
+    const rows:any[]=[];progress("Loading category_aggregates.csv…");
+    await scanCsv(categoryAggBytes,r=>rows.push({
+      week:pick(r,"week"),category:pick(r,"category"),subcategory:pick(r,"subcategory")||"ALL_SUBCATEGORIES",region:pick(r,"region"),
+      total_category_sales:num(r,"total_category_sales"),total_category_units:num(r,"total_category_units"),
+      brand_count_in_category:num(r,"brand_count_in_category"),is_actual:isActual(pick(r,"is_actual"))
+    }),progress);
+    if(rows.length)await upsertBatches(sb,"cpgist_category_aggregates",rows,"week,category,subcategory,region",progress);
+  }
+
+  if(trialBytes){
+    const rows:any[]=[];progress("Loading trial_repeat.csv…");
+    await scanCsv(trialBytes,r=>rows.push({
+      sku:pick(r,"sku"),week:pick(r,"week"),new_buyers_estimate:num(r,"new_buyers_estimate"),repeat_buyers_estimate:num(r,"repeat_buyers_estimate"),
+      trial_rate:num(r,"trial_rate"),repeat_rate:num(r,"repeat_rate"),is_actual:isActual(pick(r,"week"))&&pick(r,"week")<="2025-12-28"
+    }),progress);
+    if(rows.length)await upsertBatches(sb,"cpgist_trial_repeat",rows,"sku,week",progress);
+  }
+
+  if(panelBytes){
+    const rows:any[]=[];const panelAgg=new Map<string,any>();progress("Loading synthetic household panel…");
+    await scanCsv(panelBytes,r=>{
+      const w=pick(r,"week"),region=pick(r,"region"),brand=pick(r,"brand"),category=pick(r,"category"),household=pick(r,"household_id"),units=num(r,"units");
+      if(!w||!region||!brand||!category||!household)return;
+      rows.push({household_id:household,region,week:w,brand,category,units,is_synthetic_panel:true});
+      const k=w+"|"+region+"|"+brand+"|"+category;
+      const x=agg(panelAgg,k,{week:w,region,brand,category,households:150,buyers:new Set<string>(),units:0});
+      x.buyers.add(household);x.units+=units;
+    },progress);
+    if(rows.length)await upsertBatches(sb,"cpgist_panel_household",rows,"household_id,week,brand,category",progress);
+    const panelRows=[...panelAgg.values()].map(x=>({week:x.week,region:x.region,brand:x.brand,category:x.category,households:x.households,buyers:x.buyers.size,units:x.units,penetration_pct:x.households?x.buyers.size/x.households*100:null,purchase_frequency:x.buyers.size?x.units/x.buyers.size:null,is_synthetic_panel:true}));
+    if(panelRows.length)await upsertBatches(sb,"cpgist_panel_weekly",panelRows,"week,region,brand,category",progress);
+  }
+
+  if(macroBytes){
+    const rows:any[]=[];progress("Loading macro_signals.csv…");
+    await scanCsv(macroBytes,r=>rows.push({region:pick(r,"region"),week:pick(r,"week"),inflation_index:num(r,"inflation_index"),category_price_index:num(r,"category_price_index")}),progress);
+    if(rows.length)await upsertBatches(sb,"cpgist_macro_signals",rows,"region,week",progress);
+  }
+
+  if(competitorPriceBytes){
+    const rows:any[]=[];progress("Loading competitor_price_sales.csv…");
+    await scanCsv(competitorPriceBytes,r=>{
+      const w=pick(r,"week");if(!w||w<LATEST13_START)return;
+      rows.push({brand:pick(r,"competitor_brand","brand"),retailer:pick(r,"retailer"),region:pick(r,"region"),category:pick(r,"category"),week:w,sales:num(r,"price")*num(r,"units"),units:num(r,"units"),price:num(r,"price"),is_actual:isActual(pick(r,"is_actual"))});
+    },progress);
+    if(rows.length)await upsertBatches(sb,"cpgist_competitor_price_sales",rows,"id",progress);
+  }
+
+  // Keep the linked competitor relationship table in the compact database where possible.
+  // The competitor price cube remains name-based because the source file is not keyed to a
+  // focal brand for every row; no invented focal-brand mapping is created here.
+  if(relationshipsBytes)progress("Validated brand_relationships.csv; relationship mappings remain source-anchored and are not fabricated into competitor_weekly.");
+
+  const checks=await Promise.all([
+    sb.from("cpgist_brands").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_retailers").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_products").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_brand_weekly").select("brand_id",{count:"exact",head:true}),
+    sb.from("cpgist_product_summary").select("product_id",{count:"exact",head:true}),
+    sb.from("cpgist_brand_retailer_summary").select("brand_id",{count:"exact",head:true}),
+    sb.from("cpgist_promotion_events").select("promotion_id",{count:"exact",head:true}),
+    sb.from("cpgist_category_aggregates").select("week",{count:"exact",head:true}),
+    sb.from("cpgist_product_weekly").select("product_id",{count:"exact",head:true}),
+    sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true})
+  ]);
+  const bad=checks.find(x=>x.error);if(bad?.error)throw new Error("Import verification failed: "+bad.error.message);
+  const counts=checks.map(x=>x.count||0);
+  if(!counts[0]||!counts[1]||!counts[2]||!counts[3]||!counts[4]||!counts[5]||!counts[6]||!counts[7]||!counts[8]||!counts[9]){
+    throw new Error("Import verification failed: one or more compact/extended analytical tables are empty.");
+  }
+  progress("Verified live database: "+counts[0].toLocaleString()+" brands · "+counts[1].toLocaleString()+" retailers · "+counts[2].toLocaleString()+" products · "+counts[3].toLocaleString()+" brand-weeks · "+counts[4].toLocaleString()+" product summaries · "+counts[5].toLocaleString()+" retailer summaries · "+counts[6].toLocaleString()+" promotion events · "+counts[7].toLocaleString()+" category aggregates.");
+  return {
+    type:"combined",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,
+    brandWeeks:brandRows.length,categoryWeeks:CA.size,retailerWeeks:RA.size,productWeeks:productWeekly.length,brandRetailerWeeks:brandRetailerWeekly.length,
+    productSummaries:productSummaryMap.size,brandRetailerSummary:retailerSummaryMap.size,promotionEvents:promotionRows.length,
+    periods:periods.length,periodStart:periods[0],periodEnd:end
+  };
 }
 
 function unzipInWorker(bytes:Uint8Array):Promise<Record<string,Uint8Array>>{
