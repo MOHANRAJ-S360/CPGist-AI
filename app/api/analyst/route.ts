@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { CPG_TOOLS } from "../../../lib/cpg-analytics";
-import { runAdvancedAnalytics } from "../../../lib/advanced-analytics";
 import { capabilityContext } from "../../../lib/cpg-intelligence/capabilities";
 import {
   analyzeDrivers,
@@ -99,22 +98,6 @@ async function tool(name: string, a: Args, token: string) {
   const dataset = await queryDataset(a, token);
 
   switch (name) {
-    case "promo_lift":
-      return await runAdvancedAnalytics("promo_lift", token, a);
-    case "sku_growth":
-      return await runAdvancedAnalytics("sku_growth", token, a);
-    case "category_context":
-      return await runAdvancedAnalytics("category_context", token, a);
-    case "channel_breakdown":
-      return await runAdvancedAnalytics("channel_breakdown", token, a);
-    case "margin_report":
-      return await runAdvancedAnalytics("margin", token, a);
-    case "launch_performance":
-      return await runAdvancedAnalytics("launch", token, a);
-    case "panel_report":
-      return await runAdvancedAnalytics("panel", token, a);
-    case "macro_overlay":
-      return await runAdvancedAnalytics("macro", token, a);
     case "data_readiness": {
       const tables = ["cpgist_brands","cpgist_products","cpgist_categories","cpgist_regions","cpgist_brand_weekly","cpgist_category_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_brand_retailer_summary","cpgist_product_weekly","cpgist_product_summary","cpgist_competitor_weekly","syndicate_competitor_signals"];
       const counts: Record<string, number> = {};
