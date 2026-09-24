@@ -1,4 +1,4 @@
-import { strFromU8 } from "fflate";
+import { unzip, strFromU8 } from "fflate";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Row = Record<string,string>;
@@ -591,12 +591,11 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
 
 function unzipInWorker(bytes:Uint8Array,wanted:string[]):Promise<Record<string,Uint8Array>>{
   return new Promise((resolve,reject)=>{
-    if(typeof Worker==="undefined"){reject(new Error("This browser does not support background ZIP processing. Please use a current Chrome or Edge browser."));return;}
-    const worker=new Worker(new URL("./zip-unzip-worker.ts",import.meta.url),{type:"module"});
-    const timeout=window.setTimeout(()=>{worker.terminate();reject(new Error("ZIP extraction timed out. Please retry the upload."));},180000);
-    worker.onmessage=(event:MessageEvent<any>)=>{window.clearTimeout(timeout);worker.terminate();if(event.data?.error){reject(new Error(event.data.error));return;}const out:Record<string,Uint8Array>={};for(const entry of event.data?.entries||[])out[entry.name]=new Uint8Array(entry.bytes);resolve(out);};
-    worker.onerror=(event)=>{window.clearTimeout(timeout);worker.terminate();reject(new Error(event.message||"ZIP worker failed."));};
-    worker.postMessage({buffer:bytes.buffer,wanted:wanted.map(x=>x.toLowerCase())},[bytes.buffer]);
+    try{
+      unzip(bytes,{filter(file:any){const name=String(file?.name||"").split("/").pop()?.toLowerCase()||"";return wanted.includes(name);}},(err,data)=>{
+        if(err)reject(err);else resolve(data as Record<string,Uint8Array>);
+      });
+    }catch(err){reject(err)}
   });
 }
 
