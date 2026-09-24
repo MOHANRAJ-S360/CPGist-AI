@@ -1,4 +1,4 @@
-import { unzipSync, strFromU8 } from "fflate";
+import { unzip, strFromU8 } from "fflate";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Row = Record<string,string>;
@@ -42,6 +42,7 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
   let rows=0;
   for(let i=0;i<bytes.length;i++){
     const c=bytes[i];
+    if((i&0xFFFFF)===0&&i>0)await new Promise<void>(resolve=>setTimeout(resolve,0));
     if(c===34){if(quoted&&bytes[i+1]===34)i++;else quoted=!quoted;continue;}
     if(c===44&&!quoted){emit(i);continue;}
     if((c===10||c===13)&&!quoted){
@@ -50,6 +51,7 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
       else if(row.length&&row.some(Boolean)){
         const r:Row={};headers.forEach((h,j)=>r[h]=String(row[j]??"").trim());onRow(r,headers);rows++;
         if(progress&&rows%100000===0)progress(`Scanned ${rows.toLocaleString()} rows…`);
+        if(rows%25000===0)await new Promise<void>(resolve=>setTimeout(resolve,0));
       }
       row=[];
       if(c===13&&bytes[i+1]===10)i++;
@@ -353,12 +355,26 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   return{type:"combined",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,brandWeeks:brandRows.length,categoryWeeks:CA.size,retailerWeeks:RA.size,productWeeks:productRows.length,periods:periods.length,periodStart:periods[0],periodEnd:end};
 }
 
+function unzipInWorker(bytes:Uint8Array):Promise<Record<string,Uint8Array>>{
+  return new Promise((resolve,reject)=>{
+    try{
+      unzip(bytes,(err,data)=>{
+        if(err)reject(err);
+        else resolve(data as Record<string,Uint8Array>);
+      });
+    }catch(err){reject(err)}
+  });
+}
+
 export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
   if(!file.name.toLowerCase().endsWith(".zip"))throw new Error("Please select a CPGist dataset ZIP file.");
-  if(file.size>100*1024*1024)throw new Error("The CPGist dataset ZIP must be 100 MB or smaller for browser import.");
-  progress(`Reading ${file.name}…`);
+  if(file.size>200*1024*1024)throw new Error("The CPGist dataset ZIP must be 200 MB or smaller for browser import.");
+  progress(`Reading ${file.name} in a background worker…`);
   let zip:Record<string,Uint8Array>;
-  try{zip=unzipSync(new Uint8Array(await file.arrayBuffer()))}catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
+  try{
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    zip=await unzipInWorker(bytes);
+  }catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
   const names=Object.keys(zip);
   const combinedCore=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv"].every(n=>names.some(x=>basename(x).toLowerCase()===n.toLowerCase()));
   if(combinedCore)return importCombinedDatasetZip(sb,zip,progress);
