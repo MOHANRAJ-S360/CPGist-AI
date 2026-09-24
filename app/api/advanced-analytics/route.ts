@@ -217,21 +217,23 @@ async function macroOverlay(token:string,p:any){
  return{available:rows.length>0,rows,provenance:{status:"synthetic",syntheticMacro:true,label:"Illustrative synthetic macro trend — not tied to real economic data"},evidence:{source:"cpgist_macro_signals",grain:"region-week",rowCount:rows.length}};
 }
 
+export async function runAdvancedAnalytics(type:string,token:string,p:any){
+ if(type==="promo_lift")return promoLift(token,p);
+ if(type==="sku_growth")return skuGrowth(token,p);
+ if(type==="category_context")return categoryContext(token,p);
+ if(type==="channel_breakdown")return channelBreakdown(token,p);
+ if(type==="margin")return marginReport(token,p);
+ if(type==="launch")return launchPerformance(token,p);
+ if(type==="panel")return panelReport(token,p);
+ if(type==="macro")return macroOverlay(token,p);
+ throw new Error("Unknown advanced analytics type.");
+}
+
 export async function GET(req:Request){
  try{
   const auth=req.headers.get("authorization")||"";
   const token=auth.replace(/^Bearer\s+/i,"");
   const u=new URL(req.url),p:any=Object.fromEntries(u.searchParams.entries()),type=String(p.type||"");
-  let result:any;
-  if(type==="promo_lift")result=await promoLift(token,p);
-  else if(type==="sku_growth")result=await skuGrowth(token,p);
-  else if(type==="category_context")result=await categoryContext(token,p);
-  else if(type==="channel_breakdown")result=await channelBreakdown(token,p);
-  else if(type==="margin")result=await marginReport(token,p);
-  else if(type==="launch")result=await launchPerformance(token,p);
-  else if(type==="panel")result=await panelReport(token,p);
-  else if(type==="macro")result=await macroOverlay(token,p);
-  else return NextResponse.json({error:"Unknown advanced analytics type."},{status:400});
-  return NextResponse.json(result);
+  return NextResponse.json(await runAdvancedAnalytics(type,token,p));
  }catch(e:any){return NextResponse.json({error:e?.message||"Advanced analytics failed."},{status:500});}
 }
