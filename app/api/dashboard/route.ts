@@ -53,7 +53,7 @@ export async function GET(){
   // Pull only the latest 26 source periods, but paginate each table because
   // Supabase Free's REST API caps each response at 1,000 rows.
   const [brandRows,categoryRows,retailerRows,brands,retailers]=await Promise.all([
-   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual,data_quality_status&week_ending=gte."+cutoff+"&order=week_ending.asc,brand_id.asc"),
+   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&week_ending=gte."+cutoff+"&order=week_ending.asc,brand_id.asc"),
    getPaged("cpgist_category_weekly?select=category,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,category.asc"),
    getPaged("cpgist_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,retailer_id.asc"),
    get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000"),
@@ -175,6 +175,6 @@ export async function GET(){
    retailers:retailerOut
   });
  }catch(e:any){
-  const actualWeeks=periods.filter((p:string)=>brandRows.filter((r:any)=>String(r.week_ending)===p).every((r:any)=>r.is_actual===true));\n  const syntheticWeeks=periods.filter((p:string)=>brandRows.filter((r:any)=>String(r.week_ending)===p).some((r:any)=>r.is_actual===false));\n  const provenance={actualWeeks:actualWeeks.length,syntheticWeeks:syntheticWeeks.length,totalWeeks:periods.length,mixed:actualWeeks.length>0&&syntheticWeeks.length>0,status:syntheticWeeks.length?"mixed":"actual",label:syntheticWeeks.length?`${syntheticWeeks.length} of ${periods.length} weeks in this view are projected, not observed`:null};\n  return NextResponse.json({error:e?.message||"Dashboard data failed."},{status:500});
+  return NextResponse.json({error:e?.message||"Dashboard data failed."},{status:500});
  }
 }
