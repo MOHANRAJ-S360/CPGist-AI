@@ -311,23 +311,24 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   // Keeping it out of the compact tables prevents invented brand IDs and preserves analytical integrity.
   if(competitorBytes)progress("Competitor weekly data validated as archive-only; no invented competitor-to-brand mapping was written.");
 
-  const checks=await Promise.all([
-    ["cpgist_brands",sb.from("cpgist_brands").select("id",{count:"exact",head:true})],
-    ["cpgist_retailers",sb.from("cpgist_retailers").select("id",{count:"exact",head:true})],
-    ["cpgist_products",sb.from("cpgist_products").select("id",{count:"exact",head:true})],
-    ["cpgist_brand_weekly",sb.from("cpgist_brand_weekly").select("brand_id",{count:"exact",head:true})],
-    ["cpgist_product_summary",sb.from("cpgist_product_summary").select("product_id",{count:"exact",head:true})],
-    ["cpgist_brand_retailer_summary",sb.from("cpgist_brand_retailer_summary").select("brand_id",{count:"exact",head:true})],
-    ["cpgist_promotion_events",sb.from("cpgist_promotion_events").select("promotion_id",{count:"exact",head:true})],
-    ["cpgist_baseline_sales",sb.from("cpgist_baseline_sales").select("id",{count:"exact",head:true})],
-    ["cpgist_trade_spend",sb.from("cpgist_trade_spend").select("id",{count:"exact",head:true})],
-    ["cpgist_product_weekly",sb.from("cpgist_product_weekly").select("product_id",{count:"exact",head:true})],
-    ["cpgist_brand_retailer_weekly",sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true})]
-  ]);
-  const bad=checks.find(([,x])=>x.error);
-  if(bad?.[1]?.error)throw new Error("Import verification failed for "+bad[0]+": "+bad[1].error.message);
-  const counts=checks.map(([,x])=>x.count||0);
-  const empty=checks.filter(([,x])=>(x.count||0)===0).map(([name])=>name);
+  const checks=[
+    {name:"cpgist_brands",query:sb.from("cpgist_brands").select("id",{count:"exact",head:true})},
+    {name:"cpgist_retailers",query:sb.from("cpgist_retailers").select("id",{count:"exact",head:true})},
+    {name:"cpgist_products",query:sb.from("cpgist_products").select("id",{count:"exact",head:true})},
+    {name:"cpgist_brand_weekly",query:sb.from("cpgist_brand_weekly").select("brand_id",{count:"exact",head:true})},
+    {name:"cpgist_product_summary",query:sb.from("cpgist_product_summary").select("product_id",{count:"exact",head:true})},
+    {name:"cpgist_brand_retailer_summary",query:sb.from("cpgist_brand_retailer_summary").select("brand_id",{count:"exact",head:true})},
+    {name:"cpgist_promotion_events",query:sb.from("cpgist_promotion_events").select("promotion_id",{count:"exact",head:true})},
+    {name:"cpgist_baseline_sales",query:sb.from("cpgist_baseline_sales").select("id",{count:"exact",head:true})},
+    {name:"cpgist_trade_spend",query:sb.from("cpgist_trade_spend").select("id",{count:"exact",head:true})},
+    {name:"cpgist_product_weekly",query:sb.from("cpgist_product_weekly").select("product_id",{count:"exact",head:true})},
+    {name:"cpgist_brand_retailer_weekly",query:sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true})}
+  ];
+  const results=await Promise.all(checks.map(x=>x.query));
+  const badIndex=results.findIndex(x=>x.error);
+  if(badIndex>=0)throw new Error("Import verification failed for "+checks[badIndex].name+": "+results[badIndex].error.message);
+  const counts=results.map(x=>x.count||0);
+  const empty=checks.filter((x,i)=>(results[i].count||0)===0).map(x=>x.name);
   if(empty.length){
     throw new Error("Import verification failed: empty required tables: "+empty.join(", ")+". The source ZIP was accepted, but these analytical layers were not populated; no partial import is treated as successful.");
   }
