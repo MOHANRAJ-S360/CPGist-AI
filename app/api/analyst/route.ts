@@ -19,6 +19,7 @@ import {
   type IntelligenceQuery,
   type IntelligenceRow,
 } from "../../../lib/cpg-intelligence";
+import {getPromoLift,getSkuGrowth,getCategoryContext,getChannelBreakdown,getMarginPnl,getLaunchPerformance,getSyntheticPanel,getMacroOverlay} from "../../../lib/cpg-advanced";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,11 +78,11 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
     return { rows: raw.map((r:any) => ({
       brand_id: r.brand_id, category: r.category, retailer_id: r.retailer_id, week_ending: r.week_ending,
       dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
-      avg_price: r.price, promo_observations: r.promo_rate, observations: 1
+      avg_price: r.price, promo_observations: r.promo_rate, observations: 1, is_actual: r.is_actual
     })), source: "cpgist_brand_retailer_weekly" };
   }
 
-  let q = "cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&limit=100000";
+  let q = "cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual&limit=100000";
   if (brand) q += "&brand_id=eq." + encodeURIComponent(brand);
   if (category) q += "&category=ilike." + encodeURIComponent(category);
   if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
@@ -90,7 +91,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   return { rows: raw.map((r:any) => ({
     brand_id: r.brand_id, category: r.category, week_ending: r.week_ending,
     dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
-    avg_price: r.avg_price, promo_observations: r.promo_rate, observations: 1
+    avg_price: r.avg_price, promo_observations: r.promo_rate, observations: 1, is_actual: r.is_actual
   })), source: "cpgist_brand_weekly" };
 }
 async function tool(name: string, a: Args, token: string) {
@@ -99,7 +100,7 @@ async function tool(name: string, a: Args, token: string) {
 
   switch (name) {
     case "data_readiness": {
-      const tables = ["cpgist_brands","cpgist_products","cpgist_categories","cpgist_regions","cpgist_brand_weekly","cpgist_category_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_brand_retailer_summary","cpgist_product_weekly","cpgist_product_summary","cpgist_competitor_weekly","syndicate_competitor_signals"];
+      const tables = ["cpgist_brands","cpgist_products","cpgist_categories","cpgist_regions","cpgist_brand_weekly","cpgist_category_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_brand_retailer_summary","cpgist_product_weekly","cpgist_product_summary","cpgist_competitor_weekly","syndicate_competitor_signals","cpgist_promotion_events","cpgist_baseline_sales","cpgist_trade_spend","cpgist_category_aggregates","cpgist_trial_repeat","cpgist_panel_household","cpgist_macro_signals"];
       const counts: Record<string, number> = {};
       for (const table of tables) {
         try {
@@ -109,7 +110,7 @@ async function tool(name: string, a: Args, token: string) {
           counts[table] = range && range.includes("/") ? Number(range.split("/")[1]) || 0 : (await response.json()).length;
         } catch { counts[table] = 0; }
       }
-      return { domains: { sales: counts.cpgist_brand_weekly > 0, retailerOpportunity: counts.cpgist_brand_retailer_weekly > 0 || counts.cpgist_brand_retailer_summary > 0, products: counts.cpgist_product_weekly > 0 || counts.cpgist_product_summary > 0, competition: counts.cpgist_competitor_weekly > 0 || counts.syndicate_competitor_signals > 0, geography: false, shopper: false, innovation: false, ecommerce: false }, counts, warnings: counts.cpgist_brand_weekly === 0 ? ["CPGist Free Dataset is not imported yet."] : [] };
+      return { domains: { sales: counts.cpgist_brand_weekly > 0, retailerOpportunity: counts.cpgist_brand_retailer_weekly > 0 || counts.cpgist_brand_retailer_summary > 0, products: counts.cpgist_product_weekly > 0 || counts.cpgist_product_summary > 0, competition: counts.cpgist_competitor_weekly > 0 || counts.syndicate_competitor_signals > 0, geography: false, shopper: counts.cpgist_panel_household > 0, innovation: counts.cpgist_trial_repeat > 0, ecommerce: false, promotionEconomics: counts.cpgist_promotion_events > 0 && counts.cpgist_baseline_sales > 0 && counts.cpgist_trade_spend > 0, margin: counts.cpgist_product_weekly > 0 || counts.cpgist_brand_retailer_weekly > 0, channel: counts.cpgist_brand_retailer_weekly > 0, macro: counts.cpgist_macro_signals > 0 }, counts, warnings: counts.cpgist_brand_weekly === 0 ? ["CPGist Free Dataset is not imported yet."] : [] };
     }
 
     case "business_health_scan": {
@@ -333,6 +334,73 @@ async function tool(name: string, a: Args, token: string) {
         warnings:["Promotion observations are descriptive. Incremental promotional lift, ROI and causal effectiveness are not estimated by the current dataset."]};
     }
 
+    case "get_promo_lift": {
+      const brandId=String(a.brandId||"").trim();
+      if(!brandId)return {error:"get_promo_lift requires brandId."};
+      const [events,baseline,trade,sales]=await Promise.all([
+        get("cpgist_promotion_events?brand_id=eq."+encodeURIComponent(brandId)+"&select=*&limit=5000",token),
+        get("cpgist_baseline_sales?brand_id=eq."+encodeURIComponent(brandId)+"&select=*&limit=100000",token),
+        get("cpgist_trade_spend?brand_id=eq."+encodeURIComponent(brandId)+"&select=*&limit=100000",token),
+        get("cpgist_product_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=product_id,brand_id,retailer_id,week_ending,sales,units,gross_margin,is_actual&limit=100000",token)
+      ]);
+      const result=getPromoLift(events,sales,baseline,trade);
+      return {...result,evidence:{source:"cpgist_promotion_events + cpgist_product_weekly + cpgist_baseline_sales + cpgist_trade_spend",grain:"promotion event",rowCount:result.events.length,periodStart:result.events[0]?.dateStart??null,periodEnd:result.events.at(-1)?.dateEnd??null,periodCount:new Set(result.events.map((x:any)=>x.dateStart)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:result.available?[]:["Promotion economics data is not populated for this brand."]};
+    }
+    case "get_sku_growth": {
+      const brandId=String(a.brandId||"").trim();
+      const rows=await get("cpgist_product_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=product_id,brand_id,week_ending,sales,units,is_actual&order=week_ending.asc&limit=100000",token);
+      const result=getSkuGrowth(rows);
+      return {...result,evidence:{source:"cpgist_product_weekly",grain:"SKU week",rowCount:rows.length,periodStart:rows[0]?.week_ending??null,periodEnd:rows.at(-1)?.week_ending??null,periodCount:new Set(rows.map((x:any)=>x.week_ending)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:result.products.length?[]:["SKU weekly data is not populated."]};
+    }
+    case "get_category_context": {
+      const brandId=String(a.brandId||"").trim(),ctx=await resolveBrandContext(brandId,token),cat=String(a.categoryId||ctx.category||"");
+      const [cr,br]=await Promise.all([
+        get("cpgist_category_aggregates?category=eq."+encodeURIComponent(cat)+"&select=*&order=week.asc&limit=100000",token),
+        get("cpgist_brand_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=brand_id,week_ending,sales,is_actual&order=week_ending.asc&limit=100000",token)
+      ]);
+      const result=getCategoryContext(cr,br,brandId);
+      return {...result,evidence:{source:"cpgist_category_aggregates + cpgist_brand_weekly",grain:"category/brand week",rowCount:cr.length+br.length,periodStart:result.context?.periods?.[0]??null,periodEnd:result.context?.periods?.at(-1)??null,periodCount:result.context?.periodCount??0,filters:{...filtersFromArgs(a),categoryId:cat},generatedAt:new Date().toISOString()},warnings:result.available?[]:["Observed category aggregates are not populated."]};
+    }
+    case "get_channel_breakdown": {
+      const brandId=String(a.brandId||"").trim();
+      const [rr,rm]=await Promise.all([
+        get("cpgist_brand_retailer_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=brand_id,retailer_id,week_ending,sales,units,distribution&limit=100000",token),
+        get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&limit=5000",token)
+      ]);
+      const result=getChannelBreakdown(rr,rm);
+      return {channels:result,evidence:{source:"cpgist_brand_retailer_weekly + cpgist_retailers.channel",grain:"retailer week rolled to channel",rowCount:rr.length,periodStart:rr[0]?.week_ending??null,periodEnd:rr.at(-1)?.week_ending??null,periodCount:new Set(rr.map((x:any)=>x.week_ending)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:result.length?[]:["Channel-level retailer sales are not populated."]};
+    }
+    case "get_margin_pnl": {
+      const brandId=String(a.brandId||"").trim();
+      const [rows,pm,rm]=await Promise.all([
+        get("cpgist_product_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=product_id,brand_id,retailer_id,week_ending,sales,units,gross_margin,margin_percent,is_actual&limit=100000",token),
+        get("cpgist_products?brand_id=eq."+encodeURIComponent(brandId)+"&select=id,name,sku,subcategory&limit=5000",token),
+        get("cpgist_retailers?select=id,name,channel,region&limit=5000",token)
+      ]);
+      const result=getMarginPnl(rows,pm,rm);
+      return {...result,evidence:{source:"cpgist_product_weekly + cpgist_products + cpgist_retailers",grain:"SKU/retailer week",rowCount:rows.length,periodStart:rows[0]?.week_ending??null,periodEnd:rows.at(-1)?.week_ending??null,periodCount:new Set(rows.map((x:any)=>x.week_ending)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:result.available?[]:["Margin-bearing SKU weekly data is not populated."]};
+    }
+    case "get_launch_performance": {
+      const brandId=String(a.brandId||"").trim();
+      const [pm,tr,sales]=await Promise.all([
+        get("cpgist_products?brand_id=eq."+encodeURIComponent(brandId)+"&select=id,name,sku,launch_date&limit=5000",token),
+        get("cpgist_trial_repeat?select=*&limit=100000",token),
+        get("cpgist_product_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=product_id,week_ending,sales,is_actual&limit=100000",token)
+      ]);
+      const result=getLaunchPerformance(pm,tr,sales);
+      return {...result,evidence:{source:"cpgist_products.launch_date + cpgist_trial_repeat + cpgist_product_weekly",grain:"launch week",rowCount:result.products.length,periodStart:result.products[0]?.launchDate??null,periodEnd:result.products.flatMap((x:any)=>x.weekly.map((w:any)=>w.week)).at(-1)??null,periodCount:result.products.reduce((m:number,x:any)=>Math.max(m,x.weekly.length),0),filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:result.available?[]:["No populated launch_date/trial-repeat records were found."]};
+    }
+    case "get_synthetic_panel": {
+      const brand=await resolveBrandContext(String(a.brandId||""),token);
+      const rows=await get("cpgist_panel_household?brand=eq."+encodeURIComponent(String(brand.brandName||""))+"&select=*&limit=100000",token);
+      const result=getSyntheticPanel(rows);
+      return {...result,evidence:{source:"cpgist_panel_household",grain:"synthetic household week",rowCount:rows.length,periodStart:rows[0]?.week??null,periodEnd:rows.at(-1)?.week??null,periodCount:new Set(rows.map((x:any)=>x.week)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:[result.label]};
+    }
+    case "get_macro_overlay": {
+      const rows=await get("cpgist_macro_signals?select=*&limit=100000",token);
+      const result=getMacroOverlay(rows);
+      return {...result,evidence:{source:"cpgist_macro_signals",grain:"region week",rowCount:rows.length,periodStart:rows[0]?.week??null,periodEnd:rows.at(-1)?.week??null,periodCount:new Set(rows.map((x:any)=>x.week)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:[result.label]};
+    }
     case "category_growth_plan": {
       const categoryName = String(a.categoryId || "").trim();
       if (!categoryName) return { error: "category_growth_plan requires categoryId." };
@@ -502,6 +570,14 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (/sku|product|assortment|portfolio|item|size|pack/.test(q)) add("product_sku_performance");
   if (brandId && categoryId && /retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
   if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
+  if (brandId && /promo roi|promotion roi|incremental|trade spend|promotion lift|which promotion/.test(q)) add("get_promo_lift");
+  if (brandId && /sku growth|sku momentum|product growth|sku decline|product decline/.test(q)) add("get_sku_growth");
+  if (brandId && /category context|brand vs category|category share/.test(q)) add("get_category_context");
+  if (brandId && /channel|e-commerce|grocery|mass|club|drug|convenience|specialty/.test(q)) add("get_channel_breakdown");
+  if (brandId && /margin|profit|gross profit|margin at risk|p&l/.test(q)) add("get_margin_pnl");
+  if (brandId && /new product|launch|trial|repeat|new sku|pacesetter/.test(q)) add("get_launch_performance");
+  if (brandId && /penetration|purchase frequency|household|shopper panel/.test(q)) add("get_synthetic_panel");
+  if (/inflation|macro|price index|show .*against inflation/.test(q)) add("get_macro_overlay");
   if (/competitor|competitive|competition|market movement/.test(q)) add("competitive_signals");
   if (/forecast|outlook|next 8|next 12|projection/.test(q)) add("forecast_sales");
   if (/anomal|spike|drop|unusual|outlier/.test(q)) add("detect_anomalies");
