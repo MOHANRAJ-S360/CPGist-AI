@@ -325,8 +325,11 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
     {name:"cpgist_brand_retailer_weekly",query:sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true})}
   ];
   const results=await Promise.all(checks.map(x=>x.query));
-  const badIndex=results.findIndex(x=>x.error);
-  if(badIndex>=0)throw new Error("Import verification failed for "+checks[badIndex].name+": "+results[badIndex].error.message);
+  const badIndex=results.findIndex(x=>x.error!==null);
+  if(badIndex>=0){
+    const error=results[badIndex].error;
+    if(error)throw new Error("Import verification failed for "+checks[badIndex].name+": "+error.message);
+  }
   const counts=results.map(x=>x.count||0);
   const empty=checks.filter((x,i)=>(results[i].count||0)===0).map(x=>x.name);
   if(empty.length){
