@@ -2,7 +2,6 @@
 
 import {useEffect,useMemo,useState} from "react";
 import {BarChart3,ChevronDown,Info,ShieldCheck,TrendingUp} from "lucide-react";
-import {useSearchParams} from "next/navigation";
 import {AppShell} from "../../components/app-shell";
 import {BarChart,LineChart} from "../../components/cpg-charts";
 import {supabaseBrowser} from "../../lib/supabase-browser";
@@ -12,10 +11,9 @@ const money=(v:any)=>v==null?"—":new Intl.NumberFormat("en-US",{style:"currenc
 const pct=(v:any)=>v==null?"—":(n(v)>=0?"+":"")+n(v).toFixed(1)+"%";
 
 export default function AdvancedAnalytics(){
- const params=useSearchParams();
- const [brands,setBrands]=useState<any[]>([]),[brandId,setBrandId]=useState(params.get("brand_id")||""),[d,setD]=useState<any>(null),[loading,setLoading]=useState(false),[error,setError]=useState("");
+ const [brands,setBrands]=useState<any[]>([]),[brandId,setBrandId]=useState(""),[d,setD]=useState<any>(null),[loading,setLoading]=useState(false),[error,setError]=useState("");
  useEffect(()=>{(async()=>{try{const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)return;const r=await fetch("/api/explorer?entity=brand&limit=5000",{headers:{Authorization:"Bearer "+session.access_token},cache:"no-store"});const x=await r.json();setBrands(x.results||[])}catch(e:any){setError(e?.message||"Brand directory failed.")}})()},[]);
- useEffect(()=>{const fromUrl=params.get("brand_id");if(fromUrl)setBrandId(fromUrl)},[params]);
+ useEffect(()=>{const fromUrl=typeof window!=="undefined"?new URLSearchParams(window.location.search).get("brand_id"):null;if(fromUrl)setBrandId(fromUrl)},[]);
  useEffect(()=>{if(!brandId)return;let live=true;(async()=>{setLoading(true);setError("");try{const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)throw new Error("Please sign in again.");const r=await fetch("/api/advanced-analytics?brand_id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+session.access_token},cache:"no-store"});const x=await r.json();if(!r.ok)throw new Error(x.error||"Could not load advanced analytics.");if(live)setD(x)}catch(e:any){if(live)setError(e?.message||"Advanced analytics failed.")}finally{if(live)setLoading(false)}})();return()=>{live=false}},[brandId]);
 
  const promoBars=useMemo(()=>((d?.promoLift?.byPromoType||[]).slice(0,8).map((x:any)=>({label:String(x.key||"Unknown"),value:Math.max(0,n(x.roi))}))),[d]);
