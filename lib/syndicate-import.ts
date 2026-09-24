@@ -1,4 +1,4 @@
-import { unzip, strFromU8 } from "fflate";
+import { strFromU8 } from "fflate";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Row = Record<string,string>;
@@ -22,8 +22,10 @@ function parseSmall(bytes:Uint8Array):Row[]{
 }
 
 function clean(v:any){return String(v??"").trim()}
+function normKey(v:any){return clean(v).toLowerCase().replace(/\([^)]*\)/g,"").replace(/[·•]/g," ").replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim()}
 function pick(r:Row,...names:string[]){for(const n of names)if(r[n]!==undefined&&clean(r[n])!=="")return clean(r[n]);return ""}
 function num(r:Row,...names:string[]){const v=Number(pick(r,...names));return Number.isFinite(v)?v:0}
+function boolValue(v:any,fallback=true){const s=clean(v).toLowerCase();if(!s)return fallback;if(["true","1","yes","y","actual","observed"].includes(s))return true;if(["false","0","no","n","synthetic","projected"].includes(s))return false;return fallback}
 function idNum(v:any){
   const s=clean(v);
   const m=s.match(/(\d+)$/);
@@ -346,9 +348,14 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
 
   if(!brands.length||!retailers.length||!products.length)throw new Error("Combined package master dimensions are empty or invalid.");
 
-  const bm=new Map(brands.map(x=>[x.name.toLowerCase(),x]));
-  const rm=new Map(retailers.map(x=>[x.name.toLowerCase(),x]));
-  const pm=new Map(products.map(x=>[x.name.toLowerCase(),x]));
+  const addAliases=(map:Map<string,any>,aliases:string[],value:any)=>{for(const alias of aliases){const key=normKey(alias);if(key&&!map.has(key))map.set(key,value);}};
+  const bm=new Map<string,any>(),rm=new Map<string,any>(),pm=new Map<string,any>();
+  brands.forEach(x=>addAliases(bm,[x.name],x));
+  retailers.forEach(x=>addAliases(rm,[x.name,String(x.name).replace(/\s*\([^)]*\)\s*$/,"")],x));
+  products.forEach(x=>addAliases(pm,[x.name,(x.name+" "+(x.size||"")).trim(),x.sku||""],x));
+  const resolveBrand=(v:any)=>bm.get(normKey(v));
+  const resolveRetailer=(v:any)=>rm.get(normKey(v));
+  const resolveProduct=(v:any)=>pm.get(normKey(v));
   const cats=[...new Set(products.map(x=>x.category).filter(Boolean))] as string[];
   const categories=cats.map((name,i)=>({id:i+1,name,parent_category:null,subcategory_count:new Set(products.filter(x=>x.category===name).map(x=>x.subcategory).filter(Boolean)).size}));
   const regions=[...new Set(retailers.map(x=>x.region).filter(Boolean))].map((name,i)=>({id:i+1,name:String(name),country:null,region_group:null}));
@@ -362,32 +369,32 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
 
   progress("Streaming sales_weekly.csv and building the compact analytical layer…");
   await scanCsv(salesBytes,r=>{
-    const w=pick(r,"week"),brand=bm.get(pick(r,"brand").toLowerCase()),retailer=rm.get(pick(r,"retailer").toLowerCase()),product=pm.get(pick(r,"sku").toLowerCase());
+    const w=pick(r,"week"),brand=resolveBrand(pick(r,"brand")),retailer=resolveRetailer(pick(r,"retailer")),product=resolveProduct(pick(r,"sku"));
     if(!w||!brand)return;
     weeks.add(w);
     const category=pick(r,"category")||brand.category||"Unclassified";
-    const sales=num(r,"sales_value"),units=num(r,"units"),reg=num(r,"regular_price"),act=num(r,"actual_price"),dist=num(r,"ACV_distribution","distribution"),promo=pick(r,"promo_flag")==="1",cost=num(r,"unit_cost"),margin=num(r,"gross_margin"),marginPct=num(r,"margin_percent");
+    const sales=num(r,"sales_value","dollar_sales","sales"),units=num(r,"units","volume_units"),reg=num(r,"regular_price"),act=num(r,"actual_price"),dist=num(r,"ACV_distribution","distribution","weighted_distribution"),promo=boolValue(pick(r,"promo_flag","promotion_flag"),false),cost=num(r,"unit_cost"),margin=num(r,"gross_margin"),marginPct=num(r,"margin_percent"),actual=boolValue(pick(r,"is_actual","actual","observed"),true);
 
-    const b=agg(BA,brand.id+"|"+w,{brand_id:brand.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,reg:0,act:0,cost:0,margin:0,marginPct:0,marginPctN:0});
-    b.sales+=sales;b.units+=units;b.dist+=dist;b.n++;if(promo)b.promo++;b.reg+=reg*units;b.act+=act*units;b.cost+=cost*units;b.margin+=margin;
+    const b=agg(BA,brand.id+"|"+w,{brand_id:brand.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,reg:0,act:0,cost:0,margin:0,marginPct:0,marginPctN:0,is_actual:actual});
+    b.sales+=sales;b.units+=units;b.dist+=dist;b.n++;if(promo)b.promo++;b.reg+=reg*units;b.act+=act*units;b.cost+=cost*units;b.margin+=margin;b.is_actual=actual;
     if(marginPct)b.marginPct+=marginPct;b.marginPctN++;
 
-    const c=agg(CA,category+"|"+w,{category,week_ending:w,sales:0,units:0,dist:0,n:0});
-    c.sales+=sales;c.units+=units;c.dist+=dist;c.n++;
+    const c=agg(CA,category+"|"+w,{category,week_ending:w,sales:0,units:0,dist:0,n:0,is_actual:actual});
+    c.sales+=sales;c.units+=units;c.dist+=dist;c.n++;c.is_actual=actual;
 
     if(retailer){
-      const rr=agg(RA,retailer.id+"|"+w,{retailer_id:retailer.id,week_ending:w,sales:0,units:0,dist:0,n:0});
-      rr.sales+=sales;rr.units+=units;rr.dist+=dist;rr.n++;
+      const rr=agg(RA,retailer.id+"|"+w,{retailer_id:retailer.id,week_ending:w,sales:0,units:0,dist:0,n:0,is_actual:actual});
+      rr.sales+=sales;rr.units+=units;rr.dist+=dist;rr.n++;rr.is_actual=actual;
     }
 
     if(product&&retailer&&w>=DETAIL_START){
       const k=product.id+"|"+retailer.id+"|"+w;
-      const q=agg(detail,k,{product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,cost:0,margin:0,marginPct:0,marginPctN:0,reg:0,act:0});
-      q.sales+=sales;q.units+=units;q.dist+=dist;q.n++;if(promo)q.promo++;q.cost+=cost*units;q.margin+=margin;q.reg+=reg*units;q.act+=act*units;if(marginPct){q.marginPct+=marginPct;q.marginPctN++}
+      const q=agg(detail,k,{product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,cost:0,margin:0,marginPct:0,marginPctN:0,reg:0,act:0,is_actual:actual});
+      q.sales+=sales;q.units+=units;q.dist+=dist;q.n++;if(promo)q.promo++;q.cost+=cost*units;q.margin+=margin;q.reg+=reg*units;q.act+=act*units;q.is_actual=actual;if(marginPct){q.marginPct+=marginPct;q.marginPctN++
     }
 
-    const bc=agg(BCA,brand.id+"|"+category+"|"+w,{brand_id:brand.id,category,week_ending:w,sales:0,units:0,dist:0,n:0});
-    bc.sales+=sales;bc.units+=units;bc.dist+=dist;bc.n++;
+    const bc=agg(BCA,brand.id+"|"+category+"|"+w,{brand_id:brand.id,category,week_ending:w,sales:0,units:0,dist:0,n:0,is_actual:actual});
+    bc.sales+=sales;bc.units+=units;bc.dist+=dist;bc.n++;bc.is_actual=actual;
   },progress);
 
   const periods=[...weeks].sort();
@@ -414,7 +421,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     baseline_sales:0,baseline_units:0,incremental_sales:0,incremental_units:0,
     gross_margin:x.margin,margin_percent:x.sales?x.margin/x.sales:null,trade_spend:0,promo_events:0,
     promoted_sales:x.promo?x.sales:null,promoted_units:x.promo?x.units:null,avg_discount_depth_pct:null,
-    data_quality_status:isActual(x.week_ending)?"observed":"synthetic",source_package:"CPGist_Extended_Dataset_v3",is_actual:isActual(x.week_ending),
+    data_quality_status:x.is_actual?"observed":"synthetic",source_package:"CPGist_Extended_Dataset_v3",is_actual:x.is_actual,
     unit_cost:x.units?x.cost/x.units:null
   }));
   await upsertBatches(sb,"cpgist_brand_weekly",brandRows,"brand_id,week_ending",progress);
@@ -427,7 +434,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   const productWeekly=[...detail.values()].map(x=>({
     product_id:x.product_id,brand_id:x.brand_id,retailer_id:x.retailer_id,week_ending:x.week_ending,
     sales:x.sales,units:x.units,price:x.units?x.sales/x.units:null,distribution:x.n?x.dist/x.n:null,
-    promo_rate:x.n?x.promo/x.n*100:null,is_actual:isActual(x.week_ending),
+    promo_rate:x.n?x.promo/x.n*100:null,is_actual:x.is_actual,
     unit_cost:x.units?x.cost/x.units:null,gross_margin:x.margin,margin_percent:x.sales?x.margin/x.sales:null,
     regular_price:x.units?x.reg/x.units:null,actual_price:x.units?x.act/x.units:null
   }));
@@ -439,7 +446,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   }
   const brandRetailerWeekly=[...brandRetailerWeeklyMap.values()].map(x=>({
     brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,
-    distribution:x.n?x.dist/x.n:null,price:x.units?x.sales/x.units:null,promo_rate:x.n?x.promo/x.n*100:null,is_actual:isActual(x.week_ending),
+    distribution:x.n?x.dist/x.n:null,price:x.units?x.sales/x.units:null,promo_rate:x.n?x.promo/x.n*100:null,is_actual:x.is_actual,
     unit_cost:x.units?x.cost/x.units:null,gross_margin:x.margin,margin_percent:x.sales?x.margin/x.sales:null
   }));
   if(productWeekly.length)await upsertBatches(sb,"cpgist_product_weekly",productWeekly,"product_id,retailer_id,week_ending",progress);
@@ -463,7 +470,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   progress("Streaming baseline_sales.csv…");
   await scanCsv(baselineBytes,r=>{
     const w=pick(r,"week");if(!w||!latest13Set.has(w))return;
-    const product=pm.get(pick(r,"sku").toLowerCase()),brand=bm.get(pick(r,"brand").toLowerCase()),retailer=rm.get(pick(r,"retailer").toLowerCase());
+    const product=resolveProduct(pick(r,"sku")),brand=resolveBrand(pick(r,"brand")),retailer=resolveRetailer(pick(r,"retailer"));
     if(!product||!brand||!retailer)return;
     const bu=num(r,"baseline_units"),bs=num(r,"baseline_sales");
     baselineRows.push({product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week:w,baseline_sales:bs,baseline_units:bu,is_actual:isActual(pick(r,"is_actual"))});
@@ -476,8 +483,8 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   await scanCsv(tradeBytes,r=>{
     const w=pick(r,"start_date");if(!w||w<LATEST13_START)return;
     const spend=num(r,"trade_spend"),pid=pick(r,"promotion_id");if(pid)tradeByPromo.set(pid,spend);
-    const product=pm.get(pick(r,"sku").toLowerCase()),brand=bm.get(pick(r,"brand").toLowerCase()),retailer=rm.get(pick(r,"retailer").toLowerCase());
-    if(product&&brand&&retailer)tradeRows.push({promotion_id:pid||null,product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week:w,trade_spend:spend,is_actual:w<="2025-12-28"});
+    const product=resolveProduct(pick(r,"sku")),brand=resolveBrand(pick(r,"brand")),retailer=resolveRetailer(pick(r,"retailer"));
+    if(product&&brand&&retailer)tradeRows.push({promotion_id:pid||null,product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week:w,trade_spend:spend,is_actual:boolValue(pick(r,"is_actual","actual","observed"),true)});
   },progress);
   if(tradeRows.length)await upsertBatches(sb,"cpgist_trade_spend",tradeRows,"id",progress);
 
@@ -487,7 +494,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   progress("Streaming promotion.csv and merging event-level commercial fields…");
   await scanCsv(promoBytes,r=>{
     const w=pick(r,"start_date");if(!w||w<LATEST13_START)return;
-    const product=pm.get(pick(r,"sku").toLowerCase()),brand=bm.get(pick(r,"brand").toLowerCase()),retailer=rm.get(pick(r,"retailer").toLowerCase());
+    const product=resolveProduct(pick(r,"sku")),brand=resolveBrand(pick(r,"brand")),retailer=resolveRetailer(pick(r,"retailer"));
     if(!product||!brand||!retailer)return;
     const k=product.id+"|"+retailer.id+"|"+w,baseRow=baselineMap.get(k),detailRow=detail.get(k);
     const promoUnits=detailRow?.units??0, promoSales=detailRow?.sales??0, baselineUnits=baseRow?.baseline_units??0, baselineSales=baseRow?.baseline_sales??0;
@@ -497,7 +504,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
       endcap_flag:false,coupon_flag:false,digital_flag:false,discount_pct:num(r,"discount_percent")||null,promo_price:num(r,"promo_price")||null,
       baseline_units:baselineUnits||null,promo_units:promoUnits||null,incremental_units:promoUnits-baselineUnits,
       incremental_sales:promoSales-baselineSales,trade_spend:tradeByPromo.get(pick(r,"promotion_id"))??null,gross_margin:detailRow?.margin??null,
-      is_actual:w<="2025-12-28"
+      is_actual:boolValue(pick(r,"is_actual","actual","observed"),true)
     });
   },progress);
   if(promotionRows.length)await upsertBatches(sb,"cpgist_promotion_events",promotionRows,"promotion_id",progress);
@@ -516,7 +523,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     const rows:any[]=[];progress("Loading trial_repeat.csv…");
     await scanCsv(trialBytes,r=>rows.push({
       sku:pick(r,"sku"),week:pick(r,"week"),new_buyers_estimate:num(r,"new_buyers_estimate"),repeat_buyers_estimate:num(r,"repeat_buyers_estimate"),
-      trial_rate:num(r,"trial_rate"),repeat_rate:num(r,"repeat_rate"),is_actual:isActual(pick(r,"week"))&&pick(r,"week")<="2025-12-28"
+      trial_rate:num(r,"trial_rate"),repeat_rate:num(r,"repeat_rate"),is_actual:boolValue(pick(r,"is_actual","actual","observed"),true)
     }),progress);
     if(rows.length)await upsertBatches(sb,"cpgist_trial_repeat",rows,"sku,week",progress);
   }
@@ -582,25 +589,26 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   };
 }
 
-function unzipInWorker(bytes:Uint8Array):Promise<Record<string,Uint8Array>>{
+function unzipInWorker(bytes:Uint8Array,wanted:string[]):Promise<Record<string,Uint8Array>>{
   return new Promise((resolve,reject)=>{
-    try{
-      unzip(bytes,(err,data)=>{
-        if(err)reject(err);
-        else resolve(data as Record<string,Uint8Array>);
-      });
-    }catch(err){reject(err)}
+    if(typeof Worker==="undefined"){reject(new Error("This browser does not support background ZIP processing. Please use a current Chrome or Edge browser."));return;}
+    const worker=new Worker(new URL("./zip-unzip-worker.ts",import.meta.url),{type:"module"});
+    const timeout=window.setTimeout(()=>{worker.terminate();reject(new Error("ZIP extraction timed out. Please retry the upload."));},180000);
+    worker.onmessage=(event:MessageEvent<any>)=>{window.clearTimeout(timeout);worker.terminate();if(event.data?.error){reject(new Error(event.data.error));return;}const out:Record<string,Uint8Array>={};for(const entry of event.data?.entries||[])out[entry.name]=new Uint8Array(entry.bytes);resolve(out);};
+    worker.onerror=(event)=>{window.clearTimeout(timeout);worker.terminate();reject(new Error(event.message||"ZIP worker failed."));};
+    worker.postMessage({buffer:bytes.buffer,wanted:wanted.map(x=>x.toLowerCase())},[bytes.buffer]);
   });
 }
 
 export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
   if(!file.name.toLowerCase().endsWith(".zip"))throw new Error("Please select a CPGist dataset ZIP file.");
   if(file.size>200*1024*1024)throw new Error("The CPGist dataset ZIP must be 200 MB or smaller for browser import.");
-  progress(`Reading ${file.name} in a background worker…`);
+  progress(`Reading ${file.name} without blocking the page…`);
   let zip:Record<string,Uint8Array>;
   try{
     const bytes=new Uint8Array(await file.arrayBuffer());
-    zip=await unzipInWorker(bytes);
+    const wanted=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv","category_aggregates.csv","trial_repeat.csv","panel_household_synthetic.csv","macro_signals.csv","competitor_price_sales.csv","brand_relationships.csv"];
+    zip=await unzipInWorker(bytes,wanted);
   }catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
   const names=Object.keys(zip);
   const combinedCore=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv"].every(n=>names.some(x=>basename(x).toLowerCase()===n.toLowerCase()));
