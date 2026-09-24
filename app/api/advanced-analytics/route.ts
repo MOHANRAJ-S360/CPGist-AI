@@ -199,11 +199,15 @@ async function panelReport(token:string,p:any){
  const clauses:string[]=[];
  if(p.brand)clauses.push("brand=eq."+encodeURIComponent(p.brand));
  if(p.region)clauses.push("region=eq."+encodeURIComponent(p.region));
+ try{
+  const weekly=await getPaged("cpgist_panel_weekly?select=*&order=week.asc"+(clauses.length?"&"+clauses.join("&"):""),token);
+  if(weekly.length)return{available:true,rows:weekly.map((r:any)=>({week:r.week,households:n(r.households),buyers:n(r.buyers),units:n(r.units),penetrationPct:r.penetration_pct==null?null:n(r.penetration_pct),frequency:r.purchase_frequency==null?null:n(r.purchase_frequency)})),provenance:{status:"synthetic",syntheticPanel:true,label:"Synthetic panel (illustrative only, not real household data)",actualWeeks:0,syntheticWeeks:new Set(weekly.map((r:any)=>String(r.week))).size,totalWeeks:new Set(weekly.map((r:any)=>String(r.week))).size},evidence:{source:"cpgist_panel_weekly (derived from panel_household_synthetic.csv)",grain:"brand-week panel aggregate",rowCount:weekly.length}};
+ }catch{}
  const rows=await getPaged("cpgist_panel_household?select=*&order=week.asc"+(clauses.length?"&"+clauses.join("&"):""),token);
  if(!rows.length)return{available:false,rows:[],warnings:["Synthetic panel data is not populated."]};
  const weeks=[...new Set(rows.map(r=>String(r.week)))].sort();
- const agg=weeks.map(w=>{const x=rows.filter(r=>String(r.week)===w),hh=new Set(x.map(r=>String(r.household_id)));const brands=new Set(x.map(r=>String(r.brand)));const units=x.reduce((s,r)=>s+n(r.units),0);return{week:w,households:hh.size,brands:brands.size,units,penetrationPct:hh.size?brands.size/hh.size*100:null,frequency:hh.size?units/hh.size:null}}); 
- return{available:true,rows:agg,provenance:{...provenance(rows,"week"),syntheticPanel:true,label:"Synthetic panel (illustrative only, not real household data)"},evidence:{source:"cpgist_panel_household",grain:"household-week",rowCount:rows.length}};
+ const agg=weeks.map(w=>{const x=rows.filter(r=>String(r.week)===w),hh=new Set(x.map(r=>String(r.household_id))),units=x.reduce((s,r)=>s+n(r.units),0);return{week:w,households:hh.size,buyers:hh.size,units,penetrationPct:hh.size?100:null,frequency:hh.size?units/hh.size:null}});
+ return{available:true,rows:agg,provenance:{status:"synthetic",syntheticPanel:true,label:"Synthetic panel (illustrative only, not real household data)",actualWeeks:0,syntheticWeeks:weeks.length,totalWeeks:weeks.length},evidence:{source:"cpgist_panel_household",grain:"household-week",rowCount:rows.length}};
 }
 
 async function macroOverlay(token:string,p:any){
