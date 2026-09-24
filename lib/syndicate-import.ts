@@ -514,7 +514,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     await scanCsv(categoryAggBytes,r=>rows.push({
       week:pick(r,"week"),category:pick(r,"category"),subcategory:pick(r,"subcategory")||"ALL_SUBCATEGORIES",region:pick(r,"region"),
       total_category_sales:num(r,"total_category_sales"),total_category_units:num(r,"total_category_units"),
-      brand_count_in_category:num(r,"brand_count_in_category"),is_actual:isActual(pick(r,"is_actual"))
+      brand_count_in_category:num(r,"brand_count_in_category"),is_actual:boolValue(pick(r,"is_actual","actual","observed"),true)
     }),progress);
     if(rows.length)await upsertBatches(sb,"cpgist_category_aggregates",rows,"week,category,subcategory,region",progress);
   }
@@ -553,7 +553,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     const rows:any[]=[];progress("Loading competitor_price_sales.csv…");
     await scanCsv(competitorPriceBytes,r=>{
       const w=pick(r,"week");if(!w||w<LATEST13_START)return;
-      rows.push({brand:pick(r,"competitor_brand","brand"),retailer:pick(r,"retailer"),region:pick(r,"region"),category:pick(r,"category"),week:w,sales:num(r,"price")*num(r,"units"),units:num(r,"units"),price:num(r,"price"),is_actual:isActual(pick(r,"is_actual"))});
+      rows.push({brand:pick(r,"competitor_brand","brand"),retailer:pick(r,"retailer"),region:pick(r,"region"),category:pick(r,"category"),week:w,sales:num(r,"price")*num(r,"units"),units:num(r,"units"),price:num(r,"price"),is_actual:boolValue(pick(r,"is_actual","actual","observed"),true)});
     },progress);
     if(rows.length)await upsertBatches(sb,"cpgist_competitor_price_sales",rows,"id",progress);
   }
