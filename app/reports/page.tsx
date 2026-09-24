@@ -177,6 +177,39 @@ function ReportsContent(){
     ];
     cols.forEach((col:any,i:number)=>{const x=.65+i*4.15;s.addShape(pptx.ShapeType.roundRect,{x,y:1.65,w:3.75,h:4.5,rectRadius:.04,fill:{color:soft},line:{color:line}});s.addText(col[0],{x:x+.25,y:1.95,w:3.2,h:.2,fontSize:8,bold:true,color:accent});col[1].forEach((t:string,j:number)=>s.addText("• "+t,{x:x+.25,y:2.45+j*.78,w:3.2,h:.48,fontSize:10,color:text,fit:"shrink"}));});
     note(s,"Method/window: latest 13W vs prior 13W; 26 completed weekly periods are shown. Use AI Analyst and the live report for deeper product, retailer and period drill-down.");s.addText("Live report: "+liveUrl,{x:9.0,y:6.18,w:3.0,h:.22,fontSize:6.5,bold:true,color:accent,fit:"shrink",align:"center"});footer(s);}
+   // 11 — Advanced Commercial Analytics
+   {const s=pptx.addSlide();addHeader(s,"Advanced Commercial Analytics");title(s,brandName,"Extended commercial diagnostics from the connected analytical layer.");kpis(s,[["Promo ROI",adv.promoLift?.summary?.roi==null?"—":Number(adv.promoLift.summary.roi).toFixed(2)+"x"],["Incremental sales",adv.promoLift?.summary?.incrementalSales==null?"—":money(adv.promoLift.summary.incrementalSales)],["Gross margin",adv.margin?.marginPercent==null?"—":Number(adv.margin.marginPercent).toFixed(1)+"%"],["Margin-at-risk SKUs",String(adv.margin?.marginAtRisk?.length||0)],["Launches tracked",String(adv.launchPerformance?.products?.length||0)]]);
+    const items:string[]=[];
+    items.push(adv.promoLift?.available?"Promotion economics: incremental sales, incremental margin and ROI are calculated from populated promotion/baseline/trade-spend/SKU sales records.":"Promotion economics: unavailable until promotion events, baseline sales, trade spend and SKU-level sales are populated.");
+    items.push(adv.skuGrowth?.products?.length?"SKU growth is calculated separately within actual and synthetic periods; actual weeks are never differenced against projected weeks.":"SKU growth is unavailable until product-weekly data is populated.");
+    items.push(adv.channelBreakdown?.length?"Channel performance is rolled up from retailer.channel rather than inferred from retailer names.":"Channel breakdown is unavailable until brand-retailer sales are populated.");
+    items.push(adv.margin?.available?"Margin-at-risk highlights high-sales SKUs with thin observed margin; it is a diagnostic screen, not a profitability forecast.":"Margin detail is unavailable until margin-bearing SKU/retailer rows are populated.");
+    bullets(s,items,.75,2.9,11.6);note(s,"Advanced metrics are source-dependent. CPGist shows unavailable states instead of fabricating values.");footer(s);}
+
+   // 12 — Launch, Shopper & Macro Context
+   {const s=pptx.addSlide();addHeader(s,"Launch & Context");title(s,brandName,"New-product performance plus clearly separated synthetic context layers.");
+    const launches=Array.isArray(adv.launchPerformance?.products)?adv.launchPerformance.products:[];const panelRows=Array.isArray(adv.syntheticPanel?.rows)?adv.syntheticPanel.rows:[];const macroRows=Array.isArray(adv.macroOverlay?.rows)?adv.macroOverlay.rows:[];
+    s.addShape(pptx.ShapeType.roundRect,{x:.65,y:1.65,w:5.95,h:4.55,rectRadius:.04,fill:{color:soft},line:{color:line}});
+    s.addText("NEW-PRODUCT / LAUNCH",{x:.95,y:1.95,w:3,h:.2,fontSize:8,bold:true,color:accent});
+    if(launches.length){launches.slice(0,5).forEach((p:any,i:number)=>{const w=p.weekly?.at(-1);const y=2.45+i*.65;s.addText(String(p.name||p.sku||"Product"),{x:.95,y,w:2.7,h:.25,fontSize:9,bold:true,color:text,fit:"shrink"});s.addText("Launch "+String(p.launchDate||"—"),{x:3.55,y,w:1.4,h:.22,fontSize:7,color:muted,fit:"shrink"});s.addText("Trial "+(w?.trialRate==null?"—":Number(w.trialRate).toFixed(1)+"%"),{x:4.95,y,w:1.1,h:.22,fontSize:7,color:text,fit:"shrink"});s.addText("Repeat "+(w?.repeatRate==null?"—":Number(w.repeatRate).toFixed(1)+"%"),{x:5.95,y,w:.55,h:.22,fontSize:6.5,color:text,fit:"shrink"});});}else s.addText("Launch tracking unavailable — no populated launch_date + trial_repeat records.",{x:.95,y:2.55,w:5.0,h:.55,fontSize:12,bold:true,color:muted,fit:"shrink"});
+    s.addText("Launch metrics use only products with a non-null launch_date.",{x:.95,y:5.72,w:4.9,h:.22,fontSize:7,color:muted,fit:"shrink"});
+    s.addShape(pptx.ShapeType.roundRect,{x:6.75,y:1.65,w:5.95,h:4.55,rectRadius:.04,fill:{color:soft},line:{color:line}});
+    s.addText("SYNTHETIC CONTEXT",{x:7.05,y:1.95,w:3,h:.2,fontSize:8,bold:true,color:accent});
+    s.addText("Synthetic panel (illustrative only, not real household data)",{x:7.05,y:2.42,w:5.1,h:.28,fontSize:11,bold:true,color:text,fit:"shrink"});
+    s.addText(panelRows.length?"Household penetration and purchase frequency are available in the synthetic panel layer.":"Synthetic panel records are not populated.",{x:7.05,y:2.85,w:5.0,h:.45,fontSize:10,color:muted,fit:"shrink"});
+    s.addText("Illustrative synthetic macro trend — not tied to real economic data",{x:7.05,y:3.65,w:5.1,h:.28,fontSize:11,bold:true,color:text,fit:"shrink"});
+    s.addText(macroRows.length?"Inflation and category-price index series can be overlaid as context.":"Macro signals are not populated.",{x:7.05,y:4.08,w:5.0,h:.45,fontSize:10,color:muted,fit:"shrink"});
+    s.addText("These layers are intentionally separated from POS-based business reporting.",{x:7.05,y:5.25,w:5.0,h:.42,fontSize:8,color:muted,fit:"shrink"});footer(s);}
+
+   // 13 — Methodology & Data Lineage
+   {const s=pptx.addSlide();addHeader(s,"Methodology & Data Lineage");title(s,brandName,"How CPGist computes and labels the extended business-review metrics.");
+    const cols=[
+      ["SOURCE LAYERS",["sales_weekly / cpgist_brand_weekly","product weekly + retailer weekly","promotion + baseline + trade spend","category_aggregates","launch + trial_repeat","synthetic panel + macro context"]],
+      ["CALCULATION RULES",["13W vs prior 13W for executive reporting","SKU growth only within the same is_actual status","Promotion ROI = incremental margin ÷ trade spend","Observed category is bounded by tracked category aggregates","Margin-at-risk = high-sales SKU with thin observed margin","Panel/macro outputs carry explicit synthetic labels"]],
+      ["DATA LINEAGE / QA",["is_actual is checked for every report view","Projected weeks are never called observed","Unavailable fields remain unavailable","Source scope and period coverage are shown in evidence","Exports link back to the live report","Synthetic panel is never presented as real household data"]]
+    ];
+    cols.forEach((col:any,i:number)=>{const x=.55+i*4.2;s.addShape(pptx.ShapeType.roundRect,{x,y:1.65,w:3.8,h:4.65,rectRadius:.04,fill:{color:soft},line:{color:line}});s.addText(col[0],{x:x+.25,y:1.95,w:3.25,h:.2,fontSize:8,bold:true,color:accent});col[1].forEach((t:string,j:number)=>s.addText("• "+t,{x:x+.25,y:2.42+j*.57,w:3.25,h:.38,fontSize:9,color:text,fit:"shrink"}));});
+    const prov=adv.provenance;note(s,prov?.label?prov.label+". Actual/projected status is computed from is_actual for this selected brand.":"No projected periods are present in the selected report window, or provenance is unavailable.");footer(s);}
    await pptx.writeFile({fileName:(d.scope==="brand"?String(d.brand.name).replace(/[^a-z0-9]+/gi,"_")+"_CPG_Business_Review":"CPGist_CPG_Business_Review")+".pptx"});
   }catch(e:any){alert("PowerPoint export failed: "+(e?.message||"Unknown error"))}
  }
