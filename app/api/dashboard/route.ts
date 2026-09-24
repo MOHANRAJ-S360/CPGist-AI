@@ -53,7 +53,7 @@ export async function GET(){
   // Pull only the latest 26 source periods, but paginate each table because
   // Supabase Free's REST API caps each response at 1,000 rows.
   const [brandRows,categoryRows,retailerRows,brands,retailers]=await Promise.all([
-   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate&week_ending=gte."+cutoff+"&order=week_ending.asc,brand_id.asc"),
+   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual&week_ending=gte."+cutoff+"&order=week_ending.asc,brand_id.asc"),
    getPaged("cpgist_category_weekly?select=category,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,category.asc"),
    getPaged("cpgist_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,retailer_id.asc"),
    get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000"),
@@ -69,6 +69,9 @@ export async function GET(){
   const priorPeriods=periods.slice(-26,-13);
   const latestSet=new Set<string>(latestPeriods),priorSet=new Set<string>(priorPeriods);
   const periodStart=periods[0],periodEnd=periods.at(-1);
+  const actualPeriods=periods.filter(p=>brandRows.filter((r:any)=>String(r.week_ending)===p).every((r:any)=>r.is_actual===true));
+  const syntheticPeriods=periods.filter(p=>brandRows.filter((r:any)=>String(r.week_ending)===p).some((r:any)=>r.is_actual===false));
+  const provenance={actualWeeks:actualPeriods.length,syntheticWeeks:syntheticPeriods.length,totalWeeks:periods.length,status:syntheticPeriods.length?"mixed":"actual",label:syntheticPeriods.length?syntheticPeriods.length+" of "+periods.length+" weeks in this view are projected, not observed":null,sourceOfTruth:"is_actual"};
 
   const agg=(rows:any[],periodSet:Set<string>)=>{
    const scoped=rows.filter((r:any)=>periodSet.has(String(r.week_ending)));
@@ -86,7 +89,8 @@ export async function GET(){
     period:p,
     label:new Date(p+"T00:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric"}),
     sales:rs.reduce((a:number,r:any)=>a+n(r.sales),0),
-    units:rs.reduce((a:number,r:any)=>a+n(r.units),0)
+    units:rs.reduce((a:number,r:any)=>a+n(r.units),0),
+    is_actual:rs.every((r:any)=>r.is_actual===true)?true:(rs.some((r:any)=>r.is_actual===false)?false:null)
    };
   });
 
@@ -168,6 +172,7 @@ export async function GET(){
    avgDistribution:latest.avgDistribution,
    promoRate:null,
    growth:growth(latest.sales,prior.sales),
+   provenance,
    alerts,
    weekly,
    topBrands,
