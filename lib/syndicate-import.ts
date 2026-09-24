@@ -316,6 +316,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
 
 
 
+// Extended Dataset v3 merge path: stream large CSVs and populate compact + advanced tables.
 async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8Array>,progress:Progress){
   const B=(n:string)=>entryExact(zip,n);
   const brandsBytes=B("brands.csv"),retailersBytes=B("retailers.csv"),productsBytes=B("products.csv"),salesBytes=B("sales_weekly.csv"),baselineBytes=B("baseline_sales.csv"),promoBytes=B("promotion.csv"),tradeBytes=B("trade_spend.csv");
