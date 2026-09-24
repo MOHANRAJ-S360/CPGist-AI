@@ -15,8 +15,7 @@ export function actualSyntheticProvenance(rows:AdvancedRow[], dateStart?:string|
     const w=String(r.week ?? r.week_ending ?? "");
     if(!w)return;
     if(!byWeek.has(w))byWeek.set(w,new Set());
-    if(r.is_actual === true) byWeek.get(w)!.add(true);
-    else if(r.is_actual === false) byWeek.get(w)!.add(false);
+    byWeek.get(w)!.add(isActual(r.is_actual));
   });
   const periods=[...byWeek.keys()].sort();
   const actual=periods.filter(w=>byWeek.get(w)?.has(true) && !byWeek.get(w)?.has(false));
@@ -99,7 +98,9 @@ export function getCategoryContext(categoryRows:AdvancedRow[], brandRows:Advance
 }
 
 export function getChannelBreakdown(rows:AdvancedRow[], retailers:AdvancedRow[], periods?:string[], statusFilter?:boolean) {
-  const scoped=periods?.length?rows.filter(r=>periods.includes(String(r.week_ending)) && (isActual==null || isActual(r.is_actual)===isActual)):rows.filter(r=>isActual==null || r.is_actual===isActual);
+  const scoped=periods?.length
+    ? rows.filter(r=>periods.includes(String(r.week_ending)) && (statusFilter==null || isActual(r.is_actual)===statusFilter))
+    : rows.filter(r=>statusFilter==null || isActual(r.is_actual)===statusFilter);
   const names=new Map(retailers.map(r=>[String(r.id),r]));
   const map=new Map<string,{channel:string;sales:number;units:number;distributionSum:number;distributionCount:number;retailers:Set<string>}>();
   scoped.forEach(r=>{
@@ -182,7 +183,7 @@ export function getPromoLift(events:AdvancedRow[], salesRows:AdvancedRow[], base
       return {sales,base};
     };
     const eventActual=isActual(e.is_actual),preferred=matchesFor(eventActual),alternate=matchesFor(!eventActual);
-    const chosen=preferred.sales.length&&preferred.base.length?{...preferred,status:e.is_actual===true}:alternate.sales.length&&alternate.base.length?{...alternate,status:e.is_actual!==true}:null;
+    const chosen=preferred.sales.length&&preferred.base.length?{...preferred,status:eventActual}:alternate.sales.length&&alternate.base.length?{...alternate,status:!eventActual}:null;
     const relevant=chosen?.sales||[],baseRows=chosen?.base||[];
     const actualSales=relevant.reduce((s,r)=>s+n(r.sales),0),actualUnits=relevant.reduce((s,r)=>s+n(r.units),0),actualMargin=relevant.reduce((s,r)=>s+n(r.gross_margin),0);
     const baselineSales=baseRows.reduce((s,r)=>s+n(r.baseline_sales),0)||n(e.baseline_units)*n(e.promo_price);
