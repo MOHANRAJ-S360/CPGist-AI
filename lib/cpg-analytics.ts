@@ -47,6 +47,51 @@ export const CPG_TOOLS = [
   },
 
   {
+    name: "promo_lift",
+    description: "Calculate promotion-event incremental sales, incremental margin and ROI from promotion, baseline, sales and trade-spend evidence. Use for promo ROI/effectiveness questions. Only report event-level ROI when the required fields are populated; otherwise return the evidence-safe aggregate fallback.",
+    parameters: {
+      type: "object",
+      properties: {...params.properties, sku: nullableString("Optional SKU/product identifier.")},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "sku_growth",
+    description: "Calculate SKU/product period-over-period and YoY growth from product-weekly time series. Never compare actual weeks with synthetic weeks; use same-is_actual status periods only.",
+    parameters: params,
+  },
+  {
+    name: "category_context",
+    description: "Calculate observed category sales/growth, selected-brand share and brand growth versus category growth using category aggregates. Explicitly label this as observed category coverage, not total market category.",
+    parameters: {...params, additionalProperties:false},
+  },
+  {
+    name: "channel_breakdown",
+    description: "Roll retailer performance into retailer channel using the retailer channel master. Supports questions such as how e-commerce, grocery, mass, club, drug, convenience or specialty are performing.",
+    parameters: params,
+  },
+  {
+    name: "margin_report",
+    description: "Analyze sales, gross-margin dollars and margin-percent movement. Surface margin-at-risk only where SKU/retailer margin fields are actually populated.",
+    parameters: params,
+  },
+  {
+    name: "launch_performance",
+    description: "Analyze new-product launch performance using non-null launch_date plus trial/repeat measures. Use for questions about new product trial, repeat and post-launch performance.",
+    parameters: {...params, additionalProperties:false},
+  },
+  {
+    name: "panel_report",
+    description: "Calculate household penetration and purchase frequency from the synthetic panel layer. Every response must visibly say: Synthetic panel (illustrative only, not real household data).",
+    parameters: params,
+  },
+  {
+    name: "macro_overlay",
+    description: "Add the illustrative synthetic macro trend as an optional overlay to trend analysis. Always label it as illustrative synthetic macro trend, not real economic data.",
+    parameters: params,
+  },
+
+  {
     name: "data_readiness",
     description: "Check which CPG data domains are currently populated before answering a question. Use this when the requested analysis may depend on pricing, promotion, retailer opportunity, product/SKU, inventory, profitability, geography, competition, or shopper data.",
     parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
