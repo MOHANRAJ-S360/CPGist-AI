@@ -341,7 +341,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
 
   const products=parseSmall(productsBytes).map(r=>({
     id:id(r,"id","product_id","sku_id"),brand_id:id(r,"brand_id"),name:pick(r,"name","product_name","sku_name")||"Unnamed product",
-    sku:pick(r,"sku","sku_code","product_code")||null,category:pick(r,"category")||null,
+    sku:pick(r,"sku","sku_code","product_code")||([pick(r,"product_name","name","sku_name"),pick(r,"pack_size","size")].filter(Boolean).join(" ").trim()||null),category:pick(r,"category")||null,
     subcategory:pick(r,"subcategory")||null,size:pick(r,"size","pack_size")||null,pack_count:null,
     launch_date:pick(r,"launch_date")||null
   })).filter(x=>x.id&&x.name);
