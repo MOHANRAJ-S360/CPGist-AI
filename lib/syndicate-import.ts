@@ -390,7 +390,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     if(product&&retailer&&w>=DETAIL_START){
       const k=product.id+"|"+retailer.id+"|"+w;
       const q=agg(detail,k,{product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,cost:0,margin:0,marginPct:0,marginPctN:0,reg:0,act:0,is_actual:actual});
-      q.sales+=sales;q.units+=units;q.dist+=dist;q.n++;if(promo)q.promo++;q.cost+=cost*units;q.margin+=margin;q.reg+=reg*units;q.act+=act*units;q.is_actual=actual;if(marginPct){q.marginPct+=marginPct;q.marginPctN++
+      q.sales+=sales;q.units+=units;q.dist+=dist;q.n++;if(promo)q.promo++;q.cost+=cost*units;q.margin+=margin;q.reg+=reg*units;q.act+=act*units;q.is_actual=actual;if(marginPct){q.marginPct+=marginPct;q.marginPctN++}
     }
 
     const bc=agg(BCA,brand.id+"|"+category+"|"+w,{brand_id:brand.id,category,week_ending:w,sales:0,units:0,dist:0,n:0,is_actual:actual});
