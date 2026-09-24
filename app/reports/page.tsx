@@ -120,7 +120,7 @@ function ReportsContent(){
     bullets(s,[
       "Realized price = latest 13W sales divided by latest 13W units for the selected brand.",
       d.promoRate==null?"Promotion rate is unavailable in the current report scope.":"Promotion activity is observed at "+Number(d.promoRate).toFixed(1)+"% in the latest 13 weeks.",
-      "The current report does not estimate incremental promotional lift, ROI, trade-spend return or learned causal price elasticity.",
+      "Promotion economics are "+(adv.promoLift?.available?"available from populated event-level data; ROI is incremental margin divided by trade spend.":"not yet available because the required promotion/baseline/trade-spend/SKU fields are not populated.")+" Learned causal price elasticity remains outside the current model.",
       d.growth!=null&&Number(d.growth)<0?"Negative sales growth should be tested against distribution, price, promotion and retailer mix rather than assigned to one cause.":"Positive sales growth should be tested against distribution, price, promotion and retailer mix before attributing a driver."
      ],.75,2.85,11.5);note(s,"Driver signals are descriptive. Causal effectiveness is intentionally not inferred from the available fields.");footer(s);}
 
@@ -151,8 +151,9 @@ function ReportsContent(){
     if(d.avgDistribution!=null&&Number(d.avgDistribution)<50)risks.push("Average distribution is "+Number(d.avgDistribution).toFixed(1)+"%; distribution may warrant deeper retailer-level investigation.");
     if(!d.metrics?.categoryGrowth)risks.push("Category growth is unavailable, limiting separation of brand-specific movement from category movement.");
     if(!signals.length)if(!(Array.isArray(d.competitivePeers)&&d.competitivePeers.length))risks.push("Validated competitive comparison is unavailable for this category in the connected source.");
-    risks.push("SKU growth/decline is unavailable from the current 13W product summary; product-level trend conclusions should not be fabricated.");
-    risks.push("The current dataset does not establish causal promotion lift, price elasticity or ROI.");
+    if(!adv.skuGrowth?.products?.length) risks.push("SKU growth/decline is unavailable until product-weekly history is populated; product-level trend conclusions should not be fabricated.");
+    if(!adv.promoLift?.available) risks.push("Promotion lift/ROI is unavailable until promotion events, baseline sales, trade spend and SKU-level gross-margin data are populated.");
+    risks.push("Learned causal price elasticity is not estimated by the current analytical layer.");
     bullets(s,risks,.75,1.90,11.6);s.addShape(pptx.ShapeType.roundRect,{x:.7,y:5.55,w:11.8,h:.72,rectRadius:.03,fill:{color:soft},line:{color:line}});s.addText("DATA / LINEAGE",{x:.9,y:5.75,w:1.35,h:.16,fontSize:7,bold:true,color:accent});s.addText("Currency display: USD; no FX normalization method is exposed. "+(geoValues.length?"Observed geography: "+geoValues.slice(0,4).join(", ")+(geoValues.length>4?" + additional markets":"")+".":"Geography detail is not populated in the connected retailer master."),{x:2.2,y:5.68,w:10,h:.30,fontSize:7.2,color:muted,fit:"shrink"});note(s,"Source lineage: CPGist compact master + weekly tables → deterministic aligned-period calculations → client deck. Default window: latest 13W vs prior 13W.");footer(s);}
 
    // 10 — Management Actions
