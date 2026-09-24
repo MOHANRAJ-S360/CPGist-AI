@@ -44,7 +44,7 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
   let rows=0;
   for(let i=0;i<bytes.length;i++){
     const c=bytes[i];
-    if((i&0xFFFFF)===0&&i>0)await new Promise<void>(resolve=>setTimeout(resolve,0));
+    if((i&0x3FFFF)===0&&i>0)await new Promise<void>(resolve=>setTimeout(resolve,0));
     if(c===34){if(quoted&&bytes[i+1]===34)i++;else quoted=!quoted;continue;}
     if(c===44&&!quoted){emit(i);continue;}
     if((c===10||c===13)&&!quoted){
@@ -53,7 +53,7 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
       else if(row.length&&row.some(Boolean)){
         const r:Row={};headers.forEach((h,j)=>r[h]=String(row[j]??"").trim());onRow(r,headers);rows++;
         if(progress&&rows%100000===0)progress(`Scanned ${rows.toLocaleString()} rows…`);
-        if(rows%25000===0)await new Promise<void>(resolve=>setTimeout(resolve,0));
+        if(rows%5000===0)await new Promise<void>(resolve=>setTimeout(resolve,0));
       }
       row=[];
       if(c===13&&bytes[i+1]===10)i++;
