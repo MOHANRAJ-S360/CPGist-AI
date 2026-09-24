@@ -27,8 +27,8 @@ export default function AdvancedAnalytics(){
  const promoBars=useMemo(()=>((d?.promoLift?.byPromoType||[]).slice(0,8).map((x:any)=>({label:String(x.key||"Unknown"),value:Math.max(0,n(x.roi))}))),[d]);
  const syntheticLatest=useMemo(()=>{const rows=d?.syntheticPanel?.rows||[];return rows.at(-1)||null},[d]);
  const macroPoints=useMemo(()=>{const rows=d?.macroOverlay?.rows||[];return rows.slice(-26).map((x:any)=>({label:String(x.week||"").slice(5),value:n(x.inflationIndex)}))},[d]);
- const skuRows=(d?.skuGrowth?.products||[]).filter((x:any)=>x.is_actual===false).slice(0,10);
- const actualSkuRows=(d?.skuGrowth?.products||[]).filter((x:any)=>x.is_actual===true).slice(0,10);
+ const skuRows=(d?.skuGrowth?.products||[]).filter((x:any)=>String(x.is_actual).toLowerCase()==="false").slice(0,10);
+ const actualSkuRows=(d?.skuGrowth?.products||[]).filter((x:any)=>String(x.is_actual).toLowerCase()==="true").slice(0,10);
 
  return <AppShell title="Advanced Analytics" subtitle="Commercial diagnostics from the connected CPGist analytical layer"><section className="content">
   <div className="intro"><div><div className="muted">ADVANCED ANALYTICS</div><h1>Go from reporting to commercial diagnostics.</h1><p>Promotion economics, SKU momentum, category context, channel, margin, launches and clearly separated synthetic context.</p></div><div className="scope-badge">Evidence-first · source anchored</div></div>
