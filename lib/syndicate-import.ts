@@ -589,16 +589,18 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     sb.from("cpgist_product_summary").select("product_id",{count:"exact",head:true}),
     sb.from("cpgist_brand_retailer_summary").select("brand_id",{count:"exact",head:true}),
     sb.from("cpgist_promotion_events").select("promotion_id",{count:"exact",head:true}),
+    sb.from("cpgist_baseline_sales").select("id",{count:"exact",head:true}),
+    sb.from("cpgist_trade_spend").select("id",{count:"exact",head:true}),
     sb.from("cpgist_category_aggregates").select("week",{count:"exact",head:true}),
     sb.from("cpgist_product_weekly").select("product_id",{count:"exact",head:true}),
     sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true})
   ]);
   const bad=checks.find(x=>x.error);if(bad?.error)throw new Error("Import verification failed: "+bad.error.message);
   const counts=checks.map(x=>x.count||0);
-  if(!counts[0]||!counts[1]||!counts[2]||!counts[3]||!counts[4]||!counts[5]||!counts[6]||!counts[7]||!counts[8]||!counts[9]){
-    throw new Error("Import verification failed: one or more compact/extended analytical tables are empty.");
+  if(!counts[0]||!counts[1]||!counts[2]||!counts[3]||!counts[4]||!counts[5]||!counts[6]||!counts[7]||!counts[8]||!counts[9]||!counts[10]||!counts[11]){
+    throw new Error("Import verification failed: one or more compact/extended analytical tables are empty. The ZIP was accepted, but the required analytical layer is incomplete, so the import is not treated as successful.");
   }
-  progress("Verified live database: "+counts[0].toLocaleString()+" brands · "+counts[1].toLocaleString()+" retailers · "+counts[2].toLocaleString()+" products · "+counts[3].toLocaleString()+" brand-weeks · "+counts[4].toLocaleString()+" product summaries · "+counts[5].toLocaleString()+" retailer summaries · "+counts[6].toLocaleString()+" promotion events · "+counts[7].toLocaleString()+" category aggregates.");
+  progress("Verified live database: "+counts[0].toLocaleString()+" brands · "+counts[1].toLocaleString()+" retailers · "+counts[2].toLocaleString()+" products · "+counts[3].toLocaleString()+" brand-weeks · "+counts[4].toLocaleString()+" product summaries · "+counts[5].toLocaleString()+" retailer summaries · "+counts[6].toLocaleString()+" promotion events · "+counts[7].toLocaleString()+" baseline rows · "+counts[8].toLocaleString()+" trade-spend rows · "+counts[9].toLocaleString()+" category aggregates.");
   return {
     type:"combined",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,
     brandWeeks:brandRows.length,categoryWeeks:CA.size,retailerWeeks:RA.size,productWeeks:productWeekly.length,brandRetailerWeeks:brandRetailerWeekly.length,
