@@ -53,7 +53,7 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
       else if(row.length&&row.some(Boolean)){
         const r:Row={};headers.forEach((h,j)=>r[h]=String(row[j]??"").trim());onRow(r,headers);rows++;
         if(progress&&rows%100000===0)progress(`Scanned ${rows.toLocaleString()} rows…`);
-        if(rows%5000===0)await new Promise<void>(resolve=>setTimeout(resolve,0));
+        if(rows%20000===0)await new Promise<void>(resolve=>setTimeout(resolve,0));
       }
       row=[];
       if(c===13&&bytes[i+1]===10)i++;
@@ -67,7 +67,7 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
   }
 }
 async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:string,progress:Progress){
-  const size=500;
+  const size=2000;
   for(let i=0;i<rows.length;i+=size){
     const batch=rows.slice(i,i+size);
     let last="";
@@ -365,7 +365,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   const detail=new Map<string,any>();
   const weeks=new Set<string>();
   const agg=(m:Map<string,any>,k:string,s:any)=>{let x=m.get(k);if(!x){x={...s};m.set(k,x)}return x};
-  const isActual=(v:any)=>String(v??"").toLowerCase()==="true";
+  const isActual=(v:any)=>{const s=String(v??"").trim().toLowerCase();if(["true","1","yes","y","actual","observed"].includes(s))return true;if(["false","0","no","n","synthetic","projected","forecast"].includes(s))return false;return null;};
 
   progress("Streaming sales_weekly.csv and building the compact analytical layer…");
   await scanCsv(salesBytes,r=>{
@@ -441,8 +441,8 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   const brandRetailerWeeklyMap=new Map<string,any>();
   for(const x of detail.values()){
     const k=x.brand_id+"|"+x.retailer_id+"|"+x.week_ending;
-    const q=agg(brandRetailerWeeklyMap,k,{brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,week_ending:x.week_ending,sales:0,units:0,dist:0,n:0,promo:0,cost:0,margin:0,reg:0,act:0});
-    q.sales+=x.sales;q.units+=x.units;q.dist+=x.dist;q.n+=x.n;q.promo+=x.promo;q.cost+=x.cost;q.margin+=x.margin;q.reg+=x.reg;q.act+=x.act;
+    const q=agg(brandRetailerWeeklyMap,k,{brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,week_ending:x.week_ending,sales:0,units:0,dist:0,n:0,promo:0,cost:0,margin:0,reg:0,act:0,is_actual:x.is_actual});
+    q.sales+=x.sales;q.units+=x.units;q.dist+=x.dist;q.n+=x.n;q.promo+=x.promo;q.cost+=x.cost;q.margin+=x.margin;q.reg+=x.reg;q.act+=x.act;if(q.is_actual===null||q.is_actual===undefined)q.is_actual=x.is_actual;
   }
   const brandRetailerWeekly=[...brandRetailerWeeklyMap.values()].map(x=>({
     brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,week_ending:x.week_ending,sales:x.sales,units:x.units,
@@ -465,7 +465,6 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   await upsertBatches(sb,"cpgist_brand_retailer_summary",[...retailerSummaryMap.values()].map(x=>({brand_id:x.brand_id,retailer_id:x.retailer_id,category:x.category,period_end:x.period_end,sales_13w:x.sales,units_13w:x.units,avg_price_13w:x.units?x.sales/x.units:null,distribution_13w:x.n?x.dist/x.n:null,promo_rate_13w:x.n?x.promo/x.n*100:null})),"brand_id,retailer_id",progress);
 
   // Baseline rows are kept for the latest 13 weeks, matching the active commercial diagnostics window.
-  const baselineRows:any[]=[];
   const baselineMap=new Map<string,any>();
   progress("Streaming baseline_sales.csv…");
   await scanCsv(baselineBytes,r=>{
@@ -473,10 +472,11 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     const product=resolveProduct(pick(r,"sku")),brand=resolveBrand(pick(r,"brand")),retailer=resolveRetailer(pick(r,"retailer"));
     if(!product||!brand||!retailer)return;
     const bu=num(r,"baseline_units"),bs=num(r,"baseline_sales");
-    baselineRows.push({product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week:w,baseline_sales:bs,baseline_units:bu,is_actual:isActual(pick(r,"is_actual"))});
-    baselineMap.set(product.id+"|"+retailer.id+"|"+w,{baseline_sales:bs,baseline_units:bu});
+    const key=product.id+"|"+brand.id+"|"+retailer.id+"|"+w;
+    baselineMap.set(key,{product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week:w,baseline_sales:bs,baseline_units:bu,is_actual:isActual(pick(r,"is_actual"))});
   },progress);
-  if(baselineRows.length)await upsertBatches(sb,"cpgist_baseline_sales",baselineRows,"id",progress);
+  const baselineRows=[...baselineMap.values()];
+  if(baselineRows.length){progress("Loading baseline_sales: "+baselineRows.length.toLocaleString()+" unique product/brand/retailer-weeks…");await upsertBatches(sb,"cpgist_baseline_sales",baselineRows,"id",progress);}
 
   const tradeRows:any[]=[];const tradeByPromo=new Map<string,number>();
   progress("Streaming trade_spend.csv…");
@@ -490,7 +490,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
 
   // Promotion events are populated from the actual event file and enriched with the matching
   // SKU/retailer sales + baseline + trade-spend records for the same start week.
-  const promotionRows:any[]=[];
+  const promotionMap=new Map<string,any>();
   progress("Streaming promotion.csv and merging event-level commercial fields…");
   await scanCsv(promoBytes,r=>{
     const w=pick(r,"start_date");if(!w||w<LATEST13_START)return;
@@ -498,8 +498,10 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     if(!product||!brand||!retailer)return;
     const k=product.id+"|"+retailer.id+"|"+w,baseRow=baselineMap.get(k),detailRow=detail.get(k);
     const promoUnits=detailRow?.units??0, promoSales=detailRow?.sales??0, baselineUnits=baseRow?.baseline_units??0, baselineSales=baseRow?.baseline_sales??0;
-    promotionRows.push({
-      promotion_id:pick(r,"promotion_id"),date_start:w,date_end:pick(r,"end_date")||w,product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,
+    const promotionId=pick(r,"promotion_id");
+    if(!promotionId)return;
+    promotionMap.set(promotionId,{
+      promotion_id:promotionId,date_start:w,date_end:pick(r,"end_date")||w,product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,
       promo_type:pick(r,"promo_type")||null,feature_flag:pick(r,"feature_flag")==="1",display_flag:pick(r,"display_flag")==="1",
       endcap_flag:false,coupon_flag:false,digital_flag:false,discount_pct:num(r,"discount_percent")||null,promo_price:num(r,"promo_price")||null,
       baseline_units:baselineUnits||null,promo_units:promoUnits||null,incremental_units:promoUnits-baselineUnits,
@@ -507,6 +509,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
       is_actual:boolValue(pick(r,"is_actual","actual","observed"),true)
     });
   },progress);
+  const promotionRows=[...promotionMap.values()];
   if(promotionRows.length)await upsertBatches(sb,"cpgist_promotion_events",promotionRows,"promotion_id",progress);
 
   if(categoryAggBytes){
