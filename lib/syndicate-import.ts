@@ -1,4 +1,4 @@
-import { unzip, strFromU8 } from "fflate";
+import { Unzip, AsyncUnzipInflate, strFromU8 } from "fflate";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Row = Record<string,string>;
@@ -592,12 +592,42 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   };
 }
 
-function unzipInWorker(bytes:Uint8Array,_wanted:string[]):Promise<Record<string,Uint8Array>>{
-  return new Promise((resolve,reject)=>{
-    try{
-      unzip(bytes,(err,data)=>{if(err)reject(err);else resolve(data as Record<string,Uint8Array>);});
-    }catch(err){reject(err)}
+async function unzipFiltered(file:File,wanted:string[]):Promise<Record<string,Uint8Array>>{
+  const wantedSet=new Set(wanted.map(x=>x.toLowerCase()));
+  const parts=new Map<string,Uint8Array[]>();
+  const totals=new Map<string,number>();
+  const pending:Promise<void>[]=[];
+  const unzipper=new Unzip(stream=>{
+    const name=basename(stream.name);
+    if(!wantedSet.has(name.toLowerCase()))return;
+    pending.push(new Promise<void>((resolve,reject)=>{
+      const chunks:Uint8Array[]=[];
+      let total=0;
+      stream.ondata=(err,dat,final)=>{
+        if(err){reject(err);return;}
+        if(dat){chunks.push(dat);total+=dat.byteLength;}
+        if(final){parts.set(name,chunks);totals.set(name,total);resolve();}
+      };
+      try{stream.start();}catch(err){reject(err);}
+    }));
   });
+  unzipper.register(AsyncUnzipInflate);
+  const chunkSize=4*1024*1024;
+  for(let offset=0;offset<file.size;offset+=chunkSize){
+    const end=Math.min(file.size,offset+chunkSize);
+    const chunk=new Uint8Array(await file.slice(offset,end).arrayBuffer());
+    unzipper.push(chunk,end>=file.size);
+  }
+  await Promise.all(pending);
+  const out:Record<string,Uint8Array>={};
+  for(const [name,chunks] of parts){
+    const total=totals.get(name)||0;
+    const bytes=new Uint8Array(total);
+    let offset=0;
+    for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+    out[name]=bytes;
+  }
+  return out;
 }
 
 export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
@@ -606,9 +636,8 @@ export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Prog
   progress(`Reading ${file.name} without blocking the page…`);
   let zip:Record<string,Uint8Array>;
   try{
-    const bytes=new Uint8Array(await file.arrayBuffer());
     const wanted=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv","category_aggregates.csv","trial_repeat.csv","panel_household_synthetic.csv","macro_signals.csv","competitor_price_sales.csv","brand_relationships.csv"];
-    zip=await unzipInWorker(bytes,wanted);
+    zip=await unzipFiltered(file,wanted);
   }catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
   const names=Object.keys(zip);
   const combinedCore=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv"].every(n=>names.some(x=>basename(x).toLowerCase()===n.toLowerCase()));
