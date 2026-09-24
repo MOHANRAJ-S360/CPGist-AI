@@ -39,23 +39,31 @@ export async function GET(req:NextRequest){
   const provenance=actualSyntheticProvenance(brandRows,startDate||null,endDate||null);
   const brandPeriods=[...new Set(brandRows.map(r=>String(r.week_ending)).filter(Boolean))].sort();
   const brandLatest=brandPeriods.slice(-13),brandPrior=brandPeriods.slice(-26,-13);
+  const latestStatusRows=brandRows.filter(r=>brandLatest.includes(String(r.week_ending)));
+  const selectedStatus=latestStatusRows.length>0 && latestStatusRows.some(r=>r.is_actual===false)?false:true;
   const sumBrand=(periods:string[])=>brandRows.filter(r=>periods.includes(String(r.week_ending))).reduce((s,r)=>s+Number(r.sales||0),0);
-  const brandSummary={latestSales:sumBrand(brandLatest),priorSales:sumBrand(brandPrior),growthPct:sumBrand(brandPrior)?(sumBrand(brandLatest)/sumBrand(brandPrior)-1)*100:null,latestPeriodCount:brandLatest.length,priorPeriodCount:brandPrior.length};
+  const brandSummary={latestSales:sumBrand(brandLatest),priorSales:sumBrand(brandPrior),growthPct:sumBrand(brandPrior)?(sumBrand(brandLatest)/sumBrand(brandPrior)-1)*100:null,latestPeriodCount:brandLatest.length,priorPeriodCount:brandPrior.length,status:selectedStatus?"projected":"actual"};
   const promoLift=getPromoLift(events,productWeekly,baseline,trade);
   const skuGrowth=getSkuGrowth(productWeekly);
-  const categoryContextRows=categoryRows.length?categoryRows:categoryWeekly.map(r=>({week:r.week_ending,category:r.category,subcategory:"ALL",region:"ALL",total_category_sales:r.sales,total_category_units:r.units,brand_count_in_category:null,is_actual:r.is_actual}));
+
+  const normalizedCategoryAgg=categoryRows.map(r=>({week_ending:r.week,category:r.category,subcategory:r.subcategory,region:r.region,total_category_sales:r.total_category_sales,total_category_units:r.total_category_units,brand_count_in_category:r.brand_count_in_category,is_actual:r.is_actual}));
+  const weeklyCategoryRows=categoryWeekly.map(r=>({week_ending:r.week_ending,category:r.category,subcategory:"ALL",region:"ALL",total_category_sales:r.sales,total_category_units:r.units,brand_count_in_category:null,is_actual:r.is_actual}));
+  const categoryCandidates=[normalizedCategoryAgg,weeklyCategoryRows];
+  const categoryContextRows=categoryCandidates.find(rows=>rows.filter(r=>r.is_actual===selectedStatus).length>0)||weeklyCategoryRows;
   const categoryContext=getCategoryContext(categoryContextRows,brandRows,brandId);
-  const channelBreakdown=getChannelBreakdown(retailerSummary,retailerMaster);
-  const margin=getMarginPnl(productWeekly.length?productWeekly:brandRows,productMaster,retailerMaster);
+
+  const channelBreakdown=getChannelBreakdown(retailerSummary,retailerMaster,brandLatest,selectedStatus);
+  const marginRows=productWeekly.filter(r=>brandLatest.includes(String(r.week_ending))&&r.is_actual===selectedStatus);
+  const margin=getMarginPnl(marginRows.length?marginRows:productWeekly.filter(r=>brandLatest.includes(String(r.week_ending))),productMaster,retailerMaster);
   const launch=getLaunchPerformance(productMaster,trial,productWeekly);
   const panelInsight=getSyntheticPanel(panel);
   const macroOverlay=getMacroOverlay(macro);
 
   const warnings:string[]=[];
   if(provenance.label)warnings.push(provenance.label+"; projected weeks are derived from is_actual and are not observed.");
-  if(!promoLift.available)warnings.push("Promotion economics are unavailable until promotion events, baseline sales, trade spend and SKU-level sales are populated.");
+  if(!promoLift.available)warnings.push("Promotion economics are unavailable until promotion events have aligned same-status sales and baseline evidence.");
   if(!skuGrowth.products.length)warnings.push("SKU growth is unavailable until product-weekly sales are populated.");
-  if(!categoryContext.available)warnings.push("Observed category context is unavailable because neither category_aggregates nor category_weekly contains a complete 13W + prior-13W window.");
+  if(!categoryContext.available)warnings.push("Category context is unavailable because no category source contains a complete 13W + prior-13W window aligned to the selected brand status.");
   if(!channelBreakdown.length)warnings.push("Channel breakdown is unavailable until retailer-level brand sales are populated.");
   if(!margin.available)warnings.push("SKU/retailer margin detail is unavailable until margin-bearing weekly rows are populated.");
   if(!launch.available)warnings.push("Launch tracking is unavailable until products have launch_date and matching trial_repeat records.");
