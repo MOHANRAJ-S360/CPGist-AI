@@ -1,7 +1,8 @@
 "use client";
 
 import {useEffect,useMemo,useState} from "react";
-import {BarChart3,ChevronDown,Info,ShieldCheck,TrendingUp} from "lucide-react";
+import {Search,Check,BarChart3,ChevronDown,Info,ShieldCheck,TrendingUp} from "lucide-react";
+import {useRouter} from "next/navigation";
 import {AppShell} from "../../components/app-shell";
 import {BarChart,LineChart} from "../../components/cpg-charts";
 import {supabaseBrowser} from "../../lib/supabase-browser";
@@ -11,8 +12,15 @@ const money=(v:any)=>v==null?"—":new Intl.NumberFormat("en-US",{style:"currenc
 const pct=(v:any)=>v==null?"—":(n(v)>=0?"+":"")+n(v).toFixed(1)+"%";
 
 export default function AdvancedAnalytics(){
- const [brands,setBrands]=useState<any[]>([]),[brandId,setBrandId]=useState(""),[d,setD]=useState<any>(null),[loading,setLoading]=useState(false),[error,setError]=useState("");
- useEffect(()=>{(async()=>{try{const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)return;const r=await fetch("/api/explorer?entity=brand&limit=5000",{headers:{Authorization:"Bearer "+session.access_token},cache:"no-store"});const x=await r.json();setBrands(x.results||[])}catch(e:any){setError(e?.message||"Brand directory failed.")}})()},[]);
+ const [brands,setBrands]=useState<any[]>([]),[brandId,setBrandId]=useState(""),[d,setD]=useState<any>(null),[loading,setLoading]=useState(false),[error,setError]=useState(""),[brandQuery,setBrandQuery]=useState(""),[brandMenuOpen,setBrandMenuOpen]=useState(false);
+ const router=useRouter();
+ const selectedBrand=useMemo(()=>brands.find(b=>String(b.id)===String(brandId)),[brands,brandId]);
+ const filteredBrands=useMemo(()=>{
+   const q=brandQuery.trim().toLowerCase();
+   if(!q)return brands;
+   return brands.filter(b=>String(b.name||"").toLowerCase().includes(q)||String(b.category||"").toLowerCase().includes(q)||String(b.parent_company||"").toLowerCase().includes(q));
+ },[brands,brandQuery]);
+ useEffect(()=>{(async()=>{try{const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)return;const r=await fetch("/api/explorer?entity=brand&limit=5000",{headers:{Authorization:"Bearer "+session.access_token},cache:"no-store"});const x=await r.json();setBrands(Array.isArray(x.results)?x.results:[])}catch(e:any){setError(e?.message||"Brand directory failed.")}})()},[]);
  useEffect(()=>{const fromUrl=typeof window!=="undefined"?new URLSearchParams(window.location.search).get("brand_id"):null;if(fromUrl)setBrandId(fromUrl)},[]);
  useEffect(()=>{if(!brandId)return;let live=true;(async()=>{setLoading(true);setError("");try{const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)throw new Error("Please sign in again.");const r=await fetch("/api/advanced-analytics?brand_id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+session.access_token},cache:"no-store"});const x=await r.json();if(!r.ok)throw new Error(x.error||"Could not load advanced analytics.");if(live)setD(x)}catch(e:any){if(live)setError(e?.message||"Advanced analytics failed.")}finally{if(live)setLoading(false)}})();return()=>{live=false}},[brandId]);
 
@@ -24,7 +32,23 @@ export default function AdvancedAnalytics(){
 
  return <AppShell title="Advanced Analytics" subtitle="Commercial diagnostics from the connected CPGist analytical layer"><section className="content">
   <div className="intro"><div><div className="muted">ADVANCED ANALYTICS</div><h1>Go from reporting to commercial diagnostics.</h1><p>Promotion economics, SKU momentum, category context, channel, margin, launches and clearly separated synthetic context.</p></div><div className="scope-badge">Evidence-first · source anchored</div></div>
-  <div className="card" style={{padding:18,marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16}}><div><b>Brand scope</b><span style={{display:"block",fontSize:10,color:"#98a2b3",marginTop:4}}>All brands from the active dataset are available.</span></div><div style={{position:"relative",width:380}}><select value={brandId} onChange={e=>setBrandId(e.target.value)} style={{width:"100%",height:42,border:"1px solid #d8d2ff",borderRadius:10,padding:"0 12px",background:"#fff"}}><option value="">Select a brand…</option>{brands.map(b=><option key={b.id} value={b.id}>{b.name}{b.category?" · "+b.category:""}</option>)}</select><ChevronDown size={15} style={{position:"absolute",right:12,top:13,pointerEvents:"none"}}/></div></div></div>
+  <div className="card" style={{padding:18,marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16}}><div><b>Brand scope</b><span style={{display:"block",fontSize:10,color:"#98a2b3",marginTop:4}}>All brands from the active dataset are available.</span></div><div className="brand-combobox advanced-brand-picker">
+    <button type="button" className={"brand-combobox-trigger"+(brandMenuOpen?" open":"")} onClick={()=>setBrandMenuOpen(v=>!v)}>
+      <span className="brand-combobox-icon"><Search size={15}/></span>
+      <span className="brand-combobox-value">{selectedBrand?String(selectedBrand.name)+(selectedBrand.category?" · "+selectedBrand.category:""):"Select a brand…"}</span>
+      <span className="brand-combobox-chevron"><ChevronDown size={16}/></span>
+    </button>
+    {brandMenuOpen&&<div className="brand-combobox-menu">
+      <div className="brand-combobox-search"><Search size={14}/><input autoFocus value={brandQuery} onChange={e=>setBrandQuery(e.target.value)} placeholder="Search all brands…" onClick={e=>e.stopPropagation()}/></div>
+      <div className="brand-combobox-list">
+        {filteredBrands.length?filteredBrands.map(b=><button type="button" className={"brand-option"+(String(b.id)===String(brandId)?" selected":"")} key={b.id} onClick={()=>{setBrandId(String(b.id));setBrandMenuOpen(false);setBrandQuery("");router.replace("/advanced-analytics?brand_id="+encodeURIComponent(String(b.id)));}}>
+          <span className="brand-option-avatar">{String(b.name||"B").slice(0,1).toUpperCase()}</span>
+          <span className="brand-option-copy"><b>{b.name}</b><small>{b.category||"Unclassified"} · {b.parent_company||"Independent"}</small></span>
+          {String(b.id)===String(brandId)&&<span className="brand-option-check"><Check size={15}/></span>}
+        </button>):<div className="brand-combobox-empty">No matching brands found.</div>}
+      </div>
+    </div>}
+  </div></div></div>
   {!brandId?<div className="card empty-detail"><BarChart3 size={24}/><h2>Select a brand</h2><p>Use the full brand selector to review promotion economics, SKU growth, channel, margin, launch and synthetic-context layers.</p></div>:loading?<div className="card loading-card">Loading advanced evidence…</div>:error?<div className="card form-error">{error}</div>:d&&<>
    {d.provenance?.label&&<div className="data-provenance"><ShieldCheck size={13}/><b>{d.provenance.label}</b><span>Projected/observed status is computed from is_actual.</span></div>}
    <div className="report-grid-kpis"><div className="card kpi"><span>13W sales</span><strong>{money(d.brandSummary?.latestSales??d.categoryContext?.context?.brandSales)}</strong><small>Source-aligned selected brand</small></div><div className="card kpi"><span>Promotion ROI</span><strong>{d.promoLift?.summary?.roi==null?"—":Number(d.promoLift.summary.roi).toFixed(2)+"x"}</strong><small>{d.promoLift?.available?"Incremental margin / trade spend":"Promotion economics unavailable"}</small></div><div className="card kpi"><span>Gross margin</span><strong>{d.margin?.marginPercent==null?"—":Number(d.margin.marginPercent).toFixed(2)+"%"}</strong><small>{d.margin?.marginAtRisk?.length||0} margin-at-risk SKUs</small></div><div className="card kpi"><span>Launches</span><strong>{d.launchPerformance?.products?.length||0}</strong><small>Products with launch_date</small></div></div>
