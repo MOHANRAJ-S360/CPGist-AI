@@ -47,6 +47,46 @@ export const CPG_TOOLS = [
   },
 
   {
+    name: "get_promo_lift",
+    description: "Calculate promotion-event incremental sales/units, incremental margin and ROI by joining promotion events, baseline sales, SKU weekly sales with gross margin and trade spend. Actual and projected events remain labeled by is_actual.",
+    parameters: params,
+  },
+  {
+    name: "get_sku_growth",
+    description: "Calculate SKU period-over-period growth using only same-status actual-vs-actual or synthetic-vs-synthetic weeks. Never compare an actual week with a synthetic week.",
+    parameters: params,
+  },
+  {
+    name: "get_category_context",
+    description: "Calculate observed category sales/growth, brand share and brand growth versus category growth from category_aggregates. Label the result as observed category, not total market.",
+    parameters: params,
+  },
+  {
+    name: "get_channel_breakdown",
+    description: "Roll brand-retailer performance up by retailer channel using the retailer master channel field.",
+    parameters: params,
+  },
+  {
+    name: "get_margin_pnl",
+    description: "Calculate gross-margin dollars and margin percentage by SKU and retailer, including a margin-at-risk view for high-sales, thin-margin items.",
+    parameters: params,
+  },
+  {
+    name: "get_launch_performance",
+    description: "Analyze launched products using launch_date and trial_repeat: trial rate, repeat rate and cumulative sales since launch.",
+    parameters: params,
+  },
+  {
+    name: "get_synthetic_panel",
+    description: "Calculate household penetration and purchase frequency from the synthetic household layer. Every result must be labeled 'Synthetic panel (illustrative only, not real household data)'.",
+    parameters: params,
+  },
+  {
+    name: "get_macro_overlay",
+    description: "Return the illustrative synthetic macro series for overlays such as 'show sales against inflation'. Label it as not tied to real economic data.",
+    parameters: params,
+  },
+  {
     name: "data_readiness",
     description: "Check which CPG data domains are currently populated before answering a question. Use this when the requested analysis may depend on pricing, promotion, retailer opportunity, product/SKU, inventory, profitability, geography, competition, or shopper data.",
     parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
