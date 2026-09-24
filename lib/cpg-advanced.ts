@@ -90,15 +90,18 @@ export function getCategoryContext(categoryRows:AdvancedRow[], brandRows:Advance
     const priorShare=categoryPriorSales?brandPriorSales/categoryPriorSales*100:null;
     return {is_actual:status,categorySales,categoryPriorSales,categoryGrowthPct:pct(categorySales,categoryPriorSales),brandSales,brandPriorSales,brandGrowthPct:pct(brandSales,brandPriorSales),brandSharePct:share,priorBrandSharePct:priorShare,shareChangePts:share!=null&&priorShare!=null?share-priorShare:null,periodCount:13,periods:latest};
   };
-  const current=byStatus(false) ?? byStatus(true);
+  const brandStatuses=new Set(brandRows.filter(r=>!brandId || String(r.brand_id)===String(brandId)).map(r=>r.is_actual));
+  const preferred=brandStatuses.has(false)?false:true;
+  const current=byStatus(preferred) ?? byStatus(!preferred);
   const observed=current?.is_actual===true;
-  return {available:Boolean(current),observed:observed,context:current,disclaimer:"Observed category is bounded by tracked brands in category_aggregates; it is not a total-market category claim."};
+  return {available:Boolean(current),observed,context:current,disclaimer:observed?"Observed category is bounded by tracked category aggregates; it is not a total-market category claim.":"Projected category context is based on the same-status weekly source layer; it is not an observed total-market category claim."};
 }
 
-export function getChannelBreakdown(rows:AdvancedRow[], retailers:AdvancedRow[]) {
+export function getChannelBreakdown(rows:AdvancedRow[], retailers:AdvancedRow[], periods?:string[], isActual?:boolean) {
+  const scoped=periods?.length?rows.filter(r=>periods.includes(String(r.week_ending)) && (isActual==null || r.is_actual===isActual)):rows.filter(r=>isActual==null || r.is_actual===isActual);
   const names=new Map(retailers.map(r=>[String(r.id),r]));
   const map=new Map<string,{channel:string;sales:number;units:number;distributionSum:number;distributionCount:number;retailers:Set<string>}>();
-  rows.forEach(r=>{
+  scoped.forEach(r=>{
     const retailer=names.get(String(r.retailer_id))||{};
     const channel=String(retailer.channel||r.channel||"Unclassified");
     const x=map.get(channel)||{channel,sales:0,units:0,distributionSum:0,distributionCount:0,retailers:new Set<string>()};
@@ -168,26 +171,31 @@ export function getMacroOverlay(rows:AdvancedRow[]) {
 }
 
 export function getPromoLift(events:AdvancedRow[], salesRows:AdvancedRow[], baselineRows:AdvancedRow[], tradeRows:AdvancedRow[]) {
-  const baselineByKey=new Map<string,any>();
-  baselineRows.forEach(r=>baselineByKey.set([r.product_id,r.brand_id,r.retailer_id,r.week].join("|"),r));
   const tradeByKey=new Map<string,number>();
   tradeRows.forEach(r=>{const k=[r.product_id,r.brand_id,r.retailer_id,r.week].join("|");tradeByKey.set(k,(tradeByKey.get(k)||0)+n(r.trade_spend))});
   const eventRows=events.map(e=>{
     const start=String(e.date_start||""),end=String(e.date_end||"");
-    const relevant=salesRows.filter(s=>String(s.product_id)===String(e.product_id) && String(s.brand_id)===String(e.brand_id) && String(s.retailer_id)===String(e.retailer_id) && String(s.week_ending)>=start && String(s.week_ending)<=end && s.is_actual===e.is_actual);
+    const matchesFor=(status:boolean)=>{
+      const sales=salesRows.filter(s=>String(s.product_id)===String(e.product_id)&&String(s.brand_id)===String(e.brand_id)&&String(s.retailer_id)===String(e.retailer_id)&&String(s.week_ending)>=start&&String(s.week_ending)<=end&&s.is_actual===status);
+      const base=baselineRows.filter(b=>String(b.product_id)===String(e.product_id)&&String(b.brand_id)===String(e.brand_id)&&String(b.retailer_id)===String(e.retailer_id)&&String(b.week)>=start&&String(b.week)<=end&&b.is_actual===status);
+      return {sales,base};
+    };
+    const preferred=matchesFor(e.is_actual===true),alternate=matchesFor(e.is_actual!==true);
+    const chosen=preferred.sales.length&&preferred.base.length?{...preferred,status:e.is_actual===true}:alternate.sales.length&&alternate.base.length?{...alternate,status:e.is_actual!==true}:null;
+    const relevant=chosen?.sales||[],baseRows=chosen?.base||[];
     const actualSales=relevant.reduce((s,r)=>s+n(r.sales),0),actualUnits=relevant.reduce((s,r)=>s+n(r.units),0),actualMargin=relevant.reduce((s,r)=>s+n(r.gross_margin),0);
-    const baseRows=baselineRows.filter(b=>String(b.product_id)===String(e.product_id)&&String(b.brand_id)===String(e.brand_id)&&String(b.retailer_id)===String(e.retailer_id)&&String(b.week)>=start&&String(b.week)<=end&&b.is_actual===e.is_actual);
-    const baselineSales=baseRows.reduce((s,r)=>s+n(r.baseline_sales),0) || n(e.baseline_units)*n(e.promo_price);
-    const baselineUnits=baseRows.reduce((s,r)=>s+n(r.baseline_units),0) || n(e.baseline_units);
-    const incrementalSales=actualSales-baselineSales;
-    const incrementalUnits=actualUnits-baselineUnits;
-    const marginRate=actualSales?actualMargin/actualSales:null;
-    const incrementalMargin=marginRate!=null?incrementalSales*marginRate:null;
-    const tradeSpend=baseRows.length?baseRows.reduce((s,r)=>s+(tradeByKey.get([r.product_id,r.brand_id,r.retailer_id,r.week].join("|")) ?? 0),0):n(e.trade_spend)||0;
+    const baselineSales=baseRows.reduce((s,r)=>s+n(r.baseline_sales),0)||n(e.baseline_units)*n(e.promo_price);
+    const baselineUnits=baseRows.reduce((s,r)=>s+n(r.baseline_units),0)||n(e.baseline_units);
+    const incrementalSales=actualSales-baselineSales,incrementalUnits=actualUnits-baselineUnits;
+    const marginRate=actualSales?actualMargin/actualSales:null,incrementalMargin=marginRate!=null?incrementalSales*marginRate:null;
+    const tradeSpend=baseRows.reduce((s,r)=>s+(tradeByKey.get([r.product_id,r.brand_id,r.retailer_id,r.week].join("|"))??0),0)||n(e.trade_spend)||0;
     const roi=tradeSpend>0&&incrementalMargin!=null?incrementalMargin/tradeSpend:null;
-    return {promotionId:e.promotion_id,brandId:e.brand_id,productId:e.product_id,retailerId:e.retailer_id,promoType:e.promo_type,dateStart:start,dateEnd:end,is_actual:e.is_actual,actualSales,actualUnits,baselineSales,baselineUnits,incrementalSales,incrementalUnits,grossMargin:actualMargin,incrementalMargin,tradeSpend,roi,discountPct:e.discount_pct,promoPrice:e.promo_price,source:"promotion + sales_weekly + baseline_sales + trade_spend"};
+    return {promotionId:e.promotion_id,brandId:e.brand_id,productId:e.product_id,retailerId:e.retailer_id,promoType:e.promo_type,dateStart:start,dateEnd:end,is_actual:e.is_actual,analysisStatus:chosen?.status??null,available:Boolean(chosen),actualSales,actualUnits,baselineSales,baselineUnits,incrementalSales,incrementalUnits,grossMargin:actualMargin,incrementalMargin,tradeSpend,roi,discountPct:e.discount_pct,promoPrice:e.promo_price,source:"promotion + same-status sales_weekly + same-status baseline_sales + trade_spend"};
   });
-  const valid=eventRows.filter(x=>x.is_actual===true || x.is_actual===false);
-  const rollup=(key:"promoType"|"retailerId")=>{const m=new Map<string,any>();valid.forEach(x=>{const k=String(x[key]??"Unknown");const v=m.get(k)||{key:k,events:0,incrementalSales:0,incrementalMargin:0,tradeSpend:0,roi:null};v.events++;v.incrementalSales+=n(x.incrementalSales);v.incrementalMargin+=n(x.incrementalMargin);v.tradeSpend+=n(x.tradeSpend);m.set(k,v)});return[...m.values()].map(v=>({...v,roi:v.tradeSpend?v.incrementalMargin/v.tradeSpend:null})).sort((a,b)=>b.incrementalSales-a.incrementalSales)};
-  return {available:valid.length>0,events:valid,summary:{events:valid.length,incrementalSales:valid.reduce((s,x)=>s+n(x.incrementalSales),0),incrementalUnits:valid.reduce((s,x)=>s+n(x.incrementalUnits),0),incrementalMargin:valid.reduce((s,x)=>s+n(x.incrementalMargin),0),tradeSpend:valid.reduce((s,x)=>s+n(x.tradeSpend),0),roi:(()=>{const spend=valid.reduce((s,x)=>s+n(x.tradeSpend),0);const margin=valid.reduce((s,x)=>s+n(x.incrementalMargin),0);return spend?margin/spend:null})()},byPromoType:rollup("promoType"),byRetailer:rollup("retailerId")};
+  const valid=eventRows.filter(x=>x.available);
+  const rollup=(key:"promoType"|"retailerId")=>{const m=new Map<string,any>();valid.forEach(x=>{const k=String(x[key]??"Unknown"),v=m.get(k)||{key:k,events:0,incrementalSales:0,incrementalMargin:0,tradeSpend:0,roi:null};v.events++;v.incrementalSales+=n(x.incrementalSales);v.incrementalMargin+=n(x.incrementalMargin);v.tradeSpend+=n(x.tradeSpend);m.set(k,v)});return[...m.values()].map(v=>({...v,roi:v.tradeSpend?v.incrementalMargin/v.tradeSpend:null})).sort((a,b)=>b.incrementalSales-a.incrementalSales)};
+  const spend=valid.reduce((s,x)=>s+n(x.tradeSpend),0),margin=valid.reduce((s,x)=>s+n(x.incrementalMargin),0);
+  const statuses=[...new Set(valid.map(x=>x.analysisStatus).filter(v=>v===true||v===false))];
+  const status=statuses.length===1?(statuses[0]?"actual":"projected"):statuses.length>1?"mixed":null;
+  return {available:valid.length>0,status,events:valid,unmatchedEvents:eventRows.filter(x=>!x.available).length,summary:{events:valid.length,incrementalSales:valid.reduce((s,x)=>s+n(x.incrementalSales),0),incrementalUnits:valid.reduce((s,x)=>s+n(x.incrementalUnits),0),incrementalMargin:margin,tradeSpend:spend,roi:spend?margin/spend:null},byPromoType:rollup("promoType"),byRetailer:rollup("retailerId")};
 }
