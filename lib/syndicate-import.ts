@@ -589,12 +589,10 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   };
 }
 
-function unzipInWorker(bytes:Uint8Array,wanted:string[]):Promise<Record<string,Uint8Array>>{
+function unzipInWorker(bytes:Uint8Array,_wanted:string[]):Promise<Record<string,Uint8Array>>{
   return new Promise((resolve,reject)=>{
     try{
-      unzip(bytes,{filter(file:any){const name=String(file?.name||"").split("/").pop()?.toLowerCase()||"";return wanted.includes(name);}},(err,data)=>{
-        if(err)reject(err);else resolve(data as Record<string,Uint8Array>);
-      });
+      unzip(bytes,(err,data)=>{if(err)reject(err);else resolve(data as Record<string,Uint8Array>);});
     }catch(err){reject(err)}
   });
 }
