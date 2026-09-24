@@ -178,6 +178,7 @@ function ReportsContent(){
     ];
     cols.forEach((col:any,i:number)=>{const x=.65+i*4.15;s.addShape(pptx.ShapeType.roundRect,{x,y:1.65,w:3.75,h:4.5,rectRadius:.04,fill:{color:soft},line:{color:line}});s.addText(col[0],{x:x+.25,y:1.95,w:3.2,h:.2,fontSize:8,bold:true,color:accent});col[1].forEach((t:string,j:number)=>s.addText("• "+t,{x:x+.25,y:2.45+j*.78,w:3.2,h:.48,fontSize:10,color:text,fit:"shrink"}));});
     note(s,"Method/window: latest 13W vs prior 13W; 26 completed weekly periods are shown. Use AI Analyst and the live report for deeper product, retailer and period drill-down.");s.addText("Live report: "+liveUrl,{x:9.0,y:6.18,w:3.0,h:.22,fontSize:6.5,bold:true,color:accent,fit:"shrink",align:"center"});footer(s);}
+   if(d.scope==="brand"){
    // 11 — Advanced Commercial Analytics
    {const s=pptx.addSlide();addHeader(s,"Advanced Commercial Analytics");title(s,brandName,"Extended commercial diagnostics from the connected analytical layer.");kpis(s,[["Promo ROI",adv.promoLift?.summary?.roi==null?"—":Number(adv.promoLift.summary.roi).toFixed(2)+"x"],["Incremental sales",adv.promoLift?.summary?.incrementalSales==null?"—":money(adv.promoLift.summary.incrementalSales)],["Gross margin",adv.margin?.marginPercent==null?"—":Number(adv.margin.marginPercent).toFixed(1)+"%"],["Margin-at-risk SKUs",String(adv.margin?.marginAtRisk?.length||0)],["Launches tracked",String(adv.launchPerformance?.products?.length||0)]]);
     const items:string[]=[];
@@ -201,6 +202,8 @@ function ReportsContent(){
     s.addText("Illustrative synthetic macro trend — not tied to real economic data",{x:7.05,y:3.65,w:5.1,h:.28,fontSize:11,bold:true,color:text,fit:"shrink"});
     s.addText(macroRows.length?"Inflation and category-price index series can be overlaid as context.":"Macro signals are not populated.",{x:7.05,y:4.08,w:5.0,h:.45,fontSize:10,color:muted,fit:"shrink"});
     s.addText("These layers are intentionally separated from POS-based business reporting.",{x:7.05,y:5.25,w:5.0,h:.42,fontSize:8,color:muted,fit:"shrink"});footer(s);}
+
+   }
 
    // 13 — Methodology & Data Lineage
    {const s=pptx.addSlide();addHeader(s,"Methodology & Data Lineage");title(s,brandName,"How CPGist computes and labels the extended business-review metrics.");
