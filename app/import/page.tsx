@@ -8,7 +8,12 @@ import {importDatasetZip} from "../../lib/syndicate-import";
 
 export default function ImportPage(){
  const [file,setFile]=useState<File|null>(null),[busy,setBusy]=useState(false),[status,setStatus]=useState(""),[result,setResult]=useState<any>(null),[error,setError]=useState("");
- useEffect(()=>()=>{window.dispatchEvent(new CustomEvent("cpgist:import-busy",{detail:false}));},[]);
+ useEffect(()=>{
+  const warn=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue="";};
+  const onBusy=(e:CustomEvent)=>{if(e.detail)window.addEventListener("beforeunload",warn);else window.removeEventListener("beforeunload",warn)};
+  window.addEventListener("cpgist:import-busy",onBusy as EventListener);
+  return()=>{window.removeEventListener("beforeunload",warn);window.removeEventListener("cpgist:import-busy",onBusy as EventListener);window.dispatchEvent(new CustomEvent("cpgist:import-busy",{detail:false}));};
+ },[]);
  async function run(){
   if(!file)return;
   setBusy(true);window.dispatchEvent(new CustomEvent("cpgist:import-busy",{detail:true}));setError("");setResult(null);
