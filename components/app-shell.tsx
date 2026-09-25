@@ -28,7 +28,20 @@ export function AppShell({title,subtitle,children}:{title:string;subtitle?:strin
  const pathname=usePathname(),router=useRouter();
  const [user,setUser]=useState<any>(null),[signingOut,setSigningOut]=useState(false);
  useEffect(()=>{supabaseBrowser().auth.getUser().then(({data})=>{if(!data.user){router.replace("/");return}setUser(data.user)}).catch(()=>router.replace("/"))},[router]);
- async function logout(){if(signingOut)return;setSigningOut(true);await supabaseBrowser().auth.signOut({scope:"local"});router.replace("/")}
+ async function logout(){
+  if(signingOut)return;
+  setSigningOut(true);
+  const sb=supabaseBrowser();
+  try{
+    // CPGist dataset is a temporary workspace. Remove the imported dataset
+    // before ending the local session so the next signed-in session starts empty.
+    const {error}=await sb.rpc("cpgist_reset_import_dataset");
+    if(error) console.error("Dataset cleanup before sign out failed:",error);
+  }finally{
+    await sb.auth.signOut({scope:"local"});
+    router.replace("/");
+  }
+}
  const metadata=user?.user_metadata||{};
  const name=metadata.full_name||metadata.name||user?.email?.split("@")[0]||"User";
  const email=user?.email||"";
