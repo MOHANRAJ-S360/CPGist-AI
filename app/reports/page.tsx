@@ -23,9 +23,13 @@ function ReportsContent(){
   try{
    const token=await auth();
    if(brandId){
-    const r=await fetch("/api/explorer?entity=brand&id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"});
-    const x=await r.json();if(!r.ok)throw new Error(x.error||"Brand report data failed.");
-    setD({scope:"brand",source:x.source||"cpgist_compact",compactDataset:x.source==="cpgist_compact",brand:x.brand,metrics:x.metrics,totalSales:x.metrics.sales,totalUnits:x.metrics.units,avgDistribution:x.metrics.distribution,price:x.metrics.price,promoRate:x.metrics.promoRate,categorySales:x.metrics.categorySales,brandShare:x.metrics.share,priorShare:x.metrics.priorShare,shareChangePts:x.metrics.shareChangePts,growth:x.metrics.growth,periods:x.periods,weekly:x.weekly,topBrands:[{name:x.brand.name,sales:x.metrics.sales,share:100,growth:x.metrics.growth}],products:x.products,retailers:x.retailers,competitorSignals:x.competitorSignals,competitiveBenchmark:x.competitiveBenchmark,competitivePeers:x.competitiveBenchmark?.competitors||[],provenance:x.provenance,advanced:await (async()=>{try{const ar=await fetch("/api/advanced-analytics?brand_id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"});return ar.ok?await ar.json():{}}catch{return {}}})()});
+    const [r,ar]=await Promise.all([
+      fetch("/api/explorer?entity=brand&id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"}),
+      fetch("/api/advanced-analytics?brand_id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"})
+    ]);
+    const [x,advanced]=await Promise.all([r.json(),ar.ok?ar.json():Promise.resolve({})]);
+    if(!r.ok)throw new Error(x.error||"Brand report data failed.");
+    setD({scope:"brand",source:x.source||"cpgist_compact",compactDataset:x.source==="cpgist_compact",brand:x.brand,metrics:x.metrics,totalSales:x.metrics.sales,totalUnits:x.metrics.units,avgDistribution:x.metrics.distribution,price:x.metrics.price,promoRate:x.metrics.promoRate,categorySales:x.metrics.categorySales,brandShare:x.metrics.share,priorShare:x.metrics.priorShare,shareChangePts:x.metrics.shareChangePts,growth:x.metrics.growth,periods:x.periods,weekly:x.weekly,topBrands:[{name:x.brand.name,sales:x.metrics.sales,share:100,growth:x.metrics.growth}],products:x.products,retailers:x.retailers,competitorSignals:x.competitorSignals,competitiveBenchmark:x.competitiveBenchmark,competitivePeers:x.competitiveBenchmark?.competitors||[],provenance:x.provenance,advanced});
    }else{
     const r=await fetch("/api/dashboard",{headers:{Authorization:"Bearer "+token},cache:"no-store"});
     const x=await r.json();if(!r.ok)throw new Error(x.error||"Report data failed.");setD({...x,scope:"market"});
