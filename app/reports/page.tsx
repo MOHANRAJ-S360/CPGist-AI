@@ -41,7 +41,7 @@ function ReportsContent(){
   try{
    const mod=await import("pptxgenjs"); const PptxGenJS:any=mod.default||mod; const pptx=new PptxGenJS();
    pptx.layout="LAYOUT_WIDE"; pptx.author="CPGist"; pptx.company="CPGist"; pptx.subject="Client-ready CPG business review"; pptx.title=(d.scope==="brand"?d.brand.name+" Brand Performance":"CPGist Executive Market Performance")+" Review"; pptx.lang="en-US";
-   const dark="0E1728",accent="6D5DFC",text="101828",muted="667085",line="E5E8EF",soft="F7F8FA",green="067647",red="B42318";
+   const dark="1E2761",navy2="26307A",navy3="3B458F",ice="CADCFC",ice2="E7ECFB",ice3="AFC0EE",muted="9AA3C4",text="1E2761",white="FFFFFF",line="CADCFC",soft="E7ECFB",green="1E2761",red="B3261E",accent="3B458F";
    const brandName=d.scope==="brand"?String(d.brand?.name||"Selected Brand"):"Market";
    const categoryName=d.scope==="brand"?String(d.brand?.category||"Category not available"):"Market";
    const periods=Array.isArray(d.periods)?d.periods:[], latest=periods.slice(-13), prior=periods.slice(-26,-13);
