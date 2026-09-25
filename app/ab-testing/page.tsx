@@ -39,11 +39,30 @@ export default function ABTesting(){
  const [hypothesis,setHypothesis]=useState("Does the test retailer show stronger performance for the selected KPI?");
  const [unit,setUnit]=useState("retailers"),[controlValue,setControlValue]=useState("12"),[testValue,setTestValue]=useState("14.5"),[controlN,setControlN]=useState("1000"),[testN,setTestN]=useState("1000");
  const [startDate,setStartDate]=useState(""),[endDate,setEndDate]=useState("");
+ const [savedExperiments,setSavedExperiments]=useState<any[]>([]),[saveStatus,setSaveStatus]=useState("");
 
  async function auth(){const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)throw new Error("Please sign in again.");return session.access_token}
  async function loadBrands(){
   try{const token=await auth();const r=await fetch("/api/explorer?entity=brand&limit=5000",{headers:{Authorization:"Bearer "+token},cache:"no-store"});const x=await r.json();if(!r.ok)throw new Error(x.error||"Brand list failed.");const list=Array.isArray(x.results)?x.results:[];setBrands(list);if(!brandId&&list.length)setBrandId(String(list[0].id));}
   catch(e:any){setError(e.message||"Unable to load brands.");}
+ }
+ async function loadExperiments(id:string){
+  try{const token=await auth();const r=await fetch("/api/ab-testing?mode=experiments&brand_id="+encodeURIComponent(id),{headers:{Authorization:"Bearer "+token},cache:"no-store"});const x=await r.json();if(r.ok)setSavedExperiments(Array.isArray(x.experiments)?x.experiments:[]);}catch{}
+ }
+ async function saveExperiment(){
+  setSaveStatus("Saving…");
+  try{
+   const token=await auth();
+   const experiment_id="EXP-"+new Date().toISOString().replace(/[-:.TZ]/g,"").slice(0,14);
+   const r=await fetch("/api/ab-testing",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({
+    experiment_id,brand_id:brandId,category:selectedBrand?.category||data?.brand?.category,hypothesis,design,unit_of_randomization:unit,
+    treatment:"Test",control:"Control",primary_kpi:metric,start_date:startDate||null,end_date:endDate||null,
+    control_value:controlValue,test_value:testValue,control_observations:controlN,test_observations:testN,
+    assignment_validated:design==="randomized",notes:"Entered through CPGist A/B Testing workspace."
+   })});
+   const x=await r.json();if(!r.ok)throw new Error(x.error||"Save failed.");
+   setSaveStatus("Saved "+experiment_id); await loadExperiments(brandId);
+  }catch(e:any){setSaveStatus(e.message||"Save failed.");}
  }
  async function loadData(id:string){
   if(!id)return;setLoading(true);setError("");
@@ -52,7 +71,7 @@ export default function ABTesting(){
   finally{setLoading(false);}
  }
  useEffect(()=>{loadBrands()},[]);
- useEffect(()=>{if(brandId)loadData(brandId)},[brandId]);
+ useEffect(()=>{if(brandId){loadData(brandId);loadExperiments(brandId)}},[brandId]);
 
  const selectedBrand=brands.find(b=>String(b.id)===String(brandId))||data?.brand;
  const retailers=data?.retailers||[];
@@ -104,7 +123,8 @@ export default function ABTesting(){
    <div className="ab-grid">
     <div className="card panel ab-setup"><div className="ab-section-head"><div><span className="ab-kicker">02 · MEASURE</span><b>{mode==="live"?"Connected KPI values":"Experiment inputs"}</b><small>{mode==="live"?"Calculated from selected brand, retailers and aligned weeks.":"Enter the observed Control and Test results."}</small></div><BarChart3 size={18}/></div>
      {mode==="live"?<div className="ab-values"><div className="ab-group control"><div className="ab-group-label"><span>CONTROL</span><small>{selectedControl?.name||"Select a retailer"}</small></div><div className="ab-live-value">{valid?value(live!.cv):"—"}</div><div className="ab-live-meta">{live?.c.observations||0} weekly rows · ACV {live?.c.distribution==null?"—":live.c.distribution.toFixed(1)+"%"}</div></div><div className="ab-arrow"><ArrowRight size={18}/></div><div className="ab-group test"><div className="ab-group-label"><span>TEST</span><small>{selectedTest?.name||"Select a retailer"}</small></div><div className="ab-live-value">{valid?value(live!.tv):"—"}</div><div className="ab-live-meta">{live?.t.observations||0} weekly rows · ACV {live?.t.distribution==null?"—":live.t.distribution.toFixed(1)+"%"}</div></div></div>:
-     <><div className="ab-values"><div className="ab-group control"><div className="ab-group-label"><span>CONTROL</span><small>Baseline / current approach</small></div><label><span>{metricMeta[metric].short} ({metricMeta[metric].unit})</span><input type="number" step="any" value={controlValue} onChange={e=>setControlValue(e.target.value)}/></label><label><span>Observations</span><input type="number" min="1" value={controlN} onChange={e=>setControlN(e.target.value)}/></label></div><div className="ab-arrow"><ArrowRight size={18}/></div><div className="ab-group test"><div className="ab-group-label"><span>TEST</span><small>New price / promotion / variant</small></div><label><span>{metricMeta[metric].short} ({metricMeta[metric].unit})</span><input type="number" step="any" value={testValue} onChange={e=>setTestValue(e.target.value)}/></label><label><span>Observations</span><input type="number" min="1" value={testN} onChange={e=>setTestN(e.target.value)}/></label></div></div>{metric==="conversion"&&!manual.validRate&&<div className="ab-error"><AlertTriangle size={14}/><span>Conversion rate must be between 0% and 100%.</span></div>}</>}
+     <><div className="ab-values"><div className="ab-group control"><div className="ab-group-label"><span>CONTROL</span><small>Baseline / current approach</small></div><label><span>{metricMeta[metric].short} ({metricMeta[metric].unit})</span><input type="number" step="any" value={controlValue} onChange={e=>setControlValue(e.target.value)}/></label><label><span>Observations</span><input type="number" min="1" value={controlN} onChange={e=>setControlN(e.target.value)}/></label></div><div className="ab-arrow"><ArrowRight size={18}/></div><div className="ab-group test"><div className="ab-group-label"><span>TEST</span><small>New price / promotion / variant</small></div><label><span>{metricMeta[metric].short} ({metricMeta[metric].unit})</span><input type="number" step="any" value={testValue} onChange={e=>setTestValue(e.target.value)}/></label><label><span>Observations</span><input type="number" min="1" value={testN} onChange={e=>setTestN(e.target.value)}/></label></div></div>{metric==="conversion"&&!manual.validRate&&<div className="ab-error"><AlertTriangle size={14}/><span>Conversion rate must be between 0% and 100%.</span></div>}
+     {mode==="manual"&&<div className="ab-save-row"><button className="btn primary" onClick={saveExperiment} disabled={!brandId}>{saveStatus||"Save experiment evidence"}</button><span>Saved experiments: {savedExperiments.length}. Saving stores the entered experiment metadata/results; it does not turn observational data into causal evidence.</span></div>}</>}
     </div>
 
     <div className="card panel ab-result"><div className="ab-section-head"><div><span className="ab-kicker">03 · RESULT</span><b>What changed?</b><small>Recalculated from the current selections.</small></div><TrendingUp size={18}/></div>
