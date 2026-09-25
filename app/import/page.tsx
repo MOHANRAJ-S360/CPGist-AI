@@ -1,5 +1,5 @@
 "use client";
-import {useState} from "react";
+import {useEffect,useState} from "react";
 import Link from "next/link";
 import {Database,UploadCloud,CheckCircle2,AlertCircle,Loader2} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
@@ -8,9 +8,10 @@ import {importDatasetZip} from "../../lib/syndicate-import";
 
 export default function ImportPage(){
  const [file,setFile]=useState<File|null>(null),[busy,setBusy]=useState(false),[status,setStatus]=useState(""),[result,setResult]=useState<any>(null),[error,setError]=useState("");
+ useEffect(()=>()=>{window.dispatchEvent(new CustomEvent("cpgist:import-busy",{detail:false}));},[]);
  async function run(){
   if(!file)return;
-  setBusy(true);setError("");setResult(null);
+  setBusy(true);window.dispatchEvent(new CustomEvent("cpgist:import-busy",{detail:true}));setError("");setResult(null);
   try{
    const sb=supabaseBrowser();
    const {data:{session}}=await sb.auth.getSession();
@@ -19,7 +20,7 @@ export default function ImportPage(){
    const r=await importDatasetZip(sb,file,setStatus);
    setResult(r);setStatus("Import completed successfully. The client workspace now uses the CPGist Free Dataset.");
   }catch(e:any){setError(e?.message||"Import failed. You can retry safely.");setStatus("");}
-  finally{setBusy(false);}
+  finally{setBusy(false);window.dispatchEvent(new CustomEvent("cpgist:import-busy",{detail:false}));}
  }
  return <AppShell title="Data Import" subtitle="Load the CPGist client dataset">
   <section className="content">
