@@ -68,8 +68,8 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
 }
 async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:string,progress:Progress){
   if(!rows.length)return;
-  const size=5000;
-  const concurrency=Math.min(3,Math.max(1,Math.ceil(rows.length/size)));
+  const size=10000;
+  const concurrency=Math.min(5,Math.max(1,Math.ceil(rows.length/size)));
   let next=0,completed=0;
   const load=async()=>{
     while(true){
@@ -93,8 +93,8 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
 }
 async function insertBatches(sb:SupabaseClient,table:string,rows:any[],progress:Progress){
   if(!rows.length)return;
-  const size=5000;
-  const concurrency=Math.min(3,Math.max(1,Math.ceil(rows.length/size)));
+  const size=10000;
+  const concurrency=Math.min(5,Math.max(1,Math.ceil(rows.length/size)));
   let next=0,completed=0;
   const load=async()=>{
     while(true){
@@ -268,15 +268,19 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   // The archive is the source of truth; only the compact, client-ready analytical layer is loaded into Postgres.
   await clearCompactDataset(sb,progress);
 
-  await upsertBatches(sb,"cpgist_brands",brands,"id",progress);
-  await upsertBatches(sb,"cpgist_retailers",retailers,"id",progress);
-  await upsertBatches(sb,"cpgist_products",products,"id",progress);
-  await upsertBatches(sb,"cpgist_categories",categories,"id",progress);
-  await upsertBatches(sb,"cpgist_regions",regions,"id",progress);
-  await upsertBatches(sb,"cpgist_brand_weekly",brandRows,"brand_id,week_ending",progress);
-  await upsertBatches(sb,"cpgist_category_weekly",categoryRows,"category,week_ending",progress);
-  await upsertBatches(sb,"cpgist_retailer_weekly",retailerRows,"retailer_id,week_ending",progress);
-  await upsertBatches(sb,"cpgist_brand_category_weekly",brandCategoryRows,"brand_id,category,week_ending",progress);
+  await Promise.all([
+    upsertBatches(sb,"cpgist_brands",brands,"id",progress),
+    upsertBatches(sb,"cpgist_retailers",retailers,"id",progress),
+    upsertBatches(sb,"cpgist_products",products,"id",progress),
+    upsertBatches(sb,"cpgist_categories",categories,"id",progress),
+    upsertBatches(sb,"cpgist_regions",regions,"id",progress)
+  ]);
+  await Promise.all([
+    upsertBatches(sb,"cpgist_brand_weekly",brandRows,"brand_id,week_ending",progress),
+    upsertBatches(sb,"cpgist_category_weekly",categoryRows,"category,week_ending",progress),
+    upsertBatches(sb,"cpgist_retailer_weekly",retailerRows,"retailer_id,week_ending",progress),
+    upsertBatches(sb,"cpgist_brand_category_weekly",brandCategoryRows,"brand_id,category,week_ending",progress)
+  ]);
 
   const productAgg=new Map<number,any>();
   const retailerSummaryAgg=new Map<string,any>();
