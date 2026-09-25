@@ -30,24 +30,25 @@ export async function GET(req:NextRequest){
   const p=req.nextUrl.searchParams,brandId=p.get("brand_id")||"",category=p.get("category")||"",retailerId=p.get("retailer_id")||"",sku=p.get("sku")||"",startDate=p.get("start_date")||"",endDate=p.get("end_date")||"";
   if(!brandId)return NextResponse.json({error:"brand_id is required."},{status:400});
 
-  const brandRows:any[]=await get("cpgist_brand_weekly?brand_id=eq."+enc(brandId)+"&select=brand_id,category,week_ending,sales,units,avg_price,promo_rate,baseline_sales,incremental_sales,incremental_units,gross_margin,margin_percent,trade_spend,promo_events,is_actual&order=week_ending.asc&limit=100000");
   const brand= (await get("cpgist_brands?select=id,name,category&id=eq."+enc(brandId)+"&limit=1"))[0]||{};
   const categoryName=category||brand.category||"";
-  const productMaster:any[]=await get("cpgist_products?brand_id=eq."+enc(brandId)+"&select=id,brand_id,name,sku,category,subcategory,size,launch_date&order=name&limit=5000");
-  const productWeekly:any[]=await getAll("cpgist_product_weekly?brand_id=eq."+enc(brandId)+"&select=product_id,brand_id,retailer_id,week_ending,sales,units,price,distribution,promo_rate,is_actual,unit_cost,gross_margin,margin_percent,regular_price,actual_price&order=week_ending.asc",1000,10000);
-  const retailerSummary:any[]=await getAll("cpgist_brand_retailer_weekly?brand_id=eq."+enc(brandId)+"&select=brand_id,retailer_id,category,week_ending,sales,units,distribution,price,promo_rate,is_actual,unit_cost,gross_margin,margin_percent&order=week_ending.asc",1000,10000);
-  const retailerMaster:any[]=await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&limit=5000");
+  const [brandRows,productMaster,productWeekly,retailerSummary,retailerMaster,events,baseline,trade,trial,panel,macro,categoryRows,categoryWeekly,competitorPrice]=await Promise.all([
+    getAll("cpgist_brand_weekly?brand_id=eq."+enc(brandId)+"&select=brand_id,category,week_ending,sales,units,avg_price,promo_rate,baseline_sales,incremental_sales,incremental_units,gross_margin,margin_percent,trade_spend,promo_events,is_actual&order=week_ending.asc",1000,10000),
+    get("cpgist_products?brand_id=eq."+enc(brandId)+"&select=id,brand_id,name,sku,category,subcategory,size,launch_date&order=name&limit=5000"),
+    getAll("cpgist_product_weekly?brand_id=eq."+enc(brandId)+"&select=product_id,brand_id,retailer_id,week_ending,sales,units,price,distribution,promo_rate,is_actual,unit_cost,gross_margin,margin_percent,regular_price,actual_price&order=week_ending.asc",1000,10000),
+    getAll("cpgist_brand_retailer_weekly?brand_id=eq."+enc(brandId)+"&select=brand_id,retailer_id,category,week_ending,sales,units,distribution,price,promo_rate,is_actual,unit_cost,gross_margin,margin_percent&order=week_ending.asc",1000,10000),
+    get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&limit=5000"),
+    getAll("cpgist_promotion_events?brand_id=eq."+enc(brandId)+"&select=*&order=date_start.asc",1000,10000),
+    getAll("cpgist_baseline_sales?brand_id=eq."+enc(brandId)+"&select=*&order=week.asc",1000,10000),
+    getAll("cpgist_trade_spend?brand_id=eq."+enc(brandId)+"&select=*&order=week.asc",1000,10000),
+    getAll("cpgist_trial_repeat?select=*",1000,10000),
+    getAll("cpgist_panel_household?select=*",1000,10000),
+    getAll("cpgist_macro_signals?select=*",1000,10000),
+    categoryName?getAll("cpgist_category_aggregates?category=eq."+enc(categoryName)+"&select=*&order=week.asc",1000,10000):Promise.resolve([]),
+    categoryName?getAll("cpgist_category_weekly?category=eq."+enc(categoryName)+"&select=category,week_ending,sales,units,distribution,is_actual&order=week_ending.asc",1000,10000):Promise.resolve([]),
+    getAll("cpgist_competitor_price_sales?brand="+enc(brand.name||"")+"&select=*&order=week.asc",1000,10000).catch(()=>[])
+  ]);
   const retailersById=new Map(retailerMaster.map(r=>[String(r.id),r]));
-
-  const events:any[]=await getAll("cpgist_promotion_events?brand_id=eq."+enc(brandId)+"&select=*&order=date_start.asc",1000,10000);
-  const baseline:any[]=await getAll("cpgist_baseline_sales?brand_id=eq."+enc(brandId)+"&select=*&order=week.asc",1000,10000);
-  const trade:any[]=await getAll("cpgist_trade_spend?brand_id=eq."+enc(brandId)+"&select=*&order=week.asc",1000,10000);
-  const trial:any[]=await getAll("cpgist_trial_repeat?select=*",1000,10000);
-  const panel:any[]=await getAll("cpgist_panel_household?select=*",1000,10000);
-  const macro:any[]=await getAll("cpgist_macro_signals?select=*",1000,10000);
-  const categoryRows:any[]=categoryName?await getAll("cpgist_category_aggregates?category=eq."+enc(categoryName)+"&select=*&order=week.asc",1000,10000):[];
-  const categoryWeekly:any[]=categoryName?await getAll("cpgist_category_weekly?category=eq."+enc(categoryName)+"&select=category,week_ending,sales,units,distribution,is_actual&order=week_ending.asc",1000,10000):[];
-  const competitorPrice:any[]=await getAll("cpgist_competitor_price_sales?brand="+enc(brand.name||"")+"&select=*&order=week.asc",1000,10000).catch(()=>[]);
 
   const provenance=actualSyntheticProvenance(brandRows,startDate||null,endDate||null);
   const brandPeriods=[...new Set(brandRows.map(r=>String(r.week_ending)).filter(Boolean))].sort();
