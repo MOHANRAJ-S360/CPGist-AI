@@ -420,7 +420,6 @@ async function tool(name: string, a: Args, token: string) {
         brands.set(name,x); compByRegion.set(region,brands);
       }
 
-      const growth=(now:number,base:number)=>base?(now/base-1)*100:null;
       const competitorRegions=[...focalRegion.values()].map((f:any)=>{
         const peers=[...(compByRegion.get(f.region)?.values()||[])].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
         const focalEntry={sales:f.sales};
