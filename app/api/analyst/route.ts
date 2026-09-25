@@ -393,7 +393,7 @@ async function tool(name: string, a: Args, token: string) {
       }
       const selectedBrandName=String((await resolveBrandContext(brandId,token)).brandName||"");
       const competitorRegions=[...brandRegion.values()].map(z=>{
-        const sorted=z.brands.sort((a,b)=>b.sales-a.sales);
+        const sorted=z.brands.sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
         const selectedBrand=sorted.find(x=>x.brand===selectedBrandName);
         const peers=sorted.filter(x=>x.brand!==selectedBrandName);
         const topPeer=peers[0]||null;
@@ -413,7 +413,7 @@ async function tool(name: string, a: Args, token: string) {
       }
       const brandName=String((await resolveBrandContext(brandId,token)).brandName||"");
       const competitorRetailers=[...byRetailer.values()].map(x=>{
-        const sorted=x.brands.sort((a,b)=>b.sales-a.sales);
+        const sorted=x.brands.sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
         const selectedBrand=sorted.find(v=>v.brand===brandName);
         const peers=sorted.filter(v=>v.brand!==brandName);
         const topPeer=peers[0]||null;
