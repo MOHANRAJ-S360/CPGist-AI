@@ -223,3 +223,9 @@
 @media(max-width:1100px){.advanced-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.advanced-kpis{grid-template-columns:1fr 1fr}.data-provenance{align-items:flex-start}}
 
 .market-context-grid{display:flex;flex-direction:column;gap:12px}.market-context-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.market-context-kpis>div{padding:10px 11px;border:1px solid #e7eaf0;border-radius:9px;background:#f8fafc}.market-context-kpis span{display:block;font-size:8px;letter-spacing:.04em;color:#667085;margin-bottom:4px}.market-context-kpis b{font-size:15px;color:#101828}.market-context-note{padding:9px 11px;border:1px solid #e4e7ec;border-radius:9px;background:#f8f7ff}.market-context-note b{display:block;font-size:10px;color:#1e2761;margin-bottom:3px}.market-context-note span{font-size:9px;line-height:1.4;color:#667085}.market-context-grid table{margin-top:0}@media(max-width:900px){.market-context-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* Report shell: keep the top bar in document flow so report content never renders underneath it. */
+.topbar{position:sticky!important;top:0;z-index:1000;background:#fff}
+.main{min-width:0}
+.main>.content{position:relative}
+.market-context-grid{min-width:0}
+.market-context-grid table{width:100%;overflow:hidden}
