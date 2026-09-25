@@ -815,7 +815,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (brandId && categoryId && /category|growth|underperform|momentum|monthly|review|why|decline|improve|turnaround/.test(q)) add("category_growth_plan");
   const productIntent=/sku|product|assortment|portfolio|item|size|pack|butter|milk|cheese|yogurt/.test(q);
   if (productIntent) add("product_sku_performance");
-  if (brandId && productIntent && /competitor|competitive|competition|compare|versus|vs/.test(q)) add("product_competitor_diagnostic");
+  if (brandId && /competitor|competitive|competition|compare|versus|vs/.test(q) && (productIntent || /region|regional|retailer|same area|same market|sales/.test(q))) add("product_competitor_diagnostic");
   if (brandId && categoryId && /retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
   if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
   if (brandId && /promo roi|promotion roi|incremental|trade spend|promotion lift|which promotion/.test(q)) add("get_promo_lift");
@@ -868,7 +868,12 @@ export async function POST(req: Request) {
     const activeScope = brandId
       ? "\nActive analysis scope: brandId=" + brandId + ". Keep the answer focused on this brand unless the user explicitly changes scope."
       : "";
-    const { evidence, context, selected } = await collectEvidence(String(latestUser), brandId, token);
+    const routingQuestion = incoming
+      .filter((m: any) => m?.role === "user")
+      .slice(-4)
+      .map((m: any) => String(m?.content || ""))
+      .join("\n");
+    const { evidence, context, selected } = await collectEvidence(routingQuestion || String(latestUser), brandId, token);
 
     const evidenceJson = JSON.stringify(evidence);
     const messages = [
