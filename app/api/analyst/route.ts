@@ -44,6 +44,19 @@ async function get(path: string, token: string) {
   return response.json();
 }
 
+async function getAll(path: string, token: string, pageSize = 1000, maxRows = 10000) {
+  const clean = path.replace(/([&?])limit=\d+/, "$1").replace(/&&/g, "&").replace(/[?&]$/, "");
+  const out:any[] = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const sep = clean.includes("?") ? "&" : "?";
+    const page = await get(clean + sep + "limit=" + pageSize + "&offset=" + offset, token);
+    if (!Array.isArray(page) || !page.length) break;
+    out.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return out.slice(0, maxRows);
+}
+
 function filtersFromArgs(a: Args): IntelligenceQuery {
   return {
     brandId: a.brandId ? String(a.brandId) : undefined,
@@ -74,7 +87,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
     q += "&retailer_id=eq." + encodeURIComponent(retailer);
     if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
     if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-    const raw = await get(q, token);
+    const raw = await getAll(q, token);
     return { rows: raw.map((r:any) => ({
       brand_id: r.brand_id, category: r.category, retailer_id: r.retailer_id, week_ending: r.week_ending,
       dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
@@ -87,7 +100,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   if (category) q += "&category=ilike." + encodeURIComponent(category);
   if (a.startDate) q += "&week_ending=gte." + encodeURIComponent(String(a.startDate));
   if (a.endDate) q += "&week_ending=lte." + encodeURIComponent(String(a.endDate));
-  const raw = await get(q, token);
+  const raw = await getAll(q, token);
   return { rows: raw.map((r:any) => ({
     brand_id: r.brand_id, category: r.category, week_ending: r.week_ending,
     dollar_sales: r.sales, units: r.units, acv_distribution: r.distribution,
