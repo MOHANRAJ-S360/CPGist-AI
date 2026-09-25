@@ -391,10 +391,11 @@ async function tool(name: string, a: Args, token: string) {
         const z=brandRegion.get(x.region)||{region:x.region,brands:[]};
         z.brands.push(x); brandRegion.set(x.region,z);
       }
+      const selectedBrandName=String((await resolveBrandContext(brandId,token)).brandName||"");
       const competitorRegions=[...brandRegion.values()].map(z=>{
         const sorted=z.brands.sort((a,b)=>b.sales-a.sales);
-        const selectedBrand=sorted.find(x=>x.brand===String((await resolveBrandContext(brandId,token)).brandName));
-        const peers=sorted.filter(x=>x.brand!==String((await resolveBrandContext(brandId,token)).brandName));
+        const selectedBrand=sorted.find(x=>x.brand===selectedBrandName);
+        const peers=sorted.filter(x=>x.brand!==selectedBrandName);
         const topPeer=peers[0]||null;
         const rank=selectedBrand?sorted.findIndex(x=>x.brand===selectedBrand.brand)+1:null;
         return {region:z.region,selectedBrandSales:selectedBrand?.sales??null,topPeerSales:topPeer?.sales??null,selectedBrandRank:rank,brandCount:sorted.length,peerGapPct:selectedBrand&&topPeer?growth(selectedBrand.sales,topPeer.sales):null};
