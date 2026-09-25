@@ -22,10 +22,11 @@
 
 /* CPGist professional workspace system */
 .app-shell{display:flex;min-height:100vh;background:#f7f8fa}
-.app-shell .sidebar{width:252px;padding:18px 14px 16px;background:#0e1728;display:flex;flex-direction:column;z-index:20;box-shadow:10px 0 30px rgba(16,24,40,.08)}
+.app-shell .sidebar{width:252px;height:100vh;min-height:0;padding:18px 14px 16px;background:#0e1728;display:flex;flex-direction:column;z-index:20;box-shadow:10px 0 30px rgba(16,24,40,.08);overflow:hidden}
 .app-shell .brand{padding:8px 10px 24px;margin:0}
 .app-shell .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#7c83ff,#a855f7);box-shadow:0 8px 18px rgba(124,131,255,.25)}
-.workspace-nav{display:grid;gap:3px}
+.workspace-nav{display:grid;gap:3px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding-right:3px;scrollbar-width:thin;scrollbar-color:#34415a transparent}
+.workspace-nav::-webkit-scrollbar{width:5px}.workspace-nav::-webkit-scrollbar-track{background:transparent}.workspace-nav::-webkit-scrollbar-thumb{background:#34415a;border-radius:99px}.workspace-nav::-webkit-scrollbar-thumb:hover{background:#465674}
 .app-shell .navitem{position:relative;min-height:42px;margin:0;padding:10px 11px;color:#aeb8c9;border:1px solid transparent;border-radius:10px;transition:background .15s ease,color .15s ease,border-color .15s ease}
 .app-shell .navitem:hover{background:#182238;color:#fff;border-color:#25314a}
 .app-shell .navitem.active{background:#27324a;color:#fff;border-color:#33415d;box-shadow:inset 3px 0 0 #8b7dff}
