@@ -649,40 +649,63 @@ export async function POST(req: Request) {
     }
 
     const raw = data.choices?.[0]?.message?.content;
-    try {
-      const analyst = JSON.parse(raw || "{}");
-      if (!analyst.headline || !analyst.executiveTakeaway || !Array.isArray(analyst.metrics) || !Array.isArray(analyst.sections) || !Array.isArray(analyst.warnings) || !Array.isArray(analyst.decisionTrail)) {
-        throw new Error("Invalid structured analyst response.");
-      }
-
-      const monthlyEvidence = evidence.find(x => x.tool === "monthly_business_review")?.result?.evidence;
-      const validationIssues = evidence.flatMap(x => Array.isArray(x.result?.validation) ? x.result.validation : []);
-      analyst.evidence = {
-        source: monthlyEvidence?.source ?? analyst.evidence?.source ?? "CPGist analytical layer",
-        period: monthlyEvidence?.periodStart && monthlyEvidence?.periodEnd
-          ? String(monthlyEvidence.periodStart) + " → " + String(monthlyEvidence.periodEnd)
-          : analyst.evidence?.period ?? "Observed source coverage",
-        periodCount: Number(monthlyEvidence?.periodCount ?? analyst.evidence?.periodCount ?? 0),
-        filters: JSON.stringify(monthlyEvidence?.filters ?? {})
-      };
-      analyst.warnings = [...new Set([
-        ...(analyst.warnings || []),
-        ...evidence.flatMap(x => Array.isArray(x.result?.warnings) ? x.result.warnings : []),
-        ...validationIssues.filter((x:any) => x.severity === "warning").map((x:any) => x.message)
-      ])];
-      const hardValidationErrors = validationIssues.filter((x:any) => x.severity === "error");
-      if (hardValidationErrors.length) {
-        analyst.warnings = [...new Set([...analyst.warnings, ...hardValidationErrors.map((x:any) => x.message)])];
-        analyst.decisionTrail = (analyst.decisionTrail || []).filter((x:any) => x.type !== "action");
-      }
-
-      return NextResponse.json({
-        analyst,
-        verification: { performed: false, toolCount: evidence.length, mode: "deterministic-evidence + single-model-call" }
-      });
-    } catch {
-      return NextResponse.json({ error: "The analyst produced an invalid structured response. Please retry." }, { status: 502 });
+    const parseAnalyst = (value:any) => {
+      if (value && typeof value === "object") return value;
+      const text = String(value || "").trim();
+      if (!text) return null;
+      try { return JSON.parse(text); } catch {}
+      const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
+      if (fenced) { try { return JSON.parse(fenced); } catch {} }
+      const first = text.indexOf("{"), last = text.lastIndexOf("}");
+      if (first >= 0 && last > first) { try { return JSON.parse(text.slice(first,last+1)); } catch {} }
+      return null;
+    };
+    const monthlyEvidence = evidence.find(x => x.tool === "monthly_business_review")?.result?.evidence;
+    const validationIssues = evidence.flatMap(x => Array.isArray(x.result?.validation) ? x.result.validation : []);
+    const analyst = parseAnalyst(raw) || {
+      type: "BUSINESS REVIEW",
+      headline: context.brandName ? context.brandName + " business review" : "CPG business review",
+      executiveTakeaway: "The deterministic analytical layer returned the source evidence, but the language model did not return a readable structured narrative. The figures below remain source-anchored.",
+      metrics: [],
+      table: null,
+      sections: [{title:"What the data supports",bullets:["Use the evidence and warnings below; no unsupported conclusion has been added."]}],
+      warnings: ["The narrative model response could not be parsed; deterministic source evidence is still available."],
+      evidence: {},
+      decisionTrail: [{type:"limitation",text:"Structured narrative generation failed; no unsupported analytical conclusion was substituted."}],
+      nextBestQuestion: "Which business driver should I investigate next?"
+    };
+    analyst.type = String(analyst.type || "BUSINESS REVIEW");
+    analyst.headline = String(analyst.headline || (context.brandName ? context.brandName + " business review" : "CPG business review"));
+    analyst.executiveTakeaway = String(analyst.executiveTakeaway || "The source evidence is available below.");
+    analyst.metrics = Array.isArray(analyst.metrics) ? analyst.metrics : [];
+    analyst.sections = Array.isArray(analyst.sections) ? analyst.sections : [];
+    analyst.warnings = Array.isArray(analyst.warnings) ? analyst.warnings : [];
+    analyst.decisionTrail = Array.isArray(analyst.decisionTrail) ? analyst.decisionTrail : [];
+    analyst.table = analyst.table && typeof analyst.table === "object" ? analyst.table : null;
+    analyst.nextBestQuestion = analyst.nextBestQuestion ? String(analyst.nextBestQuestion) : null;
+    analyst.evidence = {
+      source: monthlyEvidence?.source ?? analyst.evidence?.source ?? "CPGist analytical layer",
+      period: monthlyEvidence?.periodStart && monthlyEvidence?.periodEnd
+        ? String(monthlyEvidence.periodStart) + " → " + String(monthlyEvidence.periodEnd)
+        : analyst.evidence?.period ?? "Observed source coverage",
+      periodCount: Number(monthlyEvidence?.periodCount ?? analyst.evidence?.periodCount ?? 0),
+      filters: JSON.stringify(monthlyEvidence?.filters ?? {})
+    };
+    analyst.warnings = [...new Set([
+      ...analyst.warnings,
+      ...evidence.flatMap(x => Array.isArray(x.result?.warnings) ? x.result.warnings : []),
+      ...validationIssues.filter((x:any) => x.severity === "warning").map((x:any) => x.message)
+    ])];
+    const hardValidationErrors = validationIssues.filter((x:any) => x.severity === "error");
+    if (hardValidationErrors.length) {
+      analyst.warnings = [...new Set([...analyst.warnings, ...hardValidationErrors.map((x:any) => x.message)])];
+      analyst.decisionTrail = analyst.decisionTrail.filter((x:any) => x.type !== "action");
     }
+
+    return NextResponse.json({
+      analyst,
+      verification: { performed: false, toolCount: evidence.length, mode: "deterministic-evidence + resilient-structured-model-call" }
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "AI Analyst request failed." }, { status: 500 });
   }
