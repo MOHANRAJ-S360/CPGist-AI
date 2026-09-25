@@ -29,6 +29,11 @@ const n=(v:any)=>Number(v??0)||0;
 export async function GET(req:NextRequest){
   try{
     const p=req.nextUrl.searchParams;
+    if(p.get("mode")==="experiments"){
+      const brandId=p.get("brand_id")||"";
+      const where=brandId?"?brand_id=eq."+enc(brandId)+"&order=created_at.desc&limit=200":"?order=created_at.desc&limit=200";
+      return NextResponse.json({experiments:await get("cpgist_experiments"+where)});
+    }
     const brandId=p.get("brand_id")||"";
     if(!brandId) return NextResponse.json({error:"brand_id is required."},{status:400});
 
@@ -85,4 +90,37 @@ export async function GET(req:NextRequest){
   }catch(e:any){
     return NextResponse.json({error:e?.message||"A/B Testing data load failed."},{status:500});
   }
+}
+
+
+export async function POST(req:NextRequest){
+  try{
+    const body=await req.json();
+    const {u,k}=base();
+    if(!u||!k) throw new Error("Supabase server environment is not configured.");
+    if(!body?.experiment_id||!body?.brand_id) return NextResponse.json({error:"experiment_id and brand_id are required."},{status:400});
+    const payload={
+      experiment_id:String(body.experiment_id),
+      brand_id:Number(body.brand_id),
+      category:body.category||null,
+      hypothesis:body.hypothesis||null,
+      design:body.design||"observational",
+      unit_of_randomization:body.unit_of_randomization||null,
+      treatment:body.treatment||null,
+      control:body.control||null,
+      primary_kpi:body.primary_kpi||null,
+      start_date:body.start_date||null,
+      end_date:body.end_date||null,
+      control_value:body.control_value===""?null:Number(body.control_value),
+      test_value:body.test_value===""?null:Number(body.test_value),
+      control_observations:body.control_observations===""?null:Number(body.control_observations),
+      test_observations:body.test_observations===""?null:Number(body.test_observations),
+      assignment_validated:Boolean(body.assignment_validated),
+      notes:body.notes||null
+    };
+    const r=await fetch(u+"/rest/v1/cpgist_experiments",{method:"POST",headers:{apikey:k,Authorization:"Bearer "+k,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify(payload),cache:"no-store"});
+    const data=await r.json().catch(()=>null);
+    if(!r.ok) return NextResponse.json({error:data?.message||data?.hint||"Experiment save failed."},{status:r.status});
+    return NextResponse.json({experiment:Array.isArray(data)?data[0]:data});
+  }catch(e:any){return NextResponse.json({error:e?.message||"Experiment save failed."},{status:500});}
 }
