@@ -374,51 +374,101 @@ async function tool(name: string, a: Args, token: string) {
       const regions=[...regionMap.values()].map(x=>({...x,avgDistribution:x.retailers?x.distributionWeighted/x.retailers:null})).sort((a:any,b:any)=>b.sales-a.sales);
 
       // Competitor price/sales is a brand/retailer/region benchmark, not SKU-level.
-      // Use it when available and label the comparison grain explicitly.
+      // The competitor file contains competitor brands only; it does NOT contain the focal
+      // brand. Therefore the focal brand must come from cpgist_product_weekly and the peer
+      // benchmark must come from cpgist_competitor_price_sales at the same category/region grain.
       const cat=String(selected.category||"");
       const compRows=cat?await getAll("cpgist_competitor_price_sales?category=eq."+encodeURIComponent(cat)+"&select=brand,retailer,region,category,week,sales,units,price,is_actual&order=week.asc&limit=100000",token,1000,20000):[];
       const compPeriods=[...new Set(compRows.map((x:any)=>String(x.week)).filter(Boolean))].sort();
       const compLatest=new Set(compPeriods.slice(-13));
       const compRecent=compRows.filter((x:any)=>compLatest.has(String(x.week)));
-      const byRegionBrand=new Map<string,any>();
-      for(const r of compRecent){
-        const key=String(r.region||"Unknown")+"|"+String(r.brand||"");
-        const x=byRegionBrand.get(key)||{region:r.region||"Unknown",brand:r.brand||"Unknown",sales:0,units:0};
-        x.sales+=Number(r.sales||0); x.units+=Number(r.units||0); byRegionBrand.set(key,x);
-      }
-      const brandRegion=new Map<string,any>();
-      for(const x of byRegionBrand.values()){
-        const z=brandRegion.get(x.region)||{region:x.region,brands:[]};
-        z.brands.push(x); brandRegion.set(x.region,z);
-      }
-      const selectedBrandName=String((await resolveBrandContext(brandId,token)).brandName||"");
-      const competitorRegions=[...brandRegion.values()].map((z:any)=>{
-        const sorted=z.brands.sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
-        const selectedBrand=sorted.find((x:any)=>x.brand===selectedBrandName);
-        const peers=sorted.filter((x:any)=>x.brand!==selectedBrandName);
-        const topPeer=peers[0]||null;
-        const rank=selectedBrand?sorted.findIndex((x:any)=>x.brand===selectedBrand.brand)+1:null;
-        return {region:z.region,selectedBrandSales:selectedBrand?.sales??null,topPeerSales:topPeer?.sales??null,selectedBrandRank:rank,brandCount:sorted.length,peerGapPct:selectedBrand&&topPeer?growth(selectedBrand.sales,topPeer.sales):null};
-      }).filter(x=>x.selectedBrandSales!==null);
 
-      const byRetailer=new Map<string,any>();
-      for(const r of compRecent){
-        const key=String(r.retailer||"")+"|"+String(r.region||"");
-        const x=byRetailer.get(key)||{retailer:r.retailer||"Unknown",region:r.region||"Unknown",brands:[]};
-        const brandKey=String(r.brand||"");
-        let b=x.brands.find((v:any)=>v.brand===brandKey);
-        if(!b){b={brand:brandKey,sales:0,units:0};x.brands.push(b);}
-        b.sales+=Number(r.sales||0);b.units+=Number(r.units||0);
-        byRetailer.set(key,x);
+      const contextBrand=await resolveBrandContext(brandId,token);
+      const selectedBrandName=String(contextBrand.brandName||"");
+
+      // Prefer the explicit v3 competitor relationship mapping for peer selection.
+      let relatedNames:string[]=[];
+      try{
+        const rels=await get("syndicate_brand_relationships?brand_id=eq."+encodeURIComponent(brandId)+"&relationship_type=eq.competitor&select=related_brand_id&limit=5000",token);
+        if(Array.isArray(rels)&&rels.length){
+          const ids=rels.map((r:any)=>String(r.related_brand_id)).filter(Boolean);
+          const peerMasters=await get("cpgist_brands?id=in.("+encodeURIComponent(ids.join(","))+")&select=id,name&limit=5000",token);
+          relatedNames=peerMasters.map((r:any)=>String(r.name||"")).filter(Boolean);
+        }
+      }catch{}
+      const relatedNameSet=new Set(relatedNames.map(x=>x.toLowerCase()));
+
+      // Focal product sales by region over the same latest 13 weeks.
+      const focalRegion=new Map<string,any>();
+      for(const r of recent){
+        const rm=retailerMap[String(r.retailer_id)]||{};
+        const region=String(rm.region||"Unknown");
+        const x=focalRegion.get(region)||{region,sales:0,units:0,retailers:new Set<string>(),distributionSum:0,weeks:0};
+        x.sales+=Number(r.sales||0); x.units+=Number(r.units||0);
+        x.retailers.add(String(r.retailer_id)); x.distributionSum+=Number(r.distribution||0); x.weeks++;
+        focalRegion.set(region,x);
       }
-      const brandName=String((await resolveBrandContext(brandId,token)).brandName||"");
-      const competitorRetailers=[...byRetailer.values()].map((x:any)=>{
-        const sorted=x.brands.sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
-        const selectedBrand=sorted.find((v:any)=>v.brand===brandName);
-        const peers=sorted.filter((v:any)=>v.brand!==brandName);
+
+      const compByRegion=new Map<string,Map<string,any>>();
+      for(const r of compRecent){
+        const region=String(r.region||"Unknown"), name=String(r.brand||"");
+        if(name.toLowerCase()===selectedBrandName.toLowerCase())continue;
+        if(relatedNameSet.size && !relatedNameSet.has(name.toLowerCase()))continue;
+        const brands=compByRegion.get(region)||new Map<string,any>();
+        const x=brands.get(name)||{brand:name,sales:0,units:0};
+        x.sales+=Number(r.sales||0); x.units+=Number(r.units||0);
+        brands.set(name,x); compByRegion.set(region,brands);
+      }
+
+      const growth=(now:number,base:number)=>base?(now/base-1)*100:null;
+      const competitorRegions=[...focalRegion.values()].map((f:any)=>{
+        const peers=[...(compByRegion.get(f.region)?.values()||[])].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
+        const combined=[{sales:f.sales},...peers].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
+        const rank=combined.findIndex((x:any)=>x===combined.find((y:any)=>y.sales===f.sales))+1;
         const topPeer=peers[0]||null;
-        return selectedBrand?{retailer:x.retailer,region:x.region,selectedBrandSales:selectedBrand.sales,topPeerSales:topPeer?.sales??null,selectedBrandRank:sorted.findIndex((v:any)=>v.brand===brandName)+1,brandCount:sorted.length,peerGapPct:selectedBrand&&topPeer?growth(selectedBrand.sales,topPeer.sales):null}:null;
-      }).filter(Boolean).sort((a:any,b:any)=>Number(b.selectedBrandSales)-Number(a.selectedBrandSales)).slice(0,20);
+        return {
+          region:f.region,
+          selectedBrandSales:f.sales,
+          selectedBrandUnits:f.units,
+          selectedBrandRank:rank,
+          brandCount:peers.length+1,
+          topPeerSales:topPeer?.sales??null,
+          peerGapPct:topPeer?growth(f.sales,topPeer.sales):null,
+          retailerCount:f.retailers.size,
+          avgDistribution:f.weeks?f.distributionSum/f.weeks:null
+        };
+      }).sort((a:any,b:any)=>Number(b.selectedBrandSales)-Number(a.selectedBrandSales));
+
+      // Same-grain retailer comparison. Focal sales are from product_weekly; peer sales are
+      // from competitor_price_sales. This avoids the previous bug where the focal brand was
+      // searched inside a competitor-only table and therefore appeared to have no data.
+      const focalRetailer=new Map<string,any>();
+      for(const r of recent){
+        const rm=retailerMap[String(r.retailer_id)]||{};
+        const key=String(rm.name||r.retailer_id)+"|"+String(rm.region||"Unknown");
+        const x=focalRetailer.get(key)||{retailer:String(rm.name||r.retailer_id),region:String(rm.region||"Unknown"),sales:0,units:0};
+        x.sales+=Number(r.sales||0); x.units+=Number(r.units||0); focalRetailer.set(key,x);
+      }
+      const compByRetailer=new Map<string,Map<string,any>>();
+      for(const r of compRecent){
+        const key=String(r.retailer||"Unknown")+"|"+String(r.region||"Unknown"),name=String(r.brand||"");
+        if(relatedNameSet.size && !relatedNameSet.has(name.toLowerCase()))continue;
+        const brands=compByRetailer.get(key)||new Map<string,any>();
+        const x=brands.get(name)||{brand:name,sales:0,units:0};
+        x.sales+=Number(r.sales||0); x.units+=Number(r.units||0); brands.set(name,x); compByRetailer.set(key,brands);
+      }
+      const competitorRetailers=[...focalRetailer.values()].map((f:any)=>{
+        const peers=[...(compByRetailer.get(f.retailer+"|"+f.region)?.values()||[])].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
+        const combined=[{sales:f.sales},...peers].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
+        const topPeer=peers[0]||null;
+        return {
+          retailer:f.retailer,region:f.region,selectedBrandSales:f.sales,
+          topPeerSales:topPeer?.sales??null,
+          selectedBrandRank:combined.findIndex((x:any)=>x===combined.find((y:any)=>y.sales===f.sales))+1,
+          brandCount:peers.length+1,
+          peerGapPct:topPeer?growth(f.sales,topPeer.sales):null
+        };
+      }).sort((a:any,b:any)=>Number(b.selectedBrandSales)-Number(a.selectedBrandSales)).slice(0,20);
 
       const brandProducts=await get("cpgist_product_summary?brand_id=eq."+encodeURIComponent(brandId)+"&select=product_id,sales_13w&order=sales_13w.desc&limit=100",token);
       const brandProductSales=sum(brandProducts,"sales_13w");
