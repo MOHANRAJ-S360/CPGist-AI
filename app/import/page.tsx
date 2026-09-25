@@ -9,7 +9,7 @@ import {getImportState,subscribeImport,startDatasetImport} from "../../lib/impor
 export default function ImportPage(){
  const [file,setFile]=useState<File|null>(null),[busy,setBusy]=useState(()=>getImportState().busy),[status,setStatus]=useState(()=>getImportState().status),[result,setResult]=useState<any>(()=>getImportState().result),[error,setError]=useState(()=>getImportState().error);
  useEffect(()=>{
-  return subscribeImport(s=>{setBusy(s.busy);setStatus(s.status);setResult(s.result);setError(s.error);window.dispatchEvent(new CustomEvent("cpgist:import-busy",{detail:s.busy}));});
+  const unsubscribe=subscribeImport(s=>{setBusy(s.busy);setStatus(s.status);setResult(s.result);setError(s.error);window.dispatchEvent(new CustomEvent("cpgist:import-busy",{detail:s.busy}));}); return()=>{unsubscribe();};
  },[]);
  useEffect(()=>{
   const warn=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue="";};
