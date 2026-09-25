@@ -408,6 +408,20 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   brands.forEach(x=>addAliases(bm,[x.name],x));
   retailers.forEach(x=>addAliases(rm,[x.name,String(x.name).replace(/\s*\([^)]*\)\s*$/,"")],x));
   products.forEach(x=>addAliases(pm,[x.name,(x.name+" "+(x.size||"")).trim(),x.sku||""],x));
+  const productsByKey=new Map<string,any[]>();
+  for(const p of products){
+    const keys=[
+      p.name,
+      p.size?String(p.name)+" "+String(p.size):"",
+      p.subcategory?String(p.name)+" "+String(p.subcategory):"",
+      p.subcategory?String(p.name)+" "+String(p.subcategory)+" Family Pack":""
+    ].filter(Boolean).map(normKey);
+    for(const k of keys){
+      const arr=productsByKey.get(k)||[];
+      if(!arr.some(x=>x.id===p.id))arr.push(p);
+      productsByKey.set(k,arr);
+    }
+  }
   const resolveBrand=(v:any)=>bm.get(normKey(v));
   const resolveRetailer=(v:any)=>rm.get(normKey(v));
   const resolveProduct=(v:any)=>{
