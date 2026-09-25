@@ -395,11 +395,10 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     if(!w||!brand)return;
     weeks.add(w);
     const category=pick(r,"category")||brand.category||"Unclassified";
-    const sales=num(r,"sales_value","dollar_sales","sales"),units=num(r,"units","volume_units"),reg=num(r,"regular_price"),act=num(r,"actual_price"),dist=num(r,"ACV_distribution","distribution","weighted_distribution"),promo=boolValue(pick(r,"promo_flag","promotion_flag"),false),cost=num(r,"unit_cost"),margin=num(r,"gross_margin"),marginPct=num(r,"margin_percent"),actual=boolValue(pick(r,"is_actual","actual","observed"),true);
+    const sales=num(r,"sales_value","dollar_sales","sales"),units=num(r,"units","volume_units"),reg=num(r,"regular_price"),act=num(r,"actual_price"),dist=num(r,"ACV_distribution","distribution","weighted_distribution"),promo=boolValue(pick(r,"promo_flag","promotion_flag"),false),cost=num(r,"unit_cost"),marginPerUnit=num(r,"gross_margin"),marginTotal=cost&&units?sales-(cost*units):marginPerUnit*units,actual=boolValue(pick(r,"is_actual","actual","observed"),true);
 
     const b=agg(BA,brand.id+"|"+w,{brand_id:brand.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,reg:0,act:0,cost:0,margin:0,marginPct:0,marginPctN:0,is_actual:actual});
-    b.sales+=sales;b.units+=units;b.dist+=dist;b.n++;if(promo)b.promo++;b.reg+=reg*units;b.act+=act*units;b.cost+=cost*units;b.margin+=margin;b.is_actual=actual;
-    if(marginPct)b.marginPct+=marginPct;b.marginPctN++;
+    b.sales+=sales;b.units+=units;b.dist+=dist;b.n++;if(promo)b.promo++;b.reg+=reg*units;b.act+=act*units;b.cost+=cost*units;b.margin+=marginTotal;b.is_actual=actual;
 
     const c=agg(CA,category+"|"+w,{category,week_ending:w,sales:0,units:0,dist:0,n:0,is_actual:actual});
     c.sales+=sales;c.units+=units;c.dist+=dist;c.n++;c.is_actual=actual;
@@ -412,7 +411,7 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     if(product&&retailer&&w>=DETAIL_START){
       const k=product.id+"|"+retailer.id+"|"+w;
       const q=agg(detail,k,{product_id:product.id,brand_id:brand.id,retailer_id:retailer.id,week_ending:w,category,sales:0,units:0,dist:0,n:0,promo:0,cost:0,margin:0,marginPct:0,marginPctN:0,reg:0,act:0,is_actual:actual});
-      q.sales+=sales;q.units+=units;q.dist+=dist;q.n++;if(promo)q.promo++;q.cost+=cost*units;q.margin+=margin;q.reg+=reg*units;q.act+=act*units;q.is_actual=actual;if(marginPct){q.marginPct+=marginPct;q.marginPctN++}
+      q.sales+=sales;q.units+=units;q.dist+=dist;q.n++;if(promo)q.promo++;q.cost+=cost*units;q.margin+=marginTotal;q.reg+=reg*units;q.act+=act*units;q.is_actual=actual
     }
 
     const bc=agg(BCA,brand.id+"|"+category+"|"+w,{brand_id:brand.id,category,week_ending:w,sales:0,units:0,dist:0,n:0,is_actual:actual});
