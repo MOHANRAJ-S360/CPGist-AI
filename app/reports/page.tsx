@@ -150,7 +150,7 @@ function ReportsContent(){
     bullets(s,risks,.75,1.90,11.6);s.addShape(pptx.ShapeType.roundRect,{x:.7,y:5.55,w:11.8,h:.72,rectRadius:.03,fill:{color:soft},line:{color:line}});s.addText("DATA / LINEAGE",{x:.9,y:5.75,w:1.35,h:.16,fontSize:7,bold:true,color:accent});s.addText("Currency display: USD; no FX normalization method is exposed. "+(geoValues.length?"Observed geography: "+geoValues.slice(0,4).join(", ")+(geoValues.length>4?" + additional markets":"")+".":"Geography detail is not populated in the connected retailer master."),{x:2.2,y:5.68,w:10,h:.30,fontSize:7.2,color:muted,fit:"shrink"});note(s,"Source lineage: CPGist compact master + weekly tables → deterministic aligned-period calculations → client deck. Default window: latest 13W vs prior 13W.");footer(s);}
 
    // 10 — Management Actions
-   {const s=pptx.addSlide();addHeader(s,"Management Actions");title(s,brandName,"What to investigate, what to monitor, and the next-best questions.");const cols=[
+   {const s=pptx.addSlide();s.background={color:dark};s.addText("CPGIST",{x:.62,y:.28,w:1.25,h:.18,color:ice3,bold:true,fontSize:9,fontFace:"Calibri"});s.addText("MANAGEMENT ACTIONS",{x:.62,y:.58,w:5,h:.18,color:ice3,bold:true,fontSize:8,fontFace:"Calibri",charSpacing:1.1});s.addText(brandName,{x:.62,y:.88,w:11.7,h:.34,color:white,bold:true,fontSize:21,fontFace:"Cambria",fit:"shrink"});s.addText("What to investigate, what to monitor, and the next-best questions.",{x:.62,y:1.28,w:11.5,h:.2,color:ice3,fontSize:9,fontFace:"Calibri"});const cols=[
       ["INVESTIGATE",[
        "Why is the latest 13W sales movement occurring?",
        "Which retailer/product combinations explain the change?",
