@@ -450,8 +450,87 @@ async function tool(name: string, a: Args, token: string) {
       const products = ids ? await get("cpgist_products?select=id,name,sku,category,subcategory,size,pack_count,brand_id&id=in.("+encodeURIComponent(ids)+")", token) : [];
       const master = Object.fromEntries(products.map((x:any)=>[String(x.id),x]));
       const total = rows.reduce((s:number,x:any)=>s+Number(x.sales_13w||0),0);
-      return { products: rows.map((x:any)=>({...x,...(master[String(x.product_id)]||{}),shareOfBrand:total?Number(x.sales_13w||0)/total:0})), totalSales:total,
-        evidence:{source:"cpgist_product_summary",grain:"product 13-week summary",rowCount:rows.length,periodStart:rows[0]?.period_end??null,periodEnd:rows[0]?.period_end??null,periodCount:1,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()}, warnings:[] };
+
+      // The product summary is not regional, but the underlying product-weekly
+      // table is linked to retailers, and retailers carry region metadata.
+      // Pull that layer when it is available so product questions such as
+      // "where is Butter underperforming?" can be answered from observed data.
+      const productIdList = rows.map((x:any)=>String(x.product_id)).filter(Boolean);
+      let regionalByProduct: Record<string, any[]> = {};
+      if (productIdList.length) {
+        const weekly = await getAll(
+          "cpgist_product_weekly?product_id=in.("+encodeURIComponent(productIdList.join(","))+")&select=product_id,retailer_id,week_ending,sales,units,distribution,promo_rate,price,is_actual&order=week_ending.asc&limit=100000",
+          token, 1000, 20000
+        );
+        const retailerIds = [...new Set(weekly.map((x:any)=>String(x.retailer_id)).filter(Boolean))];
+        const retailerRows = retailerIds.length
+          ? await get("cpgist_retailers?select=id,name,region,channel,total_stores&id=in.("+encodeURIComponent(retailerIds.join(","))+")&limit=5000", token)
+          : [];
+        const retailerMap = Object.fromEntries(retailerRows.map((x:any)=>[String(x.id),x]));
+        const periods = [...new Set(weekly.map((x:any)=>String(x.week_ending)).filter(Boolean))].sort();
+        const latest13 = periods.slice(-13);
+        const prior13 = periods.slice(-26,-13);
+        const recentSet = new Set(latest13), priorSet = new Set(prior13);
+        const regionAgg = new Map<string,any>();
+        for (const r of weekly) {
+          const region = String(retailerMap[String(r.retailer_id)]?.region || "Unknown");
+          const key = String(r.product_id)+"|"+region;
+          const x = regionAgg.get(key) || { productId:String(r.product_id), region, sales:0, units:0, distributionSum:0, promoSum:0, priceSum:0, weeks:0, priorSales:0, priorWeeks:0 };
+          const isRecent = recentSet.has(String(r.week_ending));
+          const isPrior = priorSet.has(String(r.week_ending));
+          if (isRecent) {
+            x.sales += Number(r.sales||0);
+            x.units += Number(r.units||0);
+            x.distributionSum += Number(r.distribution||0);
+            x.promoSum += Number(r.promo_rate||0);
+            x.priceSum += Number(r.price||0);
+            x.weeks++;
+          } else if (isPrior) {
+            x.priorSales += Number(r.sales||0);
+            x.priorWeeks++;
+          }
+          regionAgg.set(key,x);
+        }
+        for (const x of regionAgg.values()) {
+          const item = {
+            region:x.region,
+            sales:x.sales,
+            priorSales:x.priorSales,
+            salesGrowthPct:x.priorSales ? (x.sales/x.priorSales-1)*100 : null,
+            units:x.units,
+            avgDistribution:x.weeks ? x.distributionSum/x.weeks : null,
+            avgPromoRate:x.weeks ? x.promoSum/x.weeks : null,
+            avgPrice:x.weeks ? x.priceSum/x.weeks : null,
+            weeks:x.weeks,
+            priorWeeks:x.priorWeeks
+          };
+          (regionalByProduct[x.productId] ||= []).push(item);
+        }
+        for (const id of Object.keys(regionalByProduct)) regionalByProduct[id].sort((a:any,b:any)=>Number(a.sales)-Number(b.sales));
+      }
+
+      return {
+        products: rows.map((x:any)=>({
+          ...x,
+          ...(master[String(x.product_id)]||{}),
+          shareOfBrand:total?Number(x.sales_13w||0)/total:0,
+          regionalPerformance:regionalByProduct[String(x.product_id)]||[]
+        })),
+        totalSales:total,
+        evidence:{
+          source:"cpgist_product_summary + cpgist_product_weekly + cpgist_retailers",
+          grain:"product 13-week summary with product/region weekly drill-down",
+          rowCount:rows.length,
+          periodStart:rows[0]?.period_end??null,
+          periodEnd:rows[0]?.period_end??null,
+          periodCount:1,
+          filters:filtersFromArgs(a),
+          generatedAt:new Date().toISOString()
+        },
+        warnings:[
+          ...(Object.keys(regionalByProduct).length ? [] : ["Regional product performance is unavailable because the product-weekly rows could not be linked to retailer region metadata."])
+        ]
+      };
     }
 
     case "competitive_signals": {
