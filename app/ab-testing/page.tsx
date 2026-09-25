@@ -1,7 +1,7 @@
 "use client";
 
 import {useEffect,useMemo,useState} from "react";
-import {AlertTriangle,ArrowRight,BarChart3,CalendarDays,CheckCircle2,Database,FlaskConical,Info,Layers3,ShieldCheck,Target,TrendingUp,Users} from "lucide-react";
+import {AlertTriangle,ArrowRight,BarChart3,CheckCircle2,Database,FlaskConical,Info,Layers3,ShieldCheck,Target,TrendingUp,Users} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
 import {supabaseBrowser} from "../../lib/supabase-browser";
 
