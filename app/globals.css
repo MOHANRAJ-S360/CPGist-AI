@@ -256,7 +256,7 @@
 .ab-form-grid input,.ab-form-grid select,.ab-values input{width:100%;height:39px;border:1px solid #dce1ea;border-radius:9px;background:#fff;padding:0 11px;color:#101828;font:11px inherit;outline:none;transition:border-color .15s,box-shadow .15s}
 .ab-form-grid input:focus,.ab-form-grid select:focus,.ab-values input:focus{border-color:#8b7dff;box-shadow:0 0 0 3px rgba(109,93,252,.09)}
 .ab-form-grid .ab-wide{grid-column:1/-1}
-.ab-input-icon{position:relative}.ab-input-icon svg{position:absolute;left:11px;top:12px;color:#98a2b3;pointer-events:none}.ab-input-icon input{padding-left:34px}
+.ab-date-input{appearance:auto;-webkit-appearance:auto;padding:0 11px!important;color:#101828}.ab-date-input::-webkit-calendar-picker-indicator{opacity:.72;cursor:pointer;margin-left:4px}
 .ab-divider{height:1px;background:#edf0f4;margin:20px 0 15px}
 .ab-subhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px}.ab-subhead b{font-size:11px}.ab-subhead span{font-size:9px;color:#98a2b3}
 .ab-values{display:grid;grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr);align-items:center;gap:8px}
