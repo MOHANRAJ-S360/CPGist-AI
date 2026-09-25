@@ -665,7 +665,7 @@ async function tool(name: string, a: Args, token: string) {
         get("cpgist_product_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=product_id,week_ending,sales,is_actual&limit=100000",token)
       ]);
       const result=getLaunchPerformance(pm,tr,sales);
-      return {...result,evidence:{source:"cpgist_products.launch_date + cpgist_trial_repeat + cpgist_product_weekly",grain:"launch week",rowCount:result.products.length,periodStart:result.products[0]?.launchDate??null,periodEnd:result.products.flatMap((x:any)=>x.weekly.map((w:any)=>w.week)).at(-1)??null,periodCount:result.products.reduce((m:number,x:any)=>Math.max(m,x.weekly.length),0),filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:result.available?[]:["No populated launch_date/trial-repeat records were found."]};
+      return {...result,evidence:{source:"cpgist_products.launch_date + cpgist_trial_repeat + cpgist_product_weekly",grain:"SKU launch evidence with source/derived launch date",rowCount:result.products.length,periodStart:result.products[0]?.launchDate??null,periodEnd:result.products.flatMap((x:any)=>x.weekly.map((w:any)=>w.week)).at(-1)??null,periodCount:result.products.reduce((m:number,x:any)=>Math.max(m,x.weekly.length),0),filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:result.available?[result.limitation]:["No product sales/trial evidence is available for launch analysis."]};
     }
     case "get_synthetic_panel": {
       const brand=await resolveBrandContext(String(a.brandId||""),token);
@@ -674,9 +674,13 @@ async function tool(name: string, a: Args, token: string) {
       return {...result,evidence:{source:"cpgist_panel_household",grain:"synthetic household week",rowCount:rows.length,periodStart:rows[0]?.week??null,periodEnd:rows.at(-1)?.week??null,periodCount:new Set(rows.map((x:any)=>x.week)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:[result.label]};
     }
     case "get_macro_overlay": {
-      const rows=await get("cpgist_macro_signals?select=*&limit=100000",token);
+      const brand=await resolveBrandContext(String(a.brandId||""),token);
+      const brandRegions=brand.brandName ? await get("cpgist_retailers?select=region&id=in.("+encodeURIComponent((await getAll("cpgist_product_weekly?brand_id=eq."+encodeURIComponent(String(a.brandId||""))+"&select=retailer_id&limit=100000",token,1000,20000)).map((x:any)=>String(x.retailer_id)).filter(Boolean).join(","))+")&limit=5000",token).catch(()=>[]) : [];
+      const regionSet=new Set((brandRegions as any[]).map(x=>String(x.region||"")).filter(Boolean));
+      const raw=await get("cpgist_macro_signals?select=*&limit=100000",token);
+      const rows=regionSet.size?raw.filter((x:any)=>regionSet.has(String(x.region||""))):raw;
       const result=getMacroOverlay(rows);
-      return {...result,evidence:{source:"cpgist_macro_signals",grain:"region week",rowCount:rows.length,periodStart:rows[0]?.week??null,periodEnd:rows.at(-1)?.week??null,periodCount:new Set(rows.map((x:any)=>x.week)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:[result.label]};
+      return {...result,evidence:{source:"cpgist_macro_signals aligned to selected brand retailer regions",grain:"region week overlay",rowCount:rows.length,periodStart:rows.map((x:any)=>x.week).filter(Boolean).sort()[0]??null,periodEnd:rows.map((x:any)=>x.week).filter(Boolean).sort().at(-1)??null,periodCount:new Set(rows.map((x:any)=>x.week)).size,filters:{...filtersFromArgs(a),regions:[...regionSet]},generatedAt:new Date().toISOString()},warnings:[result.label,"Macro signals are aligned by region and week; they are contextual overlays, not causal drivers of brand sales."]};
     }
     case "category_growth_plan": {
       const categoryName = String(a.categoryId || "").trim();
@@ -885,7 +889,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (/a\/b|ab test|a-b test|experiment|control group|test group|variant|randomi[sz]ed|incrementality/.test(q)) add("ab_testing_guidance");
 
   const evidence: any[] = [];
-  for (const name of selected.slice(0, 4)) {
+  for (const name of selected.slice(0, 7)) {
     try {
       const args: Args = { ...scope };
       if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic"].includes(name)) args.categoryId = categoryId;
