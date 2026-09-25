@@ -140,18 +140,30 @@ export function getMarginPnl(rows:AdvancedRow[], productMaster:AdvancedRow[]=[],
 }
 
 export function getLaunchPerformance(products:AdvancedRow[], trialRows:AdvancedRow[], salesRows:AdvancedRow[]) {
-  const launched=products.filter(p=>p.launch_date);
   const trial=new Map<string,AdvancedRow[]>();
   trialRows.forEach(r=>{const k=String(r.sku||"");if(!trial.has(k))trial.set(k,[]);trial.get(k)!.push(r)});
   const salesByProduct=new Map<string,AdvancedRow[]>();
   salesRows.forEach(r=>{const k=String(r.product_id||"");if(!salesByProduct.has(k))salesByProduct.set(k,[]);salesByProduct.get(k)!.push(r)});
-  const out=launched.map(p=>{
+  const out=products.map(p=>{
+    const allSales=(salesByProduct.get(String(p.id))||[]).sort((a,b)=>String(a.week_ending).localeCompare(String(b.week_ending)));
+    const firstObserved=allSales[0]?.week_ending ?? null;
+    const launchDate=p.launch_date ?? firstObserved;
+    if(!launchDate)return null;
+    const derived=!p.launch_date;
     const ts=(trial.get(String(p.sku))||[]).sort((a,b)=>String(a.week).localeCompare(String(b.week)));
-    const ss=(salesByProduct.get(String(p.id))||[]).filter(r=>String(r.week_ending)>=String(p.launch_date)).sort((a,b)=>String(a.week_ending).localeCompare(String(b.week_ending)));
-    let cumulative=0;const weekly=ts.map(t=>{const s=ss.find(x=>String(x.week_ending)===String(t.week));cumulative+=n(s?.sales);return{week:t.week,trialRate:t.trial_rate==null?null:n(t.trial_rate)*100,repeatRate:t.repeat_rate==null?null:n(t.repeat_rate)*100,cumulativeSales:cumulative,is_actual:t.is_actual}}).filter(x=>x.trialRate!=null||x.repeatRate!=null);
-    return {productId:p.id,name:p.name,sku:p.sku,launchDate:p.launch_date,weekly,cumulativeSales:weekly.at(-1)?.cumulativeSales??0};
-  });
-  return {available:out.length>0,products:out};
+    const ss=allSales.filter(r=>String(r.week_ending)>=String(launchDate));
+    const trialWeeks=ts.map(t=>String(t.week));
+    const weeks=[...new Set([...trialWeeks,...ss.map(s=>String(s.week_ending))])].sort().slice(0,13);
+    let cumulative=0;
+    const weekly=weeks.map(week=>{
+      const s=ss.filter(x=>String(x.week_ending)===week).reduce((z,x)=>z+n(x.sales),0);
+      cumulative+=s;
+      const t=ts.find(x=>String(x.week)===week);
+      return {week,trialRate:t?.trial_rate==null?null:n(t.trial_rate)*100,repeatRate:t?.repeat_rate==null?null:n(t.repeat_rate)*100,cumulativeSales:cumulative,is_actual:t?.is_actual ?? ss.find(x=>String(x.week_ending)===week)?.is_actual ?? null};
+    });
+    return {productId:p.id,name:p.name,sku:p.sku,launchDate,launchDateType:derived?"derived_first_observed_week":"source_launch_date",weekly,cumulativeSales:cumulative};
+  }).filter(Boolean);
+  return {available:out.length>0,products:out,limitation:"When source launch_date is absent, CPGist uses the first observed sales week only as a derived launch proxy; it is not a source-confirmed launch event."};
 }
 
 export function getSyntheticPanel(panelRows:AdvancedRow[]) {
