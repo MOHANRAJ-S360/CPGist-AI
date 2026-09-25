@@ -25,7 +25,8 @@ function ReportsContent(){
    if(brandId){
     const [r,ar,dr]=await Promise.all([
       fetch("/api/explorer?entity=brand&id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"}),
-      fetch("/api/advanced-analytics?brand_id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"})
+      fetch("/api/advanced-analytics?brand_id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"}),
+      fetch("/api/dashboard",{headers:{Authorization:"Bearer "+token},cache:"no-store"})
     ]);
     const [x,advanced,market]=await Promise.all([r.json(),ar.ok?ar.json():Promise.resolve({}),dr.ok?dr.json():Promise.resolve({})]);
     if(!r.ok)throw new Error(x.error||"Brand report data failed.");
