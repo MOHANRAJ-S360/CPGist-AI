@@ -392,12 +392,12 @@ async function tool(name: string, a: Args, token: string) {
         z.brands.push(x); brandRegion.set(x.region,z);
       }
       const selectedBrandName=String((await resolveBrandContext(brandId,token)).brandName||"");
-      const competitorRegions=[...brandRegion.values()].map(z=>{
+      const competitorRegions=[...brandRegion.values()].map((z:any)=>{
         const sorted=z.brands.sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
-        const selectedBrand=sorted.find(x=>x.brand===selectedBrandName);
-        const peers=sorted.filter(x=>x.brand!==selectedBrandName);
+        const selectedBrand=sorted.find((x:any)=>x.brand===selectedBrandName);
+        const peers=sorted.filter((x:any)=>x.brand!==selectedBrandName);
         const topPeer=peers[0]||null;
-        const rank=selectedBrand?sorted.findIndex(x=>x.brand===selectedBrand.brand)+1:null;
+        const rank=selectedBrand?sorted.findIndex((x:any)=>x.brand===selectedBrand.brand)+1:null;
         return {region:z.region,selectedBrandSales:selectedBrand?.sales??null,topPeerSales:topPeer?.sales??null,selectedBrandRank:rank,brandCount:sorted.length,peerGapPct:selectedBrand&&topPeer?growth(selectedBrand.sales,topPeer.sales):null};
       }).filter(x=>x.selectedBrandSales!==null);
 
@@ -412,12 +412,12 @@ async function tool(name: string, a: Args, token: string) {
         byRetailer.set(key,x);
       }
       const brandName=String((await resolveBrandContext(brandId,token)).brandName||"");
-      const competitorRetailers=[...byRetailer.values()].map(x=>{
+      const competitorRetailers=[...byRetailer.values()].map((x:any)=>{
         const sorted=x.brands.sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
-        const selectedBrand=sorted.find(v=>v.brand===brandName);
-        const peers=sorted.filter(v=>v.brand!==brandName);
+        const selectedBrand=sorted.find((v:any)=>v.brand===brandName);
+        const peers=sorted.filter((v:any)=>v.brand!==brandName);
         const topPeer=peers[0]||null;
-        return selectedBrand?{retailer:x.retailer,region:x.region,selectedBrandSales:selectedBrand.sales,topPeerSales:topPeer?.sales??null,selectedBrandRank:sorted.findIndex(v=>v.brand===brandName)+1,brandCount:sorted.length,peerGapPct:selectedBrand&&topPeer?growth(selectedBrand.sales,topPeer.sales):null}:null;
+        return selectedBrand?{retailer:x.retailer,region:x.region,selectedBrandSales:selectedBrand.sales,topPeerSales:topPeer?.sales??null,selectedBrandRank:sorted.findIndex((v:any)=>v.brand===brandName)+1,brandCount:sorted.length,peerGapPct:selectedBrand&&topPeer?growth(selectedBrand.sales,topPeer.sales):null}:null;
       }).filter(Boolean).sort((a:any,b:any)=>Number(b.selectedBrandSales)-Number(a.selectedBrandSales)).slice(0,20);
 
       const brandProducts=await get("cpgist_product_summary?brand_id=eq."+encodeURIComponent(brandId)+"&select=product_id,sales_13w&order=sales_13w.desc&limit=100",token);
