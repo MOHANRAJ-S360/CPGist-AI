@@ -694,6 +694,26 @@ function compactForModel(value: any, maxChars = 5600): any {
   return { truncatedEvidence: json.slice(0, maxChars) + "…", note: "Evidence was compacted to preserve model capacity." };
 }
 
+function abTestingGuidance(question: string) {
+  const q = question.toLowerCase();
+  const metric = /margin|profit/.test(q) ? "gross margin" : /unit/.test(q) ? "units" : /conversion|response/.test(q) ? "conversion/response rate" : /sales|revenue/.test(q) ? "sales" : "the selected KPI";
+  return {
+    available: true,
+    type: "experimentation_framework",
+    metric,
+    causalRule: "A/B results support causal interpretation only when treatment assignment is randomized or otherwise designed as a valid experiment.",
+    cpgUseCases: ["price","promotion","pack/SKU","assortment","display","retailer/store cluster"],
+    requiredFields: ["experiment_id","control/test assignment","start_date","end_date","primary KPI","control observations","test observations","unit of randomization"],
+    analysis: ["absolute difference","relative lift","sample size","statistical uncertainty when variance/count data supports it"],
+    guardrails: [
+      "Historical control-vs-test differences are observational, not automatically causal.",
+      "Do not claim a winner from lift alone when experiment quality or uncertainty is insufficient.",
+      "Use store/customer-level or experiment-level observations for formal significance testing where appropriate."
+    ],
+    questionContext: question
+  };
+}
+
 async function collectEvidence(question: string, brandId: string | undefined, token: string) {
   const q = question.toLowerCase();
   const scope = brandId ? { brandId } : {};
@@ -732,13 +752,15 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (/anomal|spike|drop|unusual|outlier/.test(q)) add("detect_anomalies");
   if (brandId && categoryId && /share|market share|category context/.test(q)) add("get_market_share");
   if (/scenario|what if|simulate/.test(q)) add("run_scenario");
+  if (/a\/b|ab test|a-b test|experiment|control group|test group|variant|randomi[sz]ed|incrementality/.test(q)) add("ab_testing_guidance");
 
   const evidence: any[] = [];
-  for (const name of selected.slice(0, 3)) {
+  for (const name of selected.slice(0, 4)) {
     try {
       const args: Args = { ...scope };
       if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic"].includes(name)) args.categoryId = categoryId;
       if (name === "product_competitor_diagnostic") args.productQuery = question;
+      if (name === "ab_testing_guidance") { evidence.push({ tool: name, result: abTestingGuidance(question) }); continue; }
       if (name === "forecast_sales") args.horizon = 8;
       if (name === "run_scenario") { args.priceChangePct = 0; args.distributionChangePts = 0; }
       const result = await tool(name, args, token);
@@ -773,7 +795,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. If evidence is unavailable, say so explicitly, but first use every relevant populated evidence layer. A missing SKU-to-SKU competitor field does not mean all competitive evidence is unavailable: use validated brand/category/retailer/region peer benchmarks when present and label the comparison grain. For product questions, answer the product's own sales, growth, distribution, price, promotion, regional and retailer performance first, then add competitor context where supported. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
+        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. If evidence is unavailable, say so explicitly, but first use every relevant populated evidence layer. A missing SKU-to-SKU competitor field does not mean all competitive evidence is unavailable: use validated brand/category/retailer/region peer benchmarks when present and label the comparison grain. For product questions, answer the product's own sales, growth, distribution, price, promotion, regional and retailer performance first, then add competitor context where supported. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks about an A/B test or experiment, use the experimentation evidence when present. You may explain test design, control/test comparisons, lift, uncertainty and CPG use cases. Never turn historical differences into causal claims. If actual experiment-level observations are not present, clearly say that CPGist can design or interpret the experiment framework but cannot manufacture experimental evidence. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
       },
       ...incoming.slice(-6).map((m: any) => ({
         role: m?.role === "assistant" ? "assistant" : "user",
