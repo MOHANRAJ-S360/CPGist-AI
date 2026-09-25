@@ -136,7 +136,8 @@ function ReportsContent(){
     if(d.promoRate!=null)opps.push("Review promotion mix at "+Number(d.promoRate).toFixed(1)+"% observed promo rate and compare against sales movement by retailer/product before concluding on effectiveness.");
     if(d.growth!=null&&Number(d.growth)<0)opps.push("Prioritize a driver decomposition of the "+pct(d.growth)+" sales decline across distribution, retailer mix, product mix and commercial levers.");
     if(!opps.length)opps.push("No additional evidence-backed opportunity can be identified from the currently exposed report fields without adding more granular category, SKU or retailer history.");
-    bullets(s,opps,.75,2.0,11.6);note(s,"Opportunities are framed as actions to investigate, not guaranteed incremental growth.");footer(s);}
+    opps.slice(0,4).forEach((t:string,i:number)=>{const x=.7+(i%2)*6.05,y=2.05+Math.floor(i/2)*1.75;s.addShape(pptx.ShapeType.roundRect,{x,y,w:5.55,h:1.42,rectRadius:.06,fill:{color:ice2},line:{color:ice3}});s.addShape(pptx.ShapeType.ellipse,{x:x+.22,y:y+.25,w:.42,h:.42,fill:{color:dark},line:{color:dark}});s.addText(String(i+1),{x:x+.22,y:y+.34,w:.42,h:.12,color:white,fontSize:7,bold:true,align:"center"});s.addText("OPPORTUNITY "+(i+1),{x:x+.82,y:y+.22,w:2.3,h:.16,color:muted,fontSize:7,bold:true,fontFace:"Calibri"});s.addText(t,{x:x+.82,y:y+.50,w:4.35,h:.68,color:dark,fontSize:9.5,fontFace:"Calibri",fit:"shrink"});});
+    note(s,"Opportunities are framed as actions to investigate, not guaranteed incremental growth.");footer(s);}
 
    // 9 — Risks
    {const s=pptx.addSlide();addHeader(s,"Risks");title(s,brandName,"Observed risks and explicit data limitations.");const risks:string[]=[];
