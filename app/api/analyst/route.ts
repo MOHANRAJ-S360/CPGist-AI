@@ -308,6 +308,139 @@ async function tool(name: string, a: Args, token: string) {
       };
     }
 
+    case "product_competitor_diagnostic": {
+      const brandId=String(a.brandId||"").trim();
+      if(!brandId) return {error:"product_competitor_diagnostic requires brandId."};
+
+      const productQuery=String(a.productQuery||"").trim().toLowerCase();
+      const products=await get("cpgist_products?brand_id=eq."+encodeURIComponent(brandId)+"&select=id,name,sku,category,subcategory,size,pack_count&limit=5000",token);
+      if(!products.length) return {product:null,productRetailers:[],regions:[],competitorBenchmark:{},evidence:{source:"cpgist_products + cpgist_product_weekly + cpgist_competitor_price_sales",grain:"product/retailer/region",rowCount:0,periodStart:null,periodEnd:null,periodCount:0,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:["No products are populated for the selected brand."]};
+
+      const scored=products.map((p:any)=>{
+        const hay=(String(p.name||"")+" "+String(p.sku||"")+" "+String(p.subcategory||"")).toLowerCase();
+        const tokens=productQuery.split(/\\s+/).filter(x=>x.length>2);
+        const score=tokens.reduce((n,t)=>n+(hay.includes(t)?1:0),0)+(productQuery&&hay.includes(productQuery)?3:0);
+        return {p,score};
+      }).sort((a:any,b:any)=>b.score-a.score);
+      const selected=scored[0]?.p;
+      if(!selected || (productQuery && scored[0]?.score===0)) {
+        return {
+          product:null,
+          productCandidates:products.slice(0,10),
+          evidence:{source:"cpgist_products",grain:"product master",rowCount:products.length,periodStart:null,periodEnd:null,periodCount:0,filters:{...filtersFromArgs(a),productQuery},generatedAt:new Date().toISOString()},
+          warnings:["The requested product could not be matched confidently to the selected brand's product master."]
+        };
+      }
+
+      const productRows=await getAll("cpgist_product_weekly?product_id=eq."+encodeURIComponent(String(selected.id))+"&select=product_id,brand_id,retailer_id,week_ending,sales,units,price,distribution,promo_rate,is_actual&order=week_ending.asc&limit=100000",token,1000,10000);
+      const periods=[...new Set(productRows.map((x:any)=>String(x.week_ending)).filter(Boolean))].sort();
+      const latest=periods.slice(-13), prior=periods.slice(-26,-13);
+      const latestSet=new Set(latest), priorSet=new Set(prior);
+      const recent=productRows.filter((x:any)=>latestSet.has(String(x.week_ending)));
+      const old=productRows.filter((x:any)=>priorSet.has(String(x.week_ending)));
+      const sum=(rows:any[],key:string)=>rows.reduce((n,r)=>n+Number(r[key]||0),0);
+      const avg=(rows:any[],key:string)=>rows.length?rows.reduce((n,r)=>n+Number(r[key]||0),0)/rows.length:null;
+      const growth=(now:number,base:number)=>base?(now/base-1)*100:null;
+      const recentSales=sum(recent,"sales"), priorSales=sum(old,"sales");
+      const recentUnits=sum(recent,"units"), priorUnits=sum(old,"units");
+      const recentPrice=recentUnits?recentSales/recentUnits:null;
+      const priorPrice=priorUnits?priorSales/priorUnits:null;
+
+      const retailerIds=[...new Set(productRows.map((x:any)=>String(x.retailer_id)).filter(Boolean))];
+      const retailerMaster=retailerIds.length?await get("cpgist_retailers?select=id,name,channel,region,total_stores&id=in.("+encodeURIComponent(retailerIds.join(","))+")&limit=5000",token):[];
+      const retailerMap=Object.fromEntries(retailerMaster.map((x:any)=>[String(x.id),x]));
+
+      const retailerAgg=new Map<string,any>();
+      for(const r of recent){
+        const id=String(r.retailer_id);
+        const x=retailerAgg.get(id)||{retailerId:id,sales:0,units:0,distributionSum:0,weeks:0};
+        x.sales+=Number(r.sales||0); x.units+=Number(r.units||0); x.distributionSum+=Number(r.distribution||0); x.weeks++;
+        retailerAgg.set(id,x);
+      }
+      const retailerPrior=new Map<string,number>();
+      for(const r of old) retailerPrior.set(String(r.retailer_id),(retailerPrior.get(String(r.retailer_id))||0)+Number(r.sales||0));
+      const productRetailers=[...retailerAgg.values()].map(x=>{
+        const m=retailerMap[x.retailerId]||{};
+        return {...x,retailerName:m.name||null,region:m.region||null,channel:m.channel||null,totalStores:m.total_stores??null,distribution:x.weeks?x.distributionSum/x.weeks:null,salesGrowthPct:growth(x.sales,retailerPrior.get(x.retailerId)||0)};
+      }).sort((a,b)=>b.sales-a.sales).slice(0,20);
+
+      const regionMap=new Map<string,any>();
+      for(const x of productRetailers){
+        const region=x.region||"Unknown";
+        const z=regionMap.get(region)||{region,sales:0,units:0,retailers:0,distributionWeighted:0};
+        z.sales+=x.sales; z.units+=x.units; z.retailers++; z.distributionWeighted+=Number(x.distribution||0);
+        regionMap.set(region,z);
+      }
+      const regions=[...regionMap.values()].map(x=>({...x,avgDistribution:x.retailers?x.distributionWeighted/x.retailers:null})).sort((a,b)=>b.sales-a.sales);
+
+      // Competitor price/sales is a brand/retailer/region benchmark, not SKU-level.
+      // Use it when available and label the comparison grain explicitly.
+      const cat=String(selected.category||"");
+      const compRows=cat?await getAll("cpgist_competitor_price_sales?category=eq."+encodeURIComponent(cat)+"&select=brand,retailer,region,category,week,sales,units,price,is_actual&order=week.asc&limit=100000",token,1000,20000):[];
+      const compPeriods=[...new Set(compRows.map((x:any)=>String(x.week)).filter(Boolean))].sort();
+      const compLatest=new Set(compPeriods.slice(-13));
+      const compRecent=compRows.filter((x:any)=>compLatest.has(String(x.week)));
+      const byRegionBrand=new Map<string,any>();
+      for(const r of compRecent){
+        const key=String(r.region||"Unknown")+"|"+String(r.brand||"");
+        const x=byRegionBrand.get(key)||{region:r.region||"Unknown",brand:r.brand||"Unknown",sales:0,units:0};
+        x.sales+=Number(r.sales||0); x.units+=Number(r.units||0); byRegionBrand.set(key,x);
+      }
+      const brandRegion=new Map<string,any>();
+      for(const x of byRegionBrand.values()){
+        const z=brandRegion.get(x.region)||{region:x.region,brands:[]};
+        z.brands.push(x); brandRegion.set(x.region,z);
+      }
+      const competitorRegions=[...brandRegion.values()].map(z=>{
+        const sorted=z.brands.sort((a,b)=>b.sales-a.sales);
+        const selectedBrand=sorted.find(x=>x.brand===String((await resolveBrandContext(brandId,token)).brandName));
+        const peers=sorted.filter(x=>x.brand!==String((await resolveBrandContext(brandId,token)).brandName));
+        const topPeer=peers[0]||null;
+        const rank=selectedBrand?sorted.findIndex(x=>x.brand===selectedBrand.brand)+1:null;
+        return {region:z.region,selectedBrandSales:selectedBrand?.sales??null,topPeerSales:topPeer?.sales??null,selectedBrandRank:rank,brandCount:sorted.length,peerGapPct:selectedBrand&&topPeer?growth(selectedBrand.sales,topPeer.sales):null};
+      }).filter(x=>x.selectedBrandSales!==null);
+
+      const byRetailer=new Map<string,any>();
+      for(const r of compRecent){
+        const key=String(r.retailer||"")+"|"+String(r.region||"");
+        const x=byRetailer.get(key)||{retailer:r.retailer||"Unknown",region:r.region||"Unknown",brands:[]};
+        const brandKey=String(r.brand||"");
+        let b=x.brands.find((v:any)=>v.brand===brandKey);
+        if(!b){b={brand:brandKey,sales:0,units:0};x.brands.push(b);}
+        b.sales+=Number(r.sales||0);b.units+=Number(r.units||0);
+        byRetailer.set(key,x);
+      }
+      const brandName=String((await resolveBrandContext(brandId,token)).brandName||"");
+      const competitorRetailers=[...byRetailer.values()].map(x=>{
+        const sorted=x.brands.sort((a,b)=>b.sales-a.sales);
+        const selectedBrand=sorted.find(v=>v.brand===brandName);
+        const peers=sorted.filter(v=>v.brand!==brandName);
+        const topPeer=peers[0]||null;
+        return selectedBrand?{retailer:x.retailer,region:x.region,selectedBrandSales:selectedBrand.sales,topPeerSales:topPeer?.sales??null,selectedBrandRank:sorted.findIndex(v=>v.brand===brandName)+1,brandCount:sorted.length,peerGapPct:selectedBrand&&topPeer?growth(selectedBrand.sales,topPeer.sales):null}:null;
+      }).filter(Boolean).sort((a:any,b:any)=>Number(b.selectedBrandSales)-Number(a.selectedBrandSales)).slice(0,20);
+
+      const brandProducts=await get("cpgist_product_summary?brand_id=eq."+encodeURIComponent(brandId)+"&select=product_id,sales_13w&order=sales_13w.desc&limit=100",token);
+      const brandProductSales=sum(brandProducts,"sales_13w");
+      return {
+        product:{id:selected.id,name:selected.name,sku:selected.sku,category:selected.category,subcategory:selected.subcategory,size:selected.size,latest13wSales:recentSales,prior13wSales:priorSales,salesGrowthPct:growth(recentSales,priorSales),latest13wUnits:recentUnits,avgPrice:recentPrice,distribution:avg(recent,"distribution"),promoRate:avg(recent,"promo_rate"),shareOfBrand:brandProductSales?recentSales/brandProductSales:null},
+        productRetailers,
+        regions,
+        competitorBenchmark:{
+          grain:"brand-level category benchmark, not SKU-to-SKU",
+          category:cat,
+          regions:competitorRegions,
+          retailers:competitorRetailers,
+          skuToSkuAvailable:false
+        },
+        evidence:{source:"cpgist_product_weekly + cpgist_products + cpgist_retailers + cpgist_competitor_price_sales + cpgist_product_summary",grain:"product/retailer/region plus brand-level competitor benchmark",rowCount:productRows.length+compRows.length,periodStart:latest[0]??null,periodEnd:latest.at(-1)??null,periodCount:latest.length,filters:{...filtersFromArgs(a),productId:selected.id,productName:selected.name},generatedAt:new Date().toISOString()},
+        warnings:[
+          ...(latest.length<13?["Fewer than 13 product weeks are available for the requested recent period."]:[]),
+          ...(prior.length<13?["Fewer than 13 prior product weeks are available for product growth."]:[]),
+          compRows.length?["Competitor evidence is available at brand/retailer/region level; the connected competitor table does not contain SKU identifiers, so SKU-to-SKU Butter-vs-competitor comparison is not claimed."]:["No competitor price/sales rows are populated for this product category."]
+        ]
+      };
+    }
+
     case "product_sku_performance": {
       const brand = a.brandId ? "&brand_id=eq."+encodeURIComponent(String(a.brandId)) : "";
       const rows = await get("cpgist_product_summary?select=product_id,brand_id,period_end,sales_13w,units_13w,avg_price_13w,distribution_13w,promo_rate_13w&order=sales_13w.desc&limit=30"+brand, token);
@@ -580,7 +713,9 @@ async function collectEvidence(question: string, brandId: string | undefined, to
     }
   }
   if (brandId && categoryId && /category|growth|underperform|momentum|monthly|review|why|decline|improve|turnaround/.test(q)) add("category_growth_plan");
-  if (/sku|product|assortment|portfolio|item|size|pack/.test(q)) add("product_sku_performance");
+  const productIntent=/sku|product|assortment|portfolio|item|size|pack|butter|milk|cheese|yogurt/.test(q);
+  if (productIntent) add("product_sku_performance");
+  if (brandId && productIntent && /competitor|competitive|competition|compare|versus|vs/.test(q)) add("product_competitor_diagnostic");
   if (brandId && categoryId && /retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
   if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
   if (brandId && /promo roi|promotion roi|incremental|trade spend|promotion lift|which promotion/.test(q)) add("get_promo_lift");
@@ -601,7 +736,8 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   for (const name of selected.slice(0, 3)) {
     try {
       const args: Args = { ...scope };
-      if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share"].includes(name)) args.categoryId = categoryId;
+      if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic"].includes(name)) args.categoryId = categoryId;
+      if (name === "product_competitor_diagnostic") args.productQuery = question;
       if (name === "forecast_sales") args.horizon = 8;
       if (name === "run_scenario") { args.priceChangePct = 0; args.distributionChangePts = 0; }
       const result = await tool(name, args, token);
@@ -636,7 +772,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. If evidence is unavailable, say so explicitly. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
+        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. If evidence is unavailable, say so explicitly, but first use every relevant populated evidence layer. A missing SKU-to-SKU competitor field does not mean all competitive evidence is unavailable: use validated brand/category/retailer/region peer benchmarks when present and label the comparison grain. For product questions, answer the product's own sales, growth, distribution, price, promotion, regional and retailer performance first, then add competitor context where supported. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
       },
       ...incoming.slice(-6).map((m: any) => ({
         role: m?.role === "assistant" ? "assistant" : "user",
