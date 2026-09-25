@@ -137,7 +137,7 @@ export default function ABTesting(){
             </div>
           </div>
 
-          {metric==="conversion"&&valid?<div className={`ab-stat ${result.significant?"signal":""`}>
+          {metric==="conversion"&&valid?<div className={`ab-stat ${result.significant?"signal":""}`}>
             <Info size={15}/><div><b>{result.significant?"Statistical signal at 95%":"No statistical signal at 95%"}</b><span>Two-proportion z-test · |z| = {result.z?.toFixed(2)} · reference threshold = 1.96</span></div>
           </div>:<div className="ab-stat neutral"><Info size={15}/><div><b>Lift is descriptive for this KPI</b><span>Formal uncertainty needs experiment-level variance or store/customer-level observations for the appropriate test.</span></div></div>}
 
