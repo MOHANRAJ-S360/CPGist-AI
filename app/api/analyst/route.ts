@@ -378,7 +378,7 @@ async function tool(name: string, a: Args, token: string) {
       // brand. Therefore the focal brand must come from cpgist_product_weekly and the peer
       // benchmark must come from cpgist_competitor_price_sales at the same category/region grain.
       const cat=String(selected.category||"");
-      const compRows=cat?await getAll("cpgist_competitor_price_sales?category=eq."+encodeURIComponent(cat)+"&select=brand,retailer,region,category,week,sales,units,price,is_actual&order=week.asc&limit=100000",token,1000,20000):[];
+      const compRows=cat?await getAll("cpgist_competitor_fact?category=eq."+encodeURIComponent(cat)+"&select=brand,retailer,region,category,week,sales,units,price,is_actual&order=week.asc&limit=100000",token,1000,20000):[];
       const compPeriods=[...new Set(compRows.map((x:any)=>String(x.week)).filter(Boolean))].sort();
       const compLatest=new Set(compPeriods.slice(-13));
       const compRecent=compRows.filter((x:any)=>compLatest.has(String(x.week)));
@@ -484,7 +484,7 @@ async function tool(name: string, a: Args, token: string) {
           retailers:competitorRetailers,
           skuToSkuAvailable:false
         },
-        evidence:{source:"cpgist_product_weekly + cpgist_products + cpgist_retailers + cpgist_competitor_price_sales + cpgist_product_summary",grain:"product/retailer/region plus brand-level competitor benchmark",rowCount:productRows.length+compRows.length,periodStart:latest[0]??null,periodEnd:latest.at(-1)??null,periodCount:latest.length,filters:{...filtersFromArgs(a),productId:selected.id,productName:selected.name},generatedAt:new Date().toISOString()},
+        evidence:{source:"cpgist_product_weekly + cpgist_products + cpgist_retailers + cpgist_competitor_fact + cpgist_product_summary",grain:"product/retailer/region plus brand-level competitor benchmark",rowCount:productRows.length+compRows.length,periodStart:latest[0]??null,periodEnd:latest.at(-1)??null,periodCount:latest.length,filters:{...filtersFromArgs(a),productId:selected.id,productName:selected.name},generatedAt:new Date().toISOString()},
         warnings:[
           ...(latest.length<13?["Fewer than 13 product weeks are available for the requested recent period."]:[]),
           ...(prior.length<13?["Fewer than 13 prior product weeks are available for product growth."]:[]),
