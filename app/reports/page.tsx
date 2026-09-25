@@ -23,7 +23,7 @@ function ReportsContent(){
   try{
    const token=await auth();
    if(brandId){
-    const [r,ar]=await Promise.all([
+    const [r,ar,dr]=await Promise.all([
       fetch("/api/explorer?entity=brand&id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"}),
       fetch("/api/advanced-analytics?brand_id="+encodeURIComponent(brandId),{headers:{Authorization:"Bearer "+token},cache:"no-store"})
     ]);
