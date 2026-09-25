@@ -377,7 +377,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
 async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8Array>,progress:Progress){
   const B=(n:string)=>entryExact(zip,n);
   const brandsBytes=B("brands.csv"),retailersBytes=B("retailers.csv"),productsBytes=B("products.csv"),salesBytes=B("sales_weekly.csv"),baselineBytes=B("baseline_sales.csv"),promoBytes=B("promotion.csv"),tradeBytes=B("trade_spend.csv");
-  const categoryAggBytes=B("category_aggregates.csv"),trialBytes=B("trial_repeat.csv"),panelBytes=B("panel_household_synthetic.csv"),macroBytes=B("macro_signals.csv"),competitorPriceBytes=B("competitor_price_sales.csv"),relationshipsBytes=B("brand_relationships.csv");
+  const categoryAggBytes=B("category_aggregates.csv"),trialBytes=B("trial_repeat.csv"),panelBytes=B("panel_household_synthetic.csv"),macroBytes=B("macro_signals.csv"),competitorPriceBytes=B("competitor_price_sales.csv"),relationshipsBytes=B("brand_relationships.csv"),competitorSignalsBytes=B("competitor_signals.csv"),signalNotesBytes=B("signal_notes.csv");
   if(!brandsBytes||!retailersBytes||!productsBytes||!salesBytes||!baselineBytes||!promoBytes||!tradeBytes)throw new Error("Combined CPGist package is incomplete. Required master, sales, baseline, promotion and trade-spend files are missing.");
 
   // Keep the browser responsive: the large CSVs are streamed row-by-row instead of
@@ -410,7 +410,16 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
   products.forEach(x=>addAliases(pm,[x.name,(x.name+" "+(x.size||"")).trim(),x.sku||""],x));
   const resolveBrand=(v:any)=>bm.get(normKey(v));
   const resolveRetailer=(v:any)=>rm.get(normKey(v));
-  const resolveProduct=(v:any)=>pm.get(normKey(v));
+  const resolveProduct=(v:any)=>{
+    const key=normKey(v);
+    const direct=pm.get(key);
+    if(direct)return direct;
+    // v3 sales/baseline/promotion SKU text is the product name plus pack size
+    // (or the subcategory suffix for family-pack SKUs), while products.csv
+    // stores those attributes in separate columns.
+    const candidates=productsByKey.get(key);
+    return candidates?.length===1?candidates[0]:null;
+  };
   const cats=[...new Set(products.map(x=>x.category).filter(Boolean))] as string[];
   const categories=cats.map((name,i)=>({id:i+1,name,parent_category:null,subcategory_count:new Set(products.filter(x=>x.category===name).map(x=>x.subcategory).filter(Boolean)).size}));
   const regions=[...new Set(retailers.map(x=>x.region).filter(Boolean))].map((name,i)=>({id:i+1,name:String(name),country:null,region_group:null}));
@@ -618,10 +627,37 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     if(rows.length)await upsertBatches(sb,"cpgist_competitor_price_sales",rows,"id",progress);
   }
 
-  // Keep the linked competitor relationship table in the compact database where possible.
-  // The competitor price cube remains name-based because the source file is not keyed to a
-  // focal brand for every row; no invented focal-brand mapping is created here.
-  if(relationshipsBytes)progress("Validated brand_relationships.csv; relationship mappings remain source-anchored and are not fabricated into competitor_weekly.");
+  // Load the source relationship/signal layers as first-class analytical context.
+  // These files are keyed to the v3 brand/retailer masters, so preserve their IDs exactly.
+  if(relationshipsBytes){
+    const rows:any[]=[];progress("Loading brand relationships…");
+    await scanCsv(relationshipsBytes,r=>rows.push({
+      id:id(r,"id"),brand_id:id(r,"brand_id"),related_brand_id:id(r,"related_brand_id"),
+      relationship_type:pick(r,"relationship_type"),category:pick(r,"category"),
+      overlapping_regions:pick(r,"overlapping_regions")||null,org_id:id(r,"org_id")
+    }),progress);
+    if(rows.length)await upsertBatches(sb,"syndicate_brand_relationships",rows,"id",progress);
+  }
+  if(competitorSignalsBytes){
+    const rows:any[]=[];progress("Loading competitor signals…");
+    await scanCsv(competitorSignalsBytes,r=>rows.push({
+      id:id(r,"id"),brand_id:id(r,"brand_id"),category:pick(r,"category"),
+      retailer_id:id(r,"retailer_id"),region:pick(r,"region"),signal_date:pick(r,"signal_date"),
+      signal_type:pick(r,"signal_type"),magnitude_pct:num(r,"magnitude_pct"),
+      description:pick(r,"description"),org_id:id(r,"org_id")
+    }),progress);
+    if(rows.length)await upsertBatches(sb,"syndicate_competitor_signals",rows,"id",progress);
+  }
+  if(signalNotesBytes){
+    const rows:any[]=[];progress("Loading signal notes…");
+    await scanCsv(signalNotesBytes,r=>rows.push({
+      id:id(r,"id"),brand_id:id(r,"brand_id"),category:pick(r,"category"),
+      retailer_id:id(r,"retailer_id"),region:pick(r,"region"),date_start:pick(r,"date_start"),
+      date_end:pick(r,"date_end"),note_type:pick(r,"note_type"),note_text:pick(r,"note_text"),
+      org_id:id(r,"org_id")
+    }),progress);
+    if(rows.length)await upsertBatches(sb,"syndicate_signal_notes",rows,"id",progress);
+  }
 
   const checks=await Promise.all([
     sb.from("cpgist_brands").select("id",{count:"exact",head:true}),
@@ -635,7 +671,10 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     sb.from("cpgist_trade_spend").select("id",{count:"exact",head:true}),
     sb.from("cpgist_category_aggregates").select("week",{count:"exact",head:true}),
     sb.from("cpgist_product_weekly").select("product_id",{count:"exact",head:true}),
-    sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true})
+    sb.from("cpgist_brand_retailer_weekly").select("brand_id",{count:"exact",head:true}),
+    sb.from("syndicate_brand_relationships").select("id",{count:"exact",head:true}),
+    sb.from("syndicate_competitor_signals").select("id",{count:"exact",head:true}),
+    sb.from("syndicate_signal_notes").select("id",{count:"exact",head:true})
   ]);
   const bad=checks.find(x=>x.error);if(bad?.error)throw new Error("Import verification failed: "+bad.error.message);
   const counts=checks.map(x=>x.count||0);
@@ -647,7 +686,8 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
     type:"combined",brands:brands.length,retailers:retailers.length,products:products.length,categories:categories.length,regions:regions.length,
     brandWeeks:brandRows.length,categoryWeeks:CA.size,retailerWeeks:RA.size,productWeeks:productWeekly.length,brandRetailerWeeks:brandRetailerWeekly.length,
     productSummaries:productSummaryMap.size,brandRetailerSummary:retailerSummaryMap.size,promotionEvents:promotionRows.length,
-    periods:periods.length,periodStart:periods[0],periodEnd:end
+    periods:periods.length,periodStart:periods[0],periodEnd:end,
+    sourceLayers:{brandRelationships:relationshipsBytes?true:false,competitorSignals:competitorSignalsBytes?true:false,signalNotes:signalNotesBytes?true:false}
   };
 }
 
@@ -695,7 +735,7 @@ export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Prog
   progress(`Reading ${file.name} without blocking the page…`);
   let zip:Record<string,Uint8Array>;
   try{
-    const wanted=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv","category_aggregates.csv","trial_repeat.csv","panel_household_synthetic.csv","macro_signals.csv","competitor_price_sales.csv","brand_relationships.csv"];
+    const wanted=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv","category_aggregates.csv","trial_repeat.csv","panel_household_synthetic.csv","macro_signals.csv","competitor_price_sales.csv","brand_relationships.csv","competitor_signals.csv","signal_notes.csv"];
     zip=await unzipFiltered(file,wanted);
   }catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
   const names=Object.keys(zip);
