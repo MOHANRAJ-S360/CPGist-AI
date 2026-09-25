@@ -423,8 +423,9 @@ async function tool(name: string, a: Args, token: string) {
       const growth=(now:number,base:number)=>base?(now/base-1)*100:null;
       const competitorRegions=[...focalRegion.values()].map((f:any)=>{
         const peers=[...(compByRegion.get(f.region)?.values()||[])].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
-        const combined=[{sales:f.sales},...peers].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
-        const rank=combined.findIndex((x:any)=>x===combined.find((y:any)=>y.sales===f.sales))+1;
+        const focalEntry={sales:f.sales};
+        const combined=[focalEntry,...peers].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
+        const rank=combined.indexOf(focalEntry)+1;
         const topPeer=peers[0]||null;
         return {
           region:f.region,
@@ -459,12 +460,13 @@ async function tool(name: string, a: Args, token: string) {
       }
       const competitorRetailers=[...focalRetailer.values()].map((f:any)=>{
         const peers=[...(compByRetailer.get(f.retailer+"|"+f.region)?.values()||[])].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
-        const combined=[{sales:f.sales},...peers].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
+        const focalEntry={sales:f.sales};
+        const combined=[focalEntry,...peers].sort((a:any,b:any)=>Number(b.sales)-Number(a.sales));
         const topPeer=peers[0]||null;
         return {
           retailer:f.retailer,region:f.region,selectedBrandSales:f.sales,
           topPeerSales:topPeer?.sales??null,
-          selectedBrandRank:combined.findIndex((x:any)=>x===combined.find((y:any)=>y.sales===f.sales))+1,
+          selectedBrandRank:combined.indexOf(focalEntry)+1,
           brandCount:peers.length+1,
           peerGapPct:topPeer?growth(f.sales,topPeer.sales):null
         };
