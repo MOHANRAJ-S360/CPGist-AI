@@ -26,10 +26,10 @@ const nav=[
 
 export function AppShell({title,subtitle,children}:{title:string;subtitle?:string;children:ReactNode}){
  const pathname=usePathname(),router=useRouter();
- const [user,setUser]=useState<any>(null),[signingOut,setSigningOut]=useState(false);
- useEffect(()=>{supabaseBrowser().auth.getUser().then(({data})=>{if(!data.user){router.replace("/");return}setUser(data.user)}).catch(()=>router.replace("/"))},[router]);
+ const [user,setUser]=useState<any>(null),[signingOut,setSigningOut]=useState(false),[importBusy,setImportBusy]=useState(false);
+ useEffect(()=>{const onImport=(e:Event)=>setImportBusy(Boolean((e as CustomEvent).detail));window.addEventListener("cpgist:import-busy",onImport);return()=>window.removeEventListener("cpgist:import-busy",onImport)},[]);useEffect(()=>{supabaseBrowser().auth.getUser().then(({data})=>{if(!data.user){router.replace("/");return}setUser(data.user)}).catch(()=>router.replace("/"))},[router]);
  async function logout(){
-  if(signingOut)return;
+  if(signingOut||importBusy)return;
   setSigningOut(true);
   const sb=supabaseBrowser();
   try{
@@ -53,7 +53,7 @@ export function AppShell({title,subtitle,children}:{title:string;subtitle?:strin
    <nav className="workspace-nav">{nav.map(({label,href,icon:Icon})=>{const active=pathname===href||pathname.startsWith(href+"/");return <Link key={href} href={href} className={"navitem "+(active?"active":"")}><Icon size={16}/><span>{label}</span>{active&&<ChevronRight size={13} className="nav-chevron"/>}</Link>})}</nav>
    <div className="sidebar-user">
     <div className="sidebar-user-main"><div className="avatar">{initials}</div><div className="sidebar-user-copy"><b>{name}</b><small>{email}</small></div></div>
-    <button className="signout" onClick={logout} disabled={signingOut}><LogOut size={15}/><span>{signingOut?"Signing out…":"Sign out"}</span></button>
+    <button className="signout" onClick={logout} disabled={signingOut||importBusy}><LogOut size={15}/><span>{signingOut?"Signing out…":"Sign out"}</span></button>
    </div>
   </aside>
   <main className="main">
