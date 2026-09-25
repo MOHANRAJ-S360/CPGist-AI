@@ -147,7 +147,8 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   const brandCategoryBytes=entryExact(zip,"31_brand_category_weekly.csv");
   const brandRetailerBytes=entryExact(zip,"29_brand_retailer_weekly.csv");
   const productWeekBytes=entryExact(zip,"30_product_weekly.csv");
-  const competitorBytes=entryExact(zip,"32_competitor_weekly.csv");\n  const competitorPriceSalesBytes=entryExact(zip,"competitor_price_sales.csv","16_competitor_price_sales.csv");
+  const competitorBytes=entryExact(zip,"32_competitor_weekly.csv");
+  const competitorPriceSalesBytes=entryExact(zip,"competitor_price_sales.csv","16_competitor_price_sales.csv");
 
   const missing=[
     ["03_brands.csv",brandBytes],["08_retailers.csv",retailerBytes],["06_products.csv",productBytes],
