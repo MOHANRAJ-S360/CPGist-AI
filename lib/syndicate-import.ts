@@ -147,7 +147,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
   const brandCategoryBytes=entryExact(zip,"31_brand_category_weekly.csv");
   const brandRetailerBytes=entryExact(zip,"29_brand_retailer_weekly.csv");
   const productWeekBytes=entryExact(zip,"30_product_weekly.csv");
-  const competitorBytes=entryExact(zip,"32_competitor_weekly.csv");
+  const competitorBytes=entryExact(zip,"32_competitor_weekly.csv");\n  const competitorPriceSalesBytes=entryExact(zip,"competitor_price_sales.csv","16_competitor_price_sales.csv");
 
   const missing=[
     ["03_brands.csv",brandBytes],["08_retailers.csv",retailerBytes],["06_products.csv",productBytes],
@@ -319,7 +319,35 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
 
   // 32_competitor_weekly is intentionally archive-only because the compact schema does not have a competitor-brand master/foreign-key context.
   // Keeping it out of the compact tables prevents invented brand IDs and preserves analytical integrity.
-  if(competitorBytes)progress("Competitor weekly data validated as archive-only; no invented competitor-to-brand mapping was written.");
+  if(competitorPriceSalesBytes){
+    const competitorRows:any[]=[];
+    progress("Loading competitor price/sales layer…");
+    await scanCsv(competitorPriceSalesBytes,r=>{
+      const units=num(r,"units","volume_units");
+      const price=num(r,"price","actual_price","average_price");
+      const explicitSales=pick(r,"sales","dollar_sales","sales_value");
+      const sales=explicitSales!==""?Number(explicitSales):(units*price);
+      competitorRows.push({
+        brand:pick(r,"competitor_brand","brand","brand_name"),
+        retailer:pick(r,"retailer","retailer_name"),
+        region:pick(r,"region","region_name"),
+        category:pick(r,"category","category_name"),
+        week:dateValue(r,"week_ending","period","week"),
+        sales:Number.isFinite(sales)?sales:0,
+        units,
+        price,
+        is_actual:boolValue(r.is_actual,true)
+      });
+    },progress);
+    if(competitorRows.length){
+      await insertBatches(sb,"cpgist_competitor_price_sales",competitorRows,progress);
+      const {error}=await sb.rpc("cpgist_rebuild_competitor_weekly");
+      if(error)throw new Error("Could not rebuild competitor weekly relationships: "+error.message);
+      progress("Linked competitor price/sales to brand relationships and rebuilt competitor weekly benchmarks.");
+    }
+  } else if(competitorBytes) {
+    progress("32_competitor_weekly.csv is present, but no competitor price/sales source was found; retaining it as archive-only.");
+  }
 
   const checks=await Promise.all([
     sb.from("cpgist_brands").select("id",{count:"exact",head:true}),
