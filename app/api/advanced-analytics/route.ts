@@ -46,7 +46,7 @@ export async function GET(req:NextRequest){
     getAll("cpgist_macro_signals?select=*",1000,10000),
     categoryName?getAll("cpgist_category_aggregates?category=eq."+enc(categoryName)+"&select=*&order=week.asc",1000,10000):Promise.resolve([]),
     categoryName?getAll("cpgist_category_weekly?category=eq."+enc(categoryName)+"&select=category,week_ending,sales,units,distribution,is_actual&order=week_ending.asc",1000,10000):Promise.resolve([]),
-    getAll("cpgist_competitor_price_sales?brand="+enc(brand.name||"")+"&select=*&order=week.asc",1000,10000).catch(()=>[])
+    getAll("cpgist_competitor_price_sales?category="+enc(categoryName||"")+"&select=*&order=week.asc",1000,20000).catch(()=>[])
   ]);
   const retailersById=new Map((retailerMaster as any[]).map((r:any)=>[String(r.id),r]));
 
