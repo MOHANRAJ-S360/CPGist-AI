@@ -1,56 +1,185 @@
 "use client";
 
 import {useMemo,useState} from "react";
-import {FlaskConical,Info,ShieldCheck,TrendingUp,Users,Target} from "lucide-react";
+import {
+  AlertTriangle,ArrowRight,CheckCircle2,FlaskConical,Info,Layers3,
+  ShieldCheck,Target,TrendingUp,Users,CalendarDays,BarChart3
+} from "lucide-react";
 import {AppShell} from "../../components/app-shell";
 
-const n=(v:string)=>Number(v||0);
-const pct=(v:number)=>`${v>=0?"+":""}${v.toFixed(1)}%`;
-const money=(v:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(v);
+type Metric = "conversion"|"sales"|"units"|"margin";
+type Design = "randomized"|"observational";
 
-function twoProportionZ(a:number,an:number,b:number,bn:number){
- if(!an||!bn)return null;
- const p1=a/an,p2=b/bn,p=(a+b)/(an+bn);
- const se=Math.sqrt(p*(1-p)*(1/an+1/bn));
- return se?Math.abs(p1-p2)/se:null;
+const metricMeta:Record<Metric,{label:string;short:string;unit:string;example:string}> = {
+  conversion:{label:"Conversion / response rate",short:"Conversion rate",unit:"%",example:"12.0"},
+  sales:{label:"Sales per test unit",short:"Sales",unit:"$",example:"12.00"},
+  units:{label:"Units per test unit",short:"Units",unit:"units",example:"1.25"},
+  margin:{label:"Gross margin per test unit",short:"Gross margin",unit:"$",example:"4.80"}
+};
+
+const num=(v:string)=>Number(v);
+const fmt=(v:number,decimals=2)=>Number.isFinite(v)?v.toLocaleString("en-US",{minimumFractionDigits:decimals,maximumFractionDigits:decimals}):"—";
+const pct=(v:number)=>Number.isFinite(v)?`${v>=0?"+":""}${v.toFixed(1)}%`:"—";
+
+function twoProportionZ(controlRate:number,controlN:number,testRate:number,testN:number){
+  if(!controlN||!testN)return null;
+  const p1=controlRate/100,p2=testRate/100,p=(p1*controlN+p2*testN)/(controlN+testN);
+  const variance=p*(1-p)*(1/controlN+1/testN);
+  return variance>0?Math.abs(p1-p2)/Math.sqrt(variance):null;
 }
 
 export default function ABTesting(){
- const [metric,setMetric]=useState("conversion");
- const [controlValue,setControlValue]=useState("12.0"),[testValue,setTestValue]=useState("14.5");
- const [controlN,setControlN]=useState("1000"),[testN,setTestN]=useState("1000");
- const [hypothesis,setHypothesis]=useState("Test whether the new price/promotion/packaging improves the selected KPI.");
- const c=n(controlValue),t=n(testValue),cn=Math.max(1,n(controlN)),tn=Math.max(1,n(testN));
- const result=useMemo(()=>{
-   const lift=c?((t/c)-1)*100:null;
-   const diff=t-c;
-   const z=metric==="conversion"?twoProportionZ(c/100*cn,cn,t/100*tn,tn):null;
-   const significant=z!=null?z>=1.96:null;
-   return {lift,diff,z,significant};
- },[c,t,cn,tn,metric]);
- return <AppShell title="A/B Testing" subtitle="Experiment planning and evidence-based variant analysis"><section className="content">
-  <div className="intro"><div><div className="muted">EXPERIMENTATION</div><h1>A/B test commercial decisions before scaling them.</h1><p>Compare a control and test variant, quantify lift, and keep causal claims separate from historical CPG observations.</p></div><div className="scope-badge"><FlaskConical size={15}/> Evidence-first testing</div></div>
-  <div className="data-provenance"><ShieldCheck size={13}/><b>Important:</b><span>A/B testing is causal only when variant assignment is randomized or otherwise designed as a valid experiment. Historical retailer/region differences are reported as associations, not proven causal effects.</span></div>
-  <div className="two-col">
-   <div className="card panel"><div className="panel-head"><div><b>Experiment setup</b><span>Define what you want to test before reading the result</span></div><Target size={17}/></div>
-    <div className="form-grid">
-     <label>Primary KPI<select value={metric} onChange={e=>setMetric(e.target.value)}><option value="conversion">Conversion / response rate (%)</option><option value="sales">Sales per test unit</option><option value="units">Units per test unit</option><option value="margin">Gross margin per test unit</option></select></label>
-     <label>Hypothesis<input value={hypothesis} onChange={e=>setHypothesis(e.target.value)}/></label>
-     <label>Control result<input type="number" value={controlValue} onChange={e=>setControlValue(e.target.value)}/></label>
-     <label>Test result<input type="number" value={testValue} onChange={e=>setTestValue(e.target.value)}/></label>
-     <label>Control observations / stores / customers<input type="number" value={controlN} onChange={e=>setControlN(e.target.value)}/></label>
-     <label>Test observations / stores / customers<input type="number" value={testN} onChange={e=>setTestN(e.target.value)}/></label>
-    </div>
-   </div>
-   <div className="card panel"><div className="panel-head"><div><b>Experiment result</b><span>Calculated from the values above</span></div><TrendingUp size={17}/></div>
-    <div className="report-grid-kpis"><div className="card kpi"><span>CONTROL</span><strong>{c}</strong><small>{cn.toLocaleString()} observations</small></div><div className="card kpi"><span>TEST</span><strong>{t}</strong><small>{tn.toLocaleString()} observations</small></div><div className="card kpi"><span>ABSOLUTE CHANGE</span><strong>{result.diff.toFixed(2)}</strong><small>Test − control</small></div><div className="card kpi"><span>RELATIVE LIFT</span><strong>{result.lift==null?"—":pct(result.lift)}</strong><small>Test vs control</small></div></div>
-    {metric==="conversion"?<div className="data-provenance" style={{marginTop:14}}><Info size={13}/><b>{result.significant===null?"Insufficient inputs":result.significant?"Statistical signal detected":"No statistical signal at the 95% threshold"}</b><span>{result.z==null?"":`z = ${result.z.toFixed(2)} · two-sided 95% reference threshold = 1.96`}</span></div>:<div className="data-provenance" style={{marginTop:14}}><Info size={13}/><span>For sales, units and margin metrics, this page reports observed lift. Add experiment-level variance or store/customer-level observations for formal significance testing.</span></div>}
-   </div>
-  </div>
-  <div className="two-col">
-   <div className="card panel"><div className="panel-head"><div><b>How this helps CPGist</b><span>Designed around the decisions already present in the platform</span></div></div><div className="advanced-kpis"><div><span>PRICE</span><b>Test price points</b></div><div><span>PROMOTION</span><b>Test offer mechanics</b></div><div><span>PACK / SKU</span><b>Test variants</b></div><div><span>RETAILER</span><b>Test store clusters</b></div></div><p className="muted">The same framework can evaluate a new promotion, pack, price, assortment, display or retailer execution when a randomized test is run.</p></div>
-   <div className="card panel"><div className="panel-head"><div><b>Decision guardrails</b><span>What CPGist will and will not claim</span></div><Users size={17}/></div><ul className="decision-list"><li><b>Positive result:</b> report lift and statistical evidence when valid experimental observations are available.</li><li><b>No signal:</b> do not describe a difference as a proven improvement.</li><li><b>Historical comparison:</b> show the difference, but label it observational rather than causal.</li><li><b>Missing evidence:</b> explain exactly what additional experiment fields are required.</li></ul></div>
-  </div>
-  <div className="card panel"><div className="panel-head"><div><b>Example CPGist workflow</b><span>From business question to testable decision</span></div></div><div className="advanced-kpis"><div><span>01 · QUESTION</span><b>Does the new promotion improve sales?</b></div><div><span>02 · DESIGN</span><b>Randomize comparable stores</b></div><div><span>03 · MEASURE</span><b>Sales, units, margin</b></div><div><span>04 · DECIDE</span><b>Scale only with sufficient evidence</b></div></div></div>
- </section></AppShell>
+  const [metric,setMetric]=useState<Metric>("conversion");
+  const [design,setDesign]=useState<Design>("randomized");
+  const [unit,setUnit]=useState("stores / customers");
+  const [controlValue,setControlValue]=useState("12.0");
+  const [testValue,setTestValue]=useState("14.5");
+  const [controlN,setControlN]=useState("1000");
+  const [testN,setTestN]=useState("1000");
+  const [hypothesis,setHypothesis]=useState("The new price, promotion or packaging improves the selected KPI.");
+  const [startDate,setStartDate]=useState("");
+  const [endDate,setEndDate]=useState("");
+
+  const meta=metricMeta[metric];
+  const c=num(controlValue),t=num(testValue),cn=Math.floor(num(controlN)),tn=Math.floor(num(testN));
+
+  const result=useMemo(()=>{
+    const validRate=metric!=="conversion"||(c>=0&&c<=100&&t>=0&&t<=100);
+    const validSamples=cn>0&&tn>0;
+    const diff=t-c;
+    const lift=c!==0?((t/c)-1)*100:null;
+    const z=metric==="conversion"&&validRate&&validSamples?twoProportionZ(c,cn,t,tn):null;
+    const significant=z!=null&&z>=1.96;
+    const directional=diff>0?"improved":diff<0?"declined":"unchanged";
+    return {validRate,validSamples,diff,lift,z,significant,directional};
+  },[metric,c,t,cn,tn]);
+
+  const valid=result.validRate&&result.validSamples&&Number.isFinite(c)&&Number.isFinite(t);
+  const causal=design==="randomized";
+  const status=!valid?"Fix the inputs":causal?(result.significant?"Evidence supports a difference":"No statistical signal at 95%"):"Observational comparison only";
+
+  return <AppShell title="A/B Testing" subtitle="Experiment planning and evidence-based variant analysis">
+    <section className="content ab-page">
+      <div className="ab-hero">
+        <div>
+          <div className="ab-eyebrow">EXPERIMENTATION WORKSPACE</div>
+          <h1>Test commercial decisions before scaling them.</h1>
+          <p>Define the experiment, compare control vs test, quantify lift, and keep causal claims tied to valid experimental design.</p>
+        </div>
+        <div className={`ab-status-pill ${causal?"causal":"observational"}`}>
+          <FlaskConical size={15}/>{causal?"Randomized experiment":"Observational comparison"}
+        </div>
+      </div>
+
+      <div className={`ab-trust ${causal?"":"warn"}`}>
+        {causal?<ShieldCheck size={15}/>:<AlertTriangle size={15}/>}
+        <div><b>{causal?"Causal interpretation enabled":"Causal interpretation disabled"}</b>
+        <span>{causal?"Lift can be interpreted causally only if treatment assignment is genuinely randomized (or otherwise valid experimentally designed).":"Historical retailer, region or store differences describe association; they do not prove that the test caused the change."}</span></div>
+      </div>
+
+      <div className="ab-grid">
+        <div className="card panel ab-setup">
+          <div className="ab-section-head">
+            <div><span className="ab-kicker">01 · DESIGN</span><b>Define the experiment</b><small>Set the context before looking at the result.</small></div>
+            <Target size={18}/>
+          </div>
+
+          <div className="ab-form-grid">
+            <label><span>Experiment design</span><select value={design} onChange={e=>setDesign(e.target.value as Design)}>
+              <option value="randomized">Randomized A/B test</option>
+              <option value="observational">Historical / observational comparison</option>
+            </select></label>
+            <label><span>Primary KPI</span><select value={metric} onChange={e=>setMetric(e.target.value as Metric)}>
+              {Object.entries(metricMeta).map(([key,m])=><option key={key} value={key}>{m.label} {m.unit==="%"?"(%)":m.unit===" $"?"":"("+m.unit+")"}</option>)}
+            </select></label>
+            <label className="ab-wide"><span>Hypothesis</span><input value={hypothesis} onChange={e=>setHypothesis(e.target.value)} /></label>
+            <label><span>Unit of randomization / comparison</span><select value={unit} onChange={e=>setUnit(e.target.value)}>
+              <option>stores / customers</option><option>households</option><option>retailers</option><option>regions</option><option>SKUs</option>
+            </select></label>
+            <label><span>Experiment start <em>optional</em></span><div className="ab-input-icon"><CalendarDays size={14}/><input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></div></label>
+            <label><span>Experiment end <em>optional</em></span><div className="ab-input-icon"><CalendarDays size={14}/><input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/></div></label>
+          </div>
+
+          <div className="ab-divider"/>
+          <div className="ab-subhead"><b>Observed KPI values</b><span>{meta.short} is measured at the same unit level in both groups.</span></div>
+          <div className="ab-values">
+            <div className="ab-group control"><div className="ab-group-label"><span>CONTROL</span><small>Baseline / current approach</small></div><label><span>{meta.short} <b>({meta.unit})</b></span><input type="number" step="any" min={metric==="conversion"?0:undefined} max={metric==="conversion"?100:undefined} value={controlValue} onChange={e=>setControlValue(e.target.value)} /></label><label><span>Observations</span><input type="number" min="1" step="1" value={controlN} onChange={e=>setControlN(e.target.value)} /></label></div>
+            <div className="ab-arrow"><ArrowRight size={18}/></div>
+            <div className="ab-group test"><div className="ab-group-label"><span>TEST</span><small>New price / promotion / variant</small></div><label><span>{meta.short} <b>({meta.unit})</b></span><input type="number" step="any" min={metric==="conversion"?0:undefined} max={metric==="conversion"?100:undefined} value={testValue} onChange={e=>setTestValue(e.target.value)} /></label><label><span>Observations</span><input type="number" min="1" step="1" value={testN} onChange={e=>setTestN(e.target.value)} /></label></div>
+          </div>
+
+          {!result.validRate&&<div className="ab-error"><AlertTriangle size={14}/><span>Conversion / response rate must be between 0% and 100%.</span></div>}
+          {(!result.validSamples||!Number.isFinite(c)||!Number.isFinite(t))&&<div className="ab-error"><AlertTriangle size={14}/><span>Enter valid KPI values and at least one observation in each group.</span></div>}
+        </div>
+
+        <div className="card panel ab-result">
+          <div className="ab-section-head">
+            <div><span className="ab-kicker">02 · RESULT</span><b>What changed?</b><small>Calculated directly from the control and test inputs.</small></div>
+            <BarChart3 size={18}/>
+          </div>
+
+          <div className="ab-result-banner">
+            <div><span className={causal?"":"muted"}>{status}</span><small>{design==="randomized"?"Randomized design":"No causal inference"}</small></div>
+            <strong>{valid&&result.lift!=null?pct(result.lift):"—"}</strong>
+            <small>relative lift</small>
+          </div>
+
+          <div className="ab-metric-cards">
+            <div><span>CONTROL</span><strong>{valid?fmt(c):"—"}</strong><small>{cn>0?cn.toLocaleString():"—"} observations</small></div>
+            <div><span>TEST</span><strong>{valid?fmt(t):"—"}</strong><small>{tn>0?tn.toLocaleString():"—"} observations</small></div>
+            <div><span>ABSOLUTE CHANGE</span><strong>{valid?fmt(result.diff):"—"}</strong><small>test − control</small></div>
+          </div>
+
+          <div className="ab-interpret">
+            <div><CheckCircle2 size={15}/>
+              <div><b>{valid?(result.directional==="improved"?"Test is higher than control":result.directional==="declined"?"Test is lower than control":"Test equals control"):"Waiting for valid inputs"}</b>
+              <span>{valid&&result.lift!=null?(`${meta.short}: ${pct(result.lift)} vs control.`):"Complete the experiment inputs to calculate lift."}</span></div>
+            </div>
+          </div>
+
+          {metric==="conversion"&&valid?<div className={`ab-stat ${result.significant?"signal":""`}>
+            <Info size={15}/><div><b>{result.significant?"Statistical signal at 95%":"No statistical signal at 95%"}</b><span>Two-proportion z-test · |z| = {result.z?.toFixed(2)} · reference threshold = 1.96</span></div>
+          </div>:<div className="ab-stat neutral"><Info size={15}/><div><b>Lift is descriptive for this KPI</b><span>Formal uncertainty needs experiment-level variance or store/customer-level observations for the appropriate test.</span></div></div>}
+
+          <div className="ab-method"><Layers3 size={14}/><span><b>Evidence:</b> manually entered experiment values · {unit} · {causal?"randomized design selected":"observational design selected"}</span></div>
+        </div>
+      </div>
+
+      <div className="ab-grid lower">
+        <div className="card panel">
+          <div className="ab-section-head"><div><span className="ab-kicker">03 · CPG USE CASES</span><b>Decisions you can test</b><small>Apply the same experimental structure across commercial levers.</small></div><TrendingUp size={18}/></div>
+          <div className="ab-usecases">
+            {[
+              ["PRICE","Test price points","Compare a new price against the current price."],
+              ["PROMOTION","Test offer mechanics","Compare discount, bundle or display variants."],
+              ["PACK / SKU","Test variants","Compare pack, size or assortment changes."],
+              ["RETAILER","Test store clusters","Run the same treatment across comparable stores."]
+            ].map(([k,t,d])=><div key={k}><span>{k}</span><b>{t}</b><small>{d}</small></div>)}
+          </div>
+        </div>
+        <div className="card panel">
+          <div className="ab-section-head"><div><span className="ab-kicker">04 · GUARDRAILS</span><b>What CPGist can claim</b><small>Keep evidence and interpretation separate.</small></div><Users size={18}/></div>
+          <ul className="ab-guardrails">
+            <li><b>Randomized + signal:</b> report the observed lift and statistical evidence; causal interpretation depends on experiment quality.</li>
+            <li><b>No signal:</b> report the measured difference without calling it a proven improvement.</li>
+            <li><b>Observational:</b> label the result as an association, not a causal effect.</li>
+            <li><b>Missing evidence:</b> identify the fields needed for a valid experiment.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div className="card panel ab-workflow">
+        <div className="ab-section-head"><div><span className="ab-kicker">05 · WORKFLOW</span><b>From business question to decision</b><small>A/B testing in CPGist is a structured evidence workflow, not just a lift calculator.</small></div><ShieldCheck size={18}/></div>
+        <div className="ab-steps">
+          {[
+            ["01","QUESTION","Does the new promotion improve sales?"],
+            ["02","DESIGN","Randomize comparable stores or customers."],
+            ["03","MEASURE","Capture sales, units and margin consistently."],
+            ["04","ANALYZE","Calculate lift and appropriate uncertainty."],
+            ["05","DECIDE","Scale only when the evidence supports the business decision."]
+          ].map(([n,k,v])=><div key={n}><i>{n}</i><span>{k}</span><b>{v}</b></div>)}
+        </div>
+      </div>
+    </section>
+  </AppShell>;
 }
