@@ -113,7 +113,7 @@ async function tool(name: string, a: Args, token: string) {
 
   switch (name) {
     case "data_readiness": {
-      const tables = ["cpgist_brands","cpgist_products","cpgist_categories","cpgist_regions","cpgist_brand_weekly","cpgist_category_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_brand_retailer_summary","cpgist_product_weekly","cpgist_product_summary","cpgist_competitor_weekly","syndicate_competitor_signals","cpgist_promotion_events","cpgist_baseline_sales","cpgist_trade_spend","cpgist_category_aggregates","cpgist_trial_repeat","cpgist_panel_household","cpgist_macro_signals"];
+      const tables = ["cpgist_brands","cpgist_products","cpgist_categories","cpgist_regions","cpgist_brand_weekly","cpgist_category_weekly","cpgist_retailer_weekly","cpgist_brand_retailer_weekly","cpgist_brand_retailer_summary","cpgist_product_weekly","cpgist_product_summary","cpgist_competitor_weekly","cpgist_competitor_price_sales","syndicate_competitor_signals","cpgist_promotion_events","cpgist_baseline_sales","cpgist_trade_spend","cpgist_category_aggregates","cpgist_trial_repeat","cpgist_panel_household","cpgist_macro_signals"];
       const counts: Record<string, number> = {};
       for (const table of tables) {
         try {
