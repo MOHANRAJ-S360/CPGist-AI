@@ -371,7 +371,7 @@ async function tool(name: string, a: Args, token: string) {
         z.sales+=x.sales; z.units+=x.units; z.retailers++; z.distributionWeighted+=Number(x.distribution||0);
         regionMap.set(region,z);
       }
-      const regions=[...regionMap.values()].map(x=>({...x,avgDistribution:x.retailers?x.distributionWeighted/x.retailers:null})).sort((a,b)=>b.sales-a.sales);
+      const regions=[...regionMap.values()].map(x=>({...x,avgDistribution:x.retailers?x.distributionWeighted/x.retailers:null})).sort((a:any,b:any)=>b.sales-a.sales);
 
       // Competitor price/sales is a brand/retailer/region benchmark, not SKU-level.
       // Use it when available and label the comparison grain explicitly.
