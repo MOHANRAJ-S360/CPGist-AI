@@ -30,7 +30,7 @@ export default function Explorer(){
  const [page,setPage]=useState(1);
  const [expandedCategories,setExpandedCategories]=useState<Set<string>>(new Set());
  const [expandedSubcategories,setExpandedSubcategories]=useState<Set<string>>(new Set());
- const [total,setTotal]=useState(0);
+ const [total,setTotal]=useState(0);\n const [detail,setDetail]=useState<any>(null);\n const [detailLoading,setDetailLoading]=useState(false);
 
  useEffect(()=>{setPage(1);setExpandedCategories(new Set());setExpandedSubcategories(new Set())},[entity,q]);
 
@@ -52,7 +52,7 @@ export default function Explorer(){
   };
   run();
   return()=>{live=false};
- },[entity,q,page,categoryFilter,subcategoryFilter]);
+ },[entity,q,page,categoryFilter,subcategoryFilter]);\n\n useEffect(()=>{setDetail(null)},[entity,q]);
 
  const currentLabel=tabs.find(t=>t.id===entity)?.label||"Data";
  const detail=(x:any)=>{
@@ -88,6 +88,8 @@ export default function Explorer(){
          {isCategory&&<div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:10,fontSize:12,color:"#667085"}}><span>{subcategories.length||Number(x.subcategory_count)||0} subcategories</span>{expanded?<ChevronUp size={16}/>:<ChevronDown size={16}/>}</div>}
          {entity==="brand"&&<div className="explorer-result-actions"><Link className="secondary-btn" href={"/reports?brand_id="+x.id} onClick={e=>e.stopPropagation()}><FileText size={13}/>Report</Link><Link className="primary" href={"/ai-analyst?brand_id="+x.id} onClick={e=>e.stopPropagation()}>AI</Link></div>}
         </div>
+        {detailLoading&&detail?.entity===entity&&<div className="card panel loading-card">Loading selected {currentLabel.toLowerCase()} detail…</div>}
+        {detail?.entity===entity&&((entity==="retailer"&&detail.retailer)||entity==="product"||entity==="region")&&<div className="card panel" style={{margin:"-1px 0 12px 52px",background:"#fbfbfe"}}>{entity==="retailer"&&<><div className="panel-head"><div><b>{detail.retailer.name}</b><span>Retailer detail</span></div></div><div className="report-grid-kpis"><div className="card kpi"><span>STORES</span><strong>{Number(detail.retailer.total_stores||0).toLocaleString()}</strong><small>Listed stores</small></div><div className="card kpi"><span>CHANNEL</span><strong>{detail.retailer.channel||"—"}</strong><small>Retailer master</small></div><div className="card kpi"><span>REGION</span><strong>{detail.retailer.region||"—"}</strong><small>Retailer master</small></div><div className="card kpi"><span>13W SALES</span><strong>{money(detail.metrics?.sales)}</strong><small>Retailer weekly facts</small></div></div></>}{entity==="product"&&<><div className="panel-head"><div><b>{detail.product.name}</b><span>{detail.product.sku||"SKU not provided"} · {detail.product.category||"Category not provided"}</span></div></div><div className="report-grid-kpis"><div className="card kpi"><span>13W SALES</span><strong>{money(detail.metrics?.sales)}</strong></div><div className="card kpi"><span>UNITS</span><strong>{Number(detail.metrics?.units||0).toLocaleString()}</strong></div><div className="card kpi"><span>AVG PRICE</span><strong>{detail.metrics?.avgPrice==null?"—":money(detail.metrics.avgPrice)}</strong></div><div className="card kpi"><span>AVG DISTRIBUTION</span><strong>{detail.metrics?.avgDistribution==null?"—":Number(detail.metrics.avgDistribution).toFixed(1)+"%"}</strong></div></div><table><thead><tr><th>RETAILER</th><th>CHANNEL</th><th>REGION</th><th>STORES</th><th>SALES</th><th>UNITS</th></tr></thead><tbody>{(detail.retailers||[]).map((r:any)=><tr key={r.id}><td><b>{r.name}</b></td><td>{r.channel||"—"}</td><td>{r.region||"—"}</td><td>{r.total_stores==null?"—":Number(r.total_stores).toLocaleString()}</td><td>{money(r.sales)}</td><td>{Number(r.units||0).toLocaleString()}</td></tr>)}</tbody></table></>}{entity==="region"&&<><div className="panel-head"><div><b>{detail.region.name}</b><span>{detail.region.country||"Country not provided"} · {detail.region.region_group||"Region group not provided"}</span></div></div><div className="report-grid-kpis"><div className="card kpi"><span>BRANDS</span><strong>{Number(detail.brands?.length||0).toLocaleString()}</strong></div><div className="card kpi"><span>PRODUCTS</span><strong>{Number(detail.productCount||0).toLocaleString()}</strong></div></div><table><thead><tr><th>BRAND</th><th>CATEGORY</th></tr></thead><tbody>{(detail.brands||[]).map((b:any)=><tr key={b.id}><td><b>{b.name}</b></td><td>{b.category||"—"}</td></tr>)}</tbody></table></>}</div>}
         {isCategory&&expanded&&<div style={{margin:"-1px 0 10px 52px",border:"1px solid #e5e7eb",borderRadius:12,background:"#fafaff",padding:"12px 14px"}}>
          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <b style={{fontSize:13}}>Subcategories in {String(x.name||"this category")}</b>
