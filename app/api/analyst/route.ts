@@ -1044,7 +1044,7 @@ export async function POST(req: Request) {
       }))
     ];
 
-    const { response, data } = await groqChat(key, {
+    const requestBody = {
       model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
       messages,
       temperature: 0.05,
@@ -1052,7 +1052,34 @@ export async function POST(req: Request) {
       reasoning_effort: "low",
       include_reasoning: false,
       response_format: { type: "json_object" }
-    });
+    };
+
+    let { response, data } = await groqChat(key, requestBody);
+
+    // Groq JSON mode can occasionally reject a generation even when the request is valid.
+    // Retry once without response_format; the system prompt still requires JSON and the
+    // parser below accepts plain/fenced JSON. This prevents a transient generation issue
+    // from becoming a user-facing "Failed to generate JSON" error.
+    const jsonGenerationFailed =
+      response.status === 400 &&
+      /json|failed_generation|generate/i.test(String(data?.error?.message || data?.message || ""));
+
+    if (jsonGenerationFailed) {
+      const fallbackMessages = [
+        ...messages.slice(0, -1),
+        {
+          role: "user",
+          content:
+            String(messages.at(-1)?.content || "") +
+            "\n\nIMPORTANT: Return one valid JSON object only. No markdown, no code fences, no commentary."
+        }
+      ];
+      ({ response, data } = await groqChat(key, {
+        ...requestBody,
+        messages: fallbackMessages,
+        response_format: undefined
+      }));
+    }
 
     if (!response.ok) {
       return NextResponse.json(
