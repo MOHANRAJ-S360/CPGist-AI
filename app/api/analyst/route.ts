@@ -1103,6 +1103,8 @@ export async function POST(req: Request) {
       if (first >= 0 && last > first) { try { return JSON.parse(text.slice(first,last+1)); } catch {} }
       return null;
     };
+    const retailerEvidence = evidence.find(x => x.tool === "retailer_opportunity")?.result;
+    const retailerWhitespaceRequested = /retailer|retailers|whitespace|banner|account|accounts/.test(String(routingQuestion || latestUser).toLowerCase());
     const monthlyEvidence = evidence.find(x => x.tool === "monthly_business_review")?.result?.evidence;
     const validationIssues = evidence.flatMap(x => Array.isArray(x.result?.validation) ? x.result.validation : []);
     const analyst = parseAnalyst(raw) || {
@@ -1126,6 +1128,56 @@ export async function POST(req: Request) {
     analyst.decisionTrail = Array.isArray(analyst.decisionTrail) ? analyst.decisionTrail : [];
     analyst.table = analyst.table && typeof analyst.table === "object" ? analyst.table : null;
     analyst.nextBestQuestion = analyst.nextBestQuestion ? String(analyst.nextBestQuestion) : null;
+    // Retailer whitespace is a deterministic, structured output. Do not let the
+    // language model replace populated retailer values with a generic "data unavailable"
+    // narrative or relabel share-gap points as ACV.
+    if (retailerWhitespaceRequested && retailerEvidence && Array.isArray(retailerEvidence.retailers)) {
+      const rows = retailerEvidence.retailers
+        .filter((r:any) => Number.isFinite(Number(r.whitespacePts)))
+        .sort((a:any,b:any) => Number(b.whitespacePts) - Number(a.whitespacePts) || Number(b.categorySales) - Number(a.categorySales))
+        .slice(0, 10);
+      const top = rows.slice(0, 5);
+      analyst.type = "RETAILER WHITESPACE";
+      analyst.headline = context.brandName ? "Retailer whitespace opportunities for " + context.brandName : "Retailer whitespace opportunities";
+      analyst.executiveTakeaway = top.length
+        ? "The current 13W retailer summary identifies the largest relative share gaps for " + (context.brandName || "the selected brand") + ". Whitespace points are brand-share percentage-point gaps versus the category benchmark, not ACV or incremental sales."
+        : "No retailer-level whitespace rows were returned for the selected brand and category.";
+      analyst.metrics = [
+        {label:"Category benchmark share", value:Number(retailerEvidence.categoryBrandSharePct || 0).toFixed(2) + "%"},
+        {label:"Retailers evaluated", value:String(rows.length)},
+        {label:"Positive whitespace retailers", value:String(rows.filter((r:any)=>Number(r.whitespacePts)>0).length)}
+      ];
+      analyst.table = {
+        columns:["Retailer","Region","Channel","Brand Share %","Category Sales (13W)","Whitespace Pts"],
+        rows:top.map((r:any)=>[
+          r.retailerName || ("Retailer " + r.retailerId),
+          r.region || "—",
+          r.channel || "—",
+          Number(r.brandSharePct || 0).toFixed(2) + "%",
+          Number(r.categorySales || 0).toLocaleString("en-US",{maximumFractionDigits:0}),
+          Number(r.whitespacePts || 0).toFixed(2)
+        ])
+      };
+      analyst.sections = [
+        {title:"How to read this",bullets:[
+          "Higher whitespace points mean the brand's retailer share is below its overall category benchmark.",
+          "Zero brand sales at a retailer is observed in the source; it should only be treated as true distribution whitespace if retailer coverage is known to be complete."
+        ]},
+        {title:"Top opportunities",bullets:top.slice(0,3).map((r:any)=>
+          (r.retailerName || "Retailer " + r.retailerId) + ": " +
+          Number(r.whitespacePts || 0).toFixed(2) + " pts whitespace, " +
+          Number(r.categorySales || 0).toLocaleString("en-US",{maximumFractionDigits:0}) + " category sales in the current 13W summary."
+        )}
+      ];
+      analyst.decisionTrail = [
+        {type:"observed",text:"Retailer opportunity evidence is populated from the current 13W retailer summary."},
+        {type:"diagnostic",text:"Whitespace points are calculated as the category benchmark brand share minus the retailer brand share."},
+        {type:"limitation",text:"Whitespace points are not ACV gaps or incremental sales; zero brand sales can indicate absence or incomplete retailer coverage."}
+      ];
+      analyst.warnings = analyst.warnings.filter((w:any) => !/no retailer|retailer.*unavailable|retailer.*missing|zero whitespace/i.test(String(w)));
+      analyst.nextBestQuestion = "Which of these retailers should I investigate by region, channel, distribution and sales?";
+    }
+
     analyst.evidence = {
       source: monthlyEvidence?.source ?? analyst.evidence?.source ?? "CPGist analytical layer",
       period: monthlyEvidence?.periodStart && monthlyEvidence?.periodEnd
