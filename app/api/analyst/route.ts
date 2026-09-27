@@ -146,27 +146,28 @@ async function tool(name: string, a: Args, token: string) {
         if (category) {
           try {
             const encodedCategory = encodeURIComponent(category);
+            // Prefer current 13W retailer summary; fall back to weekly observations only if needed.
             let retailerRows = await get(
-              "cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate&category=ilike." +
+              "cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,sales_13w,units_13w,distribution_13w,avg_price_13w,promo_rate_13w&category=ilike." +
               encodedCategory + "&limit=100000",
               token
             );
+            retailerRows = retailerRows.map((r:any) => ({
+              brand_id: r.brand_id,
+              retailer_id: r.retailer_id,
+              category: r.category,
+              sales: r.sales_13w,
+              units: r.units_13w,
+              distribution: r.distribution_13w,
+              price: r.avg_price_13w,
+              promo_rate: r.promo_rate_13w
+            }));
             if (!retailerRows.length) {
-              const summary = await get(
-                "cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,sales_13w,units_13w,distribution_13w,avg_price_13w,promo_rate_13w&category=ilike." +
+              retailerRows = await get(
+                "cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate&category=ilike." +
                 encodedCategory + "&limit=100000",
                 token
               );
-              retailerRows = summary.map((r:any) => ({
-                brand_id: r.brand_id,
-                retailer_id: r.retailer_id,
-                category: r.category,
-                sales: r.sales_13w,
-                units: r.units_13w,
-                distribution: r.distribution_13w,
-                price: r.avg_price_13w,
-                promo_rate: r.promo_rate_13w
-              }));
             }
             const retailerResult = retailerOpportunity(retailerRows, brandId, category);
             const ids = retailerResult.data.retailers.map(x => x.retailerId).join(",");
@@ -223,8 +224,10 @@ async function tool(name: string, a: Args, token: string) {
       const category = String(a.categoryId || "").trim();
       if (!brandId || !category) return { error: "retailer_opportunity requires brandId and categoryId." };
       const encodedCategory = encodeURIComponent(category);
-      let retailerRows = await get("cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate&category=ilike." + encodedCategory + "&limit=100000", token);
-      if (!retailerRows.length) { const summary = await get("cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,sales_13w,units_13w,distribution_13w,avg_price_13w,promo_rate_13w&category=ilike."+encodedCategory+"&limit=100000", token); retailerRows = summary.map((r:any)=>({brand_id:r.brand_id,retailer_id:r.retailer_id,category:r.category,sales:r.sales_13w,units:r.units_13w,distribution:r.distribution_13w,price:r.avg_price_13w,promo_rate:r.promo_rate_13w})); }
+      // Use current 13W retailer summary first; weekly data is the fallback.
+      let summary = await get("cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,sales_13w,units_13w,distribution_13w,avg_price_13w,promo_rate_13w&category=ilike."+encodedCategory+"&limit=100000", token);
+      let retailerRows = summary.map((r:any)=>({brand_id:r.brand_id,retailer_id:r.retailer_id,category:r.category,sales:r.sales_13w,units:r.units_13w,distribution:r.distribution_13w,price:r.avg_price_13w,promo_rate:r.promo_rate_13w}));
+      if (!retailerRows.length) retailerRows = await get("cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate&category=ilike." + encodedCategory + "&limit=100000", token);
       const result = retailerOpportunity(retailerRows, brandId, category);
       const ids = result.data.retailers.map(x => x.retailerId).join(",");
       const retailers = ids ? await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&id=in.(" + encodeURIComponent(ids) + ")", token) : [];
@@ -1036,7 +1039,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. If evidence is unavailable, say so explicitly, but first use every relevant populated evidence layer. A missing SKU-to-SKU competitor field does not mean all competitive evidence is unavailable: use validated brand/category/retailer/region peer benchmarks when present and label the comparison grain. For product questions, answer the product's own sales, growth, distribution, price, promotion, regional and retailer performance first, then add competitor context where supported. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks about an A/B test or experiment, use the experimentation evidence when present. You may explain test design, control/test comparisons, lift, uncertainty and CPG use cases. Never turn historical differences into causal claims. If actual experiment-level observations are not present, clearly say that CPGist can design or interpret the experiment framework but cannot manufacture experimental evidence. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
+        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. For retailer whitespace, whitespace points mean the focal brand's share gap versus its category benchmark, in percentage points; they are not ACV points, store counts, or incremental sales. When retailer evidence is populated, use its retailer names and values directly. Do not convert a populated retailer result into a claim that retailer data is missing merely because some retailers have zero focal-brand sales. If evidence is unavailable, say so explicitly, but first use every relevant populated evidence layer. A missing SKU-to-SKU competitor field does not mean all competitive evidence is unavailable: use validated brand/category/retailer/region peer benchmarks when present and label the comparison grain. For product questions, answer the product's own sales, growth, distribution, price, promotion, regional and retailer performance first, then add competitor context where supported. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks about an A/B test or experiment, use the experimentation evidence when present. You may explain test design, control/test comparisons, lift, uncertainty and CPG use cases. Never turn historical differences into causal claims. If actual experiment-level observations are not present, clearly say that CPGist can design or interpret the experiment framework but cannot manufacture experimental evidence. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
       },
       ...incoming.slice(-6).map((m: any) => ({
         role: m?.role === "assistant" ? "assistant" : "user",
