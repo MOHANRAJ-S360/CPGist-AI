@@ -128,7 +128,84 @@ async function tool(name: string, a: Args, token: string) {
 
     case "business_health_scan": {
       const result = businessHealthScan(dataset.rows, filters);
-      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+      const brandId = String(a.brandId || "").trim();
+      let category = String(a.categoryId || "").trim();
+      const retailerWarnings: string[] = [];
+      let retailerOpportunityEvidence: any = null;
+
+      // Health scan previously used only brand-weekly data, so the model could see
+      // overall ACV but not the retailer-level distribution already present in the
+      // supplied dataset. Enrich the scan with the canonical retailer summary.
+      if (brandId) {
+        if (!category) {
+          try {
+            const brandContext = await resolveBrandContext(brandId, token);
+            category = String(brandContext.category || "").trim();
+          } catch {}
+        }
+        if (category) {
+          try {
+            const encodedCategory = encodeURIComponent(category);
+            let retailerRows = await get(
+              "cpgist_brand_retailer_weekly?select=brand_id,retailer_id,category,sales,units,distribution,price,promo_rate&category=ilike." +
+              encodedCategory + "&limit=100000",
+              token
+            );
+            if (!retailerRows.length) {
+              const summary = await get(
+                "cpgist_brand_retailer_summary?select=brand_id,retailer_id,category,sales_13w,units_13w,distribution_13w,avg_price_13w,promo_rate_13w&category=ilike." +
+                encodedCategory + "&limit=100000",
+                token
+              );
+              retailerRows = summary.map((r:any) => ({
+                brand_id: r.brand_id,
+                retailer_id: r.retailer_id,
+                category: r.category,
+                sales: r.sales_13w,
+                units: r.units_13w,
+                distribution: r.distribution_13w,
+                price: r.avg_price_13w,
+                promo_rate: r.promo_rate_13w
+              }));
+            }
+            const retailerResult = retailerOpportunity(retailerRows, brandId, category);
+            const ids = retailerResult.data.retailers.map(x => x.retailerId).join(",");
+            const retailerMaster = ids
+              ? await get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&id=in.(" + encodeURIComponent(ids) + ")", token)
+              : [];
+            const names = Object.fromEntries(retailerMaster.map((r:any) => [String(r.id), r]));
+            retailerOpportunityEvidence = {
+              category: category,
+              categoryBrandSharePct: retailerResult.data.categoryBrandSharePct,
+              retailers: retailerResult.data.retailers.map(x => ({
+                ...x,
+                retailerName: names[x.retailerId]?.name ?? null,
+                channel: names[x.retailerId]?.channel ?? null,
+                region: names[x.retailerId]?.region ?? null,
+                totalStores: names[x.retailerId]?.total_stores ?? null
+              })),
+              evidence: retailerResult.evidence
+            };
+            retailerWarnings.push(...retailerResult.warnings);
+          } catch {
+            retailerWarnings.push("Retailer-level distribution could not be loaded for this health scan.");
+          }
+        } else {
+          retailerWarnings.push("Brand category is required to evaluate retailer-level whitespace.");
+        }
+      }
+
+      return {
+        ...result.data,
+        retailerOpportunity: retailerOpportunityEvidence,
+        evidence: {
+          ...result.evidence,
+          source: dataset.source,
+          retailerOpportunitySource: retailerOpportunityEvidence?.evidence?.source ?? null,
+          retailerOpportunityGrain: retailerOpportunityEvidence?.evidence?.grain ?? null
+        },
+        warnings: [...result.warnings, ...retailerWarnings]
+      };
     }
 
     case "cross_category_portfolio": {
