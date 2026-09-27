@@ -117,6 +117,16 @@ export async function GET(req:NextRequest){
   }
   if(entity==="retailer"){
    const rows:any[]=await get("cpgist_retailers?select=id,name,channel,region,total_stores,retailer_group&order=name&limit=5000");
+   if(id){
+    const retailer=rows.find(x=>String(x.id)===String(id));
+    if(!retailer)return NextResponse.json({error:"Retailer not found."},{status:404});
+    const weekly:any[]=await get("cpgist_retailer_weekly?retailer_id=eq."+enc(id)+"&select=week_ending,sales,units,distribution&order=week_ending.desc&limit=5000").catch(()=>[]);
+    const periods=[...new Set(weekly.map(x=>String(x.week_ending)).filter(Boolean))].sort();
+    const latest=periods.slice(-13),prior=periods.slice(-26,-13);
+    const agg=(ws:any[])=>({sales:ws.reduce((a,x)=>a+n(x.sales),0),units:ws.reduce((a,x)=>a+n(x.units),0),distribution:ws.length?ws.reduce((a,x)=>a+n(x.distribution),0)/ws.length:null});
+    const cur=agg(weekly.filter(x=>latest.includes(String(x.week_ending)))),prev=agg(weekly.filter(x=>prior.includes(String(x.week_ending))));
+    return NextResponse.json({entity,source:"cpgist_compact",retailer,metrics:{...cur,growth:prev.sales?pct(cur.sales,prev.sales):null,priorSales:prev.sales},periods,latestWindow:latest});
+   }
    const results=rows.filter(x=>has(x.name,q)||has(x.channel,q)||has(x.region,q)||has(x.retailer_group,q));
    return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
@@ -133,13 +143,31 @@ export async function GET(req:NextRequest){
   }
   if(entity==="region"){
    const rows:any[]=await get("cpgist_regions?select=id,name,country,region_group&order=name&limit=5000");
-   const brands:any[]=await get("cpgist_brands?select=id,home_regions&limit=5000");
-   const products:any[]=await get("cpgist_products?select=id,brand_id&limit=10000");
+   const brands:any[]=await get("cpgist_brands?select=id,name,category,home_regions&limit=5000");
+   const products:any[]=await get("cpgist_products?select=id,brand_id,name,category,subcategory&limit=10000");
+   if(id){
+    const region=rows.find(x=>String(x.id)===String(id));
+    if(!region)return NextResponse.json({error:"Region not found."},{status:404});
+    const rb=brands.filter((b:any)=>String(b.home_regions||"").toLowerCase().includes(String(region.name||"").toLowerCase()));
+    const ids=new Set(rb.map((b:any)=>String(b.id)));
+    return NextResponse.json({entity,source:"cpgist_compact",region,brands:rb,productCount:products.filter((p:any)=>ids.has(String(p.brand_id))).length});
+   }
    const enriched=rows.map((r:any)=>{const rb=brands.filter((b:any)=>String(b.home_regions||"").toLowerCase().includes(String(r.name||"").toLowerCase()));const ids=new Set(rb.map((b:any)=>String(b.id)));return{...r,brand_count:rb.length,product_count:products.filter((p:any)=>ids.has(String(p.brand_id))).length}});
    const results=enriched.filter(x=>has(x.name,q)||has(x.country,q)||has(x.region_group,q));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
   if(entity==="product"){
-   const rows:any[]=await get("cpgist_products?select=id,brand_id,name,category,subcategory,size,sku&order=name&limit=10000");
+   const rows:any[]=await get("cpgist_products?select=id,brand_id,name,category,subcategory,size,sku,launch_date&order=name&limit=10000");
+   if(id){
+    const product=rows.find(x=>String(x.id)===String(id));
+    if(!product)return NextResponse.json({error:"Product not found."},{status:404});
+    const weekly:any[]=await get("cpgist_product_weekly?product_id=eq."+enc(id)+"&select=retailer_id,week_ending,sales,units,price,distribution,promo_rate,gross_margin,margin_percent,is_actual&order=week_ending.desc&limit=5000").catch(()=>[]);
+    const retailers:any[]=await get("cpgist_retailers?select=id,name,channel,region,total_stores&limit=5000").catch(()=>[]);
+    const byRetailer=new Map(retailers.map((r:any)=>[String(r.id),r]));
+    const latestPeriods=[...new Set(weekly.map(x=>String(x.week_ending)).filter(Boolean))].sort().slice(-13);
+    const latest=weekly.filter(x=>latestPeriods.includes(String(x.week_ending)));
+    const sales=latest.reduce((a,x)=>a+n(x.sales),0),units=latest.reduce((a,x)=>a+n(x.units),0);
+    return NextResponse.json({entity,source:"cpgist_compact",product,metrics:{sales,units,avgPrice:units?sales/units:null,avgDistribution:latest.length?latest.reduce((a,x)=>a+n(x.distribution),0)/latest.length:null,avgMargin:latest.length?latest.reduce((a,x)=>a+n(x.margin_percent),0)/latest.length:null},retailers:[...new Map(latest.map((x:any)=>[String(x.retailer_id),x])).values()].map((x:any)=>({...byRetailer.get(String(x.retailer_id)),sales:x.sales,units:x.units})).filter((x:any)=>x.id)});
+   }
    const results=rows.filter(x=>(!categoryFilter||String(x.category||"").toLowerCase()===categoryFilter.toLowerCase())&&(!subcategoryFilter||String(x.subcategory||"").toLowerCase()===subcategoryFilter.toLowerCase())&&(has(x.name,q)||has(x.category,q)||has(x.subcategory,q)||has(x.sku,q)));return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit),filters:{category:categoryFilter||null,subcategory:subcategoryFilter||null}});
   }
   return NextResponse.json({error:"Unsupported entity."},{status:400});
