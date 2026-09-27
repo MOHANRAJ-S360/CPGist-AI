@@ -68,8 +68,11 @@ async function scanCsv(bytes:Uint8Array,onRow:(row:Row,headers:string[])=>void,p
 }
 async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:string,progress:Progress){
   if(!rows.length)return;
+  // The importer resets the analytical layer before every full dataset load, so INSERT is
+  // substantially cheaper than PostgreSQL upsert: there is no conflict lookup/update path.
+  // Keep upsert only as a one-off fallback for malformed/duplicated source keys.
   const size=10000;
-  const concurrency=Math.min(5,Math.max(1,Math.ceil(rows.length/size)));
+  const concurrency=Math.min(6,Math.max(1,Math.ceil(rows.length/size)));
   let next=0,completed=0;
   const load=async()=>{
     while(true){
@@ -78,11 +81,15 @@ async function upsertBatches(sb:SupabaseClient,table:string,rows:any[],conflict:
       if(i>=rows.length)return;
       const batch=rows.slice(i,Math.min(i+size,rows.length));
       let last="";
-      for(let attempt=0;attempt<5;attempt++){
-        const {error}=await sb.from(table).upsert(batch,{onConflict:conflict});
+      for(let attempt=0;attempt<3;attempt++){
+        let {error}=await sb.from(table).insert(batch);
+        if(error && /duplicate key|already exists|conflict/i.test(error.message)){
+          const fallback=await sb.from(table).upsert(batch,{onConflict:conflict});
+          error=fallback.error;
+        }
         if(!error){last="";break}
         last=error.message;
-        if(attempt<4)await new Promise(r=>setTimeout(r,500*2**attempt));
+        if(attempt<2)await new Promise(r=>setTimeout(r,250*2**attempt));
       }
       if(last)throw new Error(table+": "+last);
       completed+=batch.length;
@@ -725,11 +732,18 @@ async function unzipFiltered(file:File,wanted:string[]):Promise<Record<string,Ui
     }));
   });
   unzipper.register(AsyncUnzipInflate);
-  const chunkSize=8*1024*1024;
-  for(let offset=0;offset<file.size;offset+=chunkSize){
-    const end=Math.min(file.size,offset+chunkSize);
-    const chunk=new Uint8Array(await file.slice(offset,end).arrayBuffer());
-    unzipper.push(chunk,end>=file.size);
+  // Stream the File directly into fflate instead of repeatedly slicing it into 8 MB
+  // ArrayBuffers. This removes a large amount of browser-side copying for 50–200 MB ZIPs.
+  const reader=file.stream().getReader();
+  try{
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      if(value?.byteLength)unzipper.push(value,false);
+    }
+    unzipper.push(new Uint8Array(0),true);
+  }finally{
+    reader.releaseLock();
   }
   await Promise.all(pending);
   const out:Record<string,Uint8Array>={};
