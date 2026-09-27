@@ -247,21 +247,24 @@ export function retailerOpportunity(
     actionSignal: "whitespace" | "defend" | "limited_signal";
   }>;
 }> {
-  const scoped = rows.filter(r => String(r.category).toLowerCase() === category.toLowerCase());
+  const scoped = rows.filter(r => String(r.category).trim().toLowerCase() === category.trim().toLowerCase());
   const byRetailer = new Map<string, { brandSales: number; categorySales: number; distributionWeighted: number; distributionWeight: number }>();
   let totalBrandSales = 0;
   let totalCategorySales = 0;
 
   for (const r of scoped) {
     const retailerId = String(r.retailer_id);
+    if (!retailerId) continue;
     const sales = n(r.sales);
     const current = byRetailer.get(retailerId) ?? { brandSales: 0, categorySales: 0, distributionWeighted: 0, distributionWeight: 0 };
     current.categorySales += sales;
-    if (String(r.brand_id) === String(brandId)) {
+    if (String(r.brand_id).trim() === String(brandId).trim()) {
       current.brandSales += sales;
-      const d = n(r.distribution);
-      current.distributionWeighted += d * Math.max(sales, 1);
-      current.distributionWeight += Math.max(sales, 1);
+      const d = Number.isFinite(Number(r.distribution)) ? Number(r.distribution) : NaN;
+      if (Number.isFinite(d)) {
+        current.distributionWeighted += d * Math.max(sales, 1);
+        current.distributionWeight += Math.max(sales, 1);
+      }
       totalBrandSales += sales;
     }
     byRetailer.set(retailerId, current);
@@ -272,8 +275,11 @@ export function retailerOpportunity(
   const retailers = [...byRetailer.entries()]
     .map(([retailerId, x]) => {
       const share = x.categorySales ? x.brandSales / x.categorySales : 0;
+      // Whitespace is a relative brand-share gap in percentage points, not an ACV gap.
+      // Keep the methodology explicit so the AI cannot relabel it as ACV whitespace.
       const whitespacePts = (categoryBrandShare - share) * 100;
-      const actionSignal: "whitespace" | "defend" | "limited_signal" = whitespacePts >= 2 ? "whitespace" : whitespacePts <= -2 ? "defend" : "limited_signal";
+      const actionSignal: "whitespace" | "defend" | "limited_signal" =
+        whitespacePts >= 2 ? "whitespace" : whitespacePts <= -2 ? "defend" : "limited_signal";
       return {
         retailerId,
         brandSales: x.brandSales,
@@ -284,7 +290,7 @@ export function retailerOpportunity(
         actionSignal
       };
     })
-    .sort((a,b) => b.whitespacePts - a.whitespacePts);
+    .sort((a,b) => b.whitespacePts - a.whitespacePts || b.categorySales - a.categorySales);
 
   const warnings: string[] = [];
   if (!scoped.length) warnings.push("No retailer opportunity rows are loaded for the requested category. Re-import the Syndicate ZIP after enabling retailer opportunity aggregation.");
@@ -292,7 +298,7 @@ export function retailerOpportunity(
     data: { category, brandId, categoryBrandSharePct: categoryBrandShare * 100, retailers },
     evidence: {
       source: "syndicate_brand_retailer",
-      grain: "brand/retailer/category all-time aggregate",
+      grain: "brand/retailer/category aggregate for the supplied period",
       rowCount: scoped.length,
       periodStart: null,
       periodEnd: null,
