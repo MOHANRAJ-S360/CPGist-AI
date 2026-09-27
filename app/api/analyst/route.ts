@@ -931,48 +931,73 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   const context = await resolveBrandContext(brandId, token);
   const categoryId = context.category || undefined;
   const selected: string[] = [];
-
   const add = (name: string) => { if (!selected.includes(name)) selected.push(name); };
 
-  // Brand scope gets the validated 13-week business review as its evidence spine.
-  // Market scope must never call the brand-only monthly review tool.
-  if (brandId) {
-    add("monthly_business_review");
-  } else {
-    add("business_health_scan");
-    if (/category|growth|underperform|momentum|market|all brands|review|why|decline|improve|turnaround/.test(q)) {
-      add("category_growth_plan");
-    }
-  }
-  if (brandId && categoryId && /category|growth|underperform|momentum|monthly|review|why|decline|improve|turnaround/.test(q)) add("category_growth_plan");
-  const productIntent=/sku|product|assortment|portfolio|item|size|pack|butter|milk|cheese|yogurt/.test(q);
+  const broadReview = /monthly business review|business review|executive review|management review|prepare my review|what changed|latest 13 weeks|latest 13w|13 weeks|13w|executive summary/.test(q);
+  const driverIntent = /why did|why is|why are|what drove|driver|drivers|root cause|reason|decline|drop|grew|growth driver|sales movement|underperform/.test(q);
+  const retailerIntent = /retailer|retailers|account|accounts|banner|customer|store|stores|distribution|acv|numeric distribution|whitespace|void|door|doors/.test(q);
+  const productIntent = /sku|product|products|assortment|portfolio|item|size|pack|butter|milk|cheese|yogurt/.test(q);
+  const competitorIntent = /competitor|competitive|competition|compare|versus|\bvs\b|market movement/.test(q);
+  const pricePromoIntent = /price|pricing|promotion|promo|discount|elasticity|trade spend|roi|lift|incremental|incrementality/.test(q);
+  const channelIntent = /channel|e-commerce|ecommerce|grocery|mass|club|drug|convenience|specialty/.test(q);
+  const marginIntent = /margin|profit|gross profit|p&l|profitability/.test(q);
+  const launchIntent = /new product|launch|trial|repeat|new sku|pacesetter/.test(q);
+  const shopperIntent = /penetration|purchase frequency|household|shopper panel/.test(q);
+  const forecastIntent = /forecast|outlook|next 8|next 12|projection|projected/.test(q);
+  const anomalyIntent = /anomal|spike|drop|unusual|outlier/.test(q);
+  const scenarioIntent = /scenario|what if|simulate|simulation/.test(q);
+  const abIntent = /a\/b|ab test|a-b test|experiment|control group|test group|variant|randomi[sz]ed|incrementality/.test(q);
+
+  if (brandId) add("monthly_business_review");
+  else add("business_health_scan");
+
+  if (!broadReview || driverIntent) add("analyze_drivers");
+  if (retailerIntent && brandId && categoryId) add("retailer_opportunity");
   if (productIntent) add("product_sku_performance");
-  if (brandId && /competitor|competitive|competition|compare|versus|vs/.test(q) && (productIntent || /region|regional|retailer|same area|same market|sales/.test(q))) add("product_competitor_diagnostic");
-  if (brandId && categoryId && /retailer|account|walmart|kroger|distribution|whitespace|store|customer/.test(q)) add("retailer_opportunity");
-  if (/price|pricing|promotion|promo|discount|elasticity|roi/.test(q)) add("promotion_diagnostic");
-  if (brandId && /promo roi|promotion roi|incremental|trade spend|promotion lift|which promotion/.test(q)) add("get_promo_lift");
+  if (competitorIntent) {
+    add("competitive_signals");
+    if (brandId && categoryId && productIntent) add("product_competitor_diagnostic");
+  }
+  if (pricePromoIntent) add("promotion_diagnostic");
+  if (brandId && /promo roi|promotion roi|incremental|trade spend|promotion lift|which promotion|promo lift/.test(q)) add("get_promo_lift");
   if (brandId && /sku growth|sku momentum|product growth|sku decline|product decline/.test(q)) add("get_sku_growth");
-  if (brandId && /category context|brand vs category|category share/.test(q)) add("get_category_context");
-  if (brandId && /channel|e-commerce|grocery|mass|club|drug|convenience|specialty/.test(q)) add("get_channel_breakdown");
-  if (brandId && /margin|profit|gross profit|margin at risk|p&l/.test(q)) add("get_margin_pnl");
-  if (brandId && /new product|launch|trial|repeat|new sku|pacesetter/.test(q)) add("get_launch_performance");
-  if (brandId && /penetration|purchase frequency|household|shopper panel/.test(q)) add("get_synthetic_panel");
-  if (/inflation|macro|price index|show .*against inflation/.test(q)) add("get_macro_overlay");
-  if (/competitor|competitive|competition|market movement/.test(q)) add("competitive_signals");
-  if (/forecast|outlook|next 8|next 12|projection/.test(q)) add("forecast_sales");
-  if (/anomal|spike|drop|unusual|outlier/.test(q)) add("detect_anomalies");
-  if (brandId && categoryId && /share|market share|category context/.test(q)) add("get_market_share");
-  if (/scenario|what if|simulate/.test(q)) add("run_scenario");
-  if (/a\/b|ab test|a-b test|experiment|control group|test group|variant|randomi[sz]ed|incrementality/.test(q)) add("ab_testing_guidance");
+  if (brandId && categoryId && /category context|brand vs category|category share|category performance/.test(q)) add("get_category_context");
+  if (channelIntent && brandId) add("get_channel_breakdown");
+  if (marginIntent && brandId) add("get_margin_pnl");
+  if (launchIntent && brandId) add("get_launch_performance");
+  if (shopperIntent && brandId) add("get_synthetic_panel");
+  if (/inflation|macro|price index|against inflation/.test(q)) add("get_macro_overlay");
+  if (forecastIntent) add("forecast_sales");
+  if (anomalyIntent) add("detect_anomalies");
+  if (brandId && categoryId && /share|market share|category share/.test(q)) add("get_market_share");
+  if (scenarioIntent) add("run_scenario");
+  if (abIntent) add("ab_testing_guidance");
+  if (!brandId && /category|growth|underperform|momentum|market|all brands|share/.test(q)) add("category_growth_plan");
+
+  // Base review stays first. Explicit drill-downs are then prioritized so the
+  // 7-tool safety cap cannot discard the evidence the user actually requested.
+  const base = brandId ? "monthly_business_review" : "business_health_scan";
+  const priority = [
+    "retailer_opportunity","product_sku_performance","product_competitor_diagnostic",
+    "get_promo_lift","get_sku_growth","get_category_context","get_channel_breakdown",
+    "get_margin_pnl","get_launch_performance","get_synthetic_panel","get_macro_overlay",
+    "forecast_sales","detect_anomalies","get_market_share","run_scenario","ab_testing_guidance",
+    "competitive_signals","promotion_diagnostic","analyze_drivers","category_growth_plan"
+  ];
+  const ordered = [
+    base,
+    ...selected.filter(x => x !== base).sort((x,y) => priority.indexOf(x) - priority.indexOf(y))
+  ];
+  const finalTools = ordered.filter((x,i)=>ordered.indexOf(x)===i).slice(0,7);
 
   const evidence: any[] = [];
-  for (const name of selected.slice(0, 7)) {
+  for (const name of finalTools) {
     try {
       const args: Args = { ...scope };
       if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic"].includes(name)) args.categoryId = categoryId;
       if (name === "product_competitor_diagnostic") args.productQuery = question;
       if (name === "ab_testing_guidance") { evidence.push({ tool: name, result: abTestingGuidance(question) }); continue; }
-      if (name === "forecast_sales") args.horizon = 8;
+      if (name === "forecast_sales") args.horizon = /next 12|12 week/.test(q) ? 12 : 8;
       if (name === "run_scenario") { args.priceChangePct = 0; args.distributionChangePts = 0; }
       const result = await tool(name, args, token);
       evidence.push({ tool: name, result: compactForModel(result) });
@@ -980,7 +1005,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
       evidence.push({ tool: name, result: { error: error?.message || "Analytical tool failed." } });
     }
   }
-  return { evidence, context, selected };
+  return { evidence, context, selected: finalTools };
 }
 
 export async function POST(req: Request) {
