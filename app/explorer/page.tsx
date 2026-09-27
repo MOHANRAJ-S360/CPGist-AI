@@ -17,6 +17,7 @@ const tabs:Tab[]=[
  {id:"product",label:"Products",icon:PackageSearch}
 ];
 const PAGE_SIZE=50;
+const money=(n:any)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(Number(n)||0);
 
 export default function Explorer(){
  const initialParams=typeof window!=="undefined"?new URLSearchParams(window.location.search):null;
