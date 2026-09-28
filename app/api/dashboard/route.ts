@@ -38,7 +38,7 @@ export async function GET(){
   const compact:any[]=await get("cpgist_brands?select=id&limit=1");
   if(!compact.length){
    return NextResponse.json({
-    error:"The CPGist Free Dataset is not imported yet. Open Data Import and upload CPGist_Supabase_Free_Dataset.zip. The dashboard will not fall back to the legacy Syndicate dataset.",
+    error:"The CPGist Free Dataset is not imported yet. Open Data Import and upload CPGist dataset ZIP. The dashboard will not fall back to the legacy Syndicate dataset.",
     code:"COMPACT_DATASET_REQUIRED"
    },{status:503});
   }
