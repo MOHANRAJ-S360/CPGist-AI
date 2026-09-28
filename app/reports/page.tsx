@@ -12,7 +12,6 @@ import {supabaseBrowser} from "../../lib/supabase-browser";
 
 const money=(n:any)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(Number(n)||0);
 const pct=(n:any)=>((Number(n)||0)>=0?"+":"")+((Number(n)||0).toFixed(1))+"%";
-const shareDisplay=(n:any)=>{const v=Number(n);if(!Number.isFinite(v))return "—";return "about "+Math.round(v<=1?v*100:v)+"%";};
 
 function ReportsContent(){
  const [d,setD]=useState<any>(null),[loading,setLoading]=useState(true),[q,setQ]=useState(""),[brandResults,setBrandResults]=useState<any[]>([]),[allBrands,setAllBrands]=useState<any[]>([]),[brandMenuOpen,setBrandMenuOpen]=useState(false);
@@ -92,7 +91,7 @@ function ReportsContent(){
     s.addText("Interpretation",{x:9.1,y:2.9,w:3,h:.25,fontSize:11,bold:true,color:text});bullets(s,[Number(d.growth||0)<0?"Sales momentum is negative versus the prior 13 weeks.":"Sales momentum is positive versus the prior 13 weeks.","Price and distribution are observed commercial measures; the current report does not establish causal contribution.",anomalyCandidates.length?"Anomaly monitor: "+String(anomalyCandidates[0].period)+" is a statistical sales flag at z="+Number(anomalyCandidates[0].z).toFixed(1)+".":"No weekly sales point crossed the statistical anomaly threshold in the last 26 completed weeks."],9.1,3.3,3.3);footer(s);}
 
    // 3 — Category Context
-   {const s=pptx.addSlide();addHeader(s,"Category Context");title(s,categoryName,"Brand position within the observed category context.");kpis(s,[["Category sales",d.metrics?.categorySales==null?"—":money(d.metrics.categorySales)],["Category growth",d.metrics?.categoryGrowth==null?"—":pct(d.metrics.categoryGrowth)],["Brand share",d.brandShare==null?"—":shareDisplay(d.brandShare)],["Share change",d.shareChangePts==null?"—":(Number(d.shareChangePts)>=0?"+":"")+Number(d.shareChangePts).toFixed(2)+" pts"]]);
+   {const s=pptx.addSlide();addHeader(s,"Category Context");title(s,categoryName,"Brand position within the observed category context.");kpis(s,[["Category sales",d.metrics?.categorySales==null?"—":money(d.metrics.categorySales)],["Category growth",d.metrics?.categoryGrowth==null?"—":pct(d.metrics.categoryGrowth)],["Brand share",d.brandShare==null?"—":Number(d.brandShare).toFixed(1)+"%"],["Share change",d.shareChangePts==null?"—":(Number(d.shareChangePts)>=0?"+":"")+Number(d.shareChangePts).toFixed(2)+" pts"]]);
     const catGrowth=d.metrics?.categoryGrowth;
     if(catGrowth==null)unavailable(s,"Category growth is not available for the current source/period scope.");
     else s.addText("Category growth is "+pct(catGrowth)+" across the latest versus prior 13 weeks.",{x:.75,y:2.55,w:11.5,h:.35,fontSize:15,color:text,bold:true});
@@ -119,7 +118,7 @@ function ReportsContent(){
     bullets(s,[
       "Realized price = latest 13W sales divided by latest 13W units for the selected brand.",
       d.promoRate==null?"Promotion rate is unavailable in the current report scope.":"Promotion activity is observed at "+Number(d.promoRate).toFixed(1)+"% in the latest 13 weeks.",
-      "Promotion economics are "+(adv.promoLift?.available?"available from populated event-level data; ROI is incremental margin divided by trade spend.":"not yet available because the required promotion/baseline/trade-spend/SKU fields are not populated."),
+      "Promotion economics are "+(adv.promoLift?.available?"available from populated event-level data; ROI is incremental margin divided by trade spend.":"not yet available because the required promotion/baseline/trade-spend/SKU fields are not populated.")+" Learned causal price elasticity remains outside the current model.",
       d.growth!=null&&Number(d.growth)<0?"Negative sales growth should be tested against distribution, price, promotion and retailer mix rather than assigned to one cause.":"Positive sales growth should be tested against distribution, price, promotion and retailer mix before attributing a driver."
      ],.75,2.85,11.5);note(s,"Driver signals are descriptive. Causal effectiveness is intentionally not inferred from the available fields.");footer(s);}
 
