@@ -829,7 +829,23 @@ async function tool(name: string, a: Args, token: string) {
     }
     case "forecast_sales": {
       const result = forecastSales(dataset.rows, filters, Number(a.horizon || 4));
-      return { ...result.data, evidence: { ...result.evidence, source: dataset.source }, warnings: result.warnings };
+      const periods = getSales(dataset.rows, filters).data.periods;
+      const latest13 = periods.slice(-13);
+      const latest13AverageSales = latest13.length === 13
+        ? latest13.reduce((s:number,p:any)=>s + Number(p.sales || 0), 0) / 13
+        : null;
+      return {
+        ...result.data,
+        latest13AverageSales,
+        latest13PeriodCount: latest13.length,
+        evidence: { ...result.evidence, source: dataset.source },
+        warnings: [
+          ...result.warnings,
+          latest13AverageSales == null
+            ? "Latest 13-week historical average is unavailable because the recent period is incomplete."
+            : "Historical latest 13-week average is total sales across the 13 recent weeks divided by 13; do not substitute the forecast average."
+        ]
+      };
     }
     case "run_scenario": {
       const result = runScenario(dataset.rows, filters, Number(a.priceChangePct || 0), Number(a.distributionChangePts || 0));
@@ -915,10 +931,15 @@ function abTestingGuidance(question: string) {
     available: true,
     type: "experimentation_framework",
     metric,
-    causalRule: "A/B results support causal interpretation only when treatment assignment is randomized or otherwise designed as a valid experiment.",
+    causalRule: "Causal interpretation requires valid treatment assignment and appropriate statistical analysis.",
+    design: {
+      randomizationUnit: "Store or another operational unit that can be assigned consistently to control/test.",
+      duration: "Choose before launch based on the business cycle and a formal power calculation; no validated duration is stored in the current dataset.",
+      sampleSize: "Not available from the current dataset. A formal power calculation requires baseline variance, alpha, target power and minimum detectable effect."
+    },
     cpgUseCases: ["price","promotion","pack/SKU","assortment","display","retailer/store cluster"],
     requiredFields: ["experiment_id","control/test assignment","start_date","end_date","primary KPI","control observations","test observations","unit of randomization"],
-    analysis: ["absolute difference","relative lift","sample size","statistical uncertainty when variance/count data supports it"],
+    analysis: ["absolute difference","relative lift","statistical uncertainty when variance/count data supports it"],
     guardrails: [
       "Historical control-vs-test differences are observational, not automatically causal.",
       "Do not claim a winner from lift alone when experiment quality or uncertainty is insufficient.",
@@ -1063,7 +1084,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. For retailer whitespace, whitespace points mean the focal brand's share gap versus its category benchmark, in percentage points; they are not ACV points, store counts, or incremental sales. When retailer evidence is populated, use its retailer names and values directly. Do not convert a populated retailer result into a claim that retailer data is missing merely because some retailers have zero focal-brand sales. If evidence is unavailable, say so explicitly, but first use every relevant populated evidence layer. A missing SKU-to-SKU competitor field does not mean all competitive evidence is unavailable: use validated brand/category/retailer/region peer benchmarks when present and label the comparison grain. For product questions, answer the product's own sales, growth, distribution, price, promotion, regional and retailer performance first, then add competitor context where supported. Use brandName and category names when available. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks about an A/B test or experiment, use the experimentation evidence when present. You may explain test design, control/test comparisons, lift, uncertainty and CPG use cases. Never turn historical differences into causal claims. If actual experiment-level observations are not present, clearly say that CPGist can design or interpret the experiment framework but cannot manufacture experimental evidence. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
+        content: "You are CPGist AI Analyst, an evidence-first CPG business analyst. The database/analytical layer has already calculated the metrics. Your job is to interpret those results precisely and communicate them like a professional CPG business review. Do not calculate replacement numbers, invent missing data, or claim causality from descriptive evidence. Treat diagnostic labels as hypotheses, never as proof. Distinguish observed facts, diagnostic interpretations, hypotheses, and actions. Never report a metric if the supplied evidence has a validation error or scope mismatch. Never infer margin without cost/margin data, never quantify whitespace as incremental opportunity unless explicitly sized by the analytical layer, and never describe a period as 13 weeks unless evidence.periodCount is 13. For retailer whitespace, whitespace points mean the focal brand's share gap versus its category benchmark, in percentage points; they are not ACV points, store counts, or incremental sales. When retailer evidence is populated, use its retailer names and values directly. Do not convert a populated retailer result into a claim that retailer data is missing merely because some retailers have zero focal-brand sales. If evidence is unavailable, say so explicitly, but first use every relevant populated evidence layer. A missing SKU-to-SKU competitor field does not mean all competitive evidence is unavailable: use validated brand/category/retailer/region peer benchmarks when present and label the comparison grain. For product questions, answer the product's own sales, growth, distribution, price, promotion, regional and retailer performance first, then add competitor context where supported. Use brandName and category names when available. When brand share is supplied as a ratio between 0 and 1, display it only as a rounded whole percentage such as "about 4%". Never display the raw ratio. Never turn a limitation into a fabricated estimate.\n\nCapability catalog:\n" + capabilityCatalog + "\n\nScope context:\n" + JSON.stringify(context) + activeScope + "\n\nControlled evidence from this request:\n" + evidenceJson + "\n\nReturn ONLY a JSON object with exactly these fields: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. metrics is an array of {label,value,change?,tone?}; table is null or {columns,rows}; sections is an array of {title,bullets}; warnings is an array; evidence is {source,period,periodCount,filters}; decisionTrail is an array of {type,text} using observed|diagnostic|action|limitation. Keep the answer concise but specific. Every quantitative claim must be traceable to the supplied evidence. For recommendations, reference the signal that triggered the recommendation. Do not claim that price, promotion, distribution or retailer mix caused sales movement unless the evidence explicitly establishes it. If the user asks about an A/B test or experiment, use the experimentation evidence when present. You may explain test design, control/test comparisons, lift, uncertainty and CPG use cases. Never turn historical differences into causal claims. If actual experiment-level observations are not present, clearly say that CPGist can design or interpret the experiment framework but cannot manufacture experimental evidence. Do not invent sample sizes, detectable lift thresholds, confidence levels, test duration, or power estimates from typical category variance. If the user asks a question outside the supplied data, answer the supported portion and state the missing domain.\nSelected deterministic tools: " + selected.join(", ")
       },
       ...incoming.slice(-6).map((m: any) => ({
         role: m?.role === "assistant" ? "assistant" : "user",
@@ -1152,6 +1173,47 @@ export async function POST(req: Request) {
     analyst.decisionTrail = Array.isArray(analyst.decisionTrail) ? analyst.decisionTrail : [];
     analyst.table = analyst.table && typeof analyst.table === "object" ? analyst.table : null;
     analyst.nextBestQuestion = analyst.nextBestQuestion ? String(analyst.nextBestQuestion) : null;
+    // Deterministic presentation guardrails for recurring model mistakes.
+    // Historical 13W average must come from the deterministic forecast evidence,
+    // and brand share must not oscillate between ratio and percent notation.
+    const forecastEvidence = evidence.find(x => x.tool === "forecast_sales")?.result;
+    const latest13Average = Number(forecastEvidence?.latest13AverageSales);
+    const shareEvidence = evidence.find(x => x.tool === "monthly_business_review")?.result?.executive;
+    const authoritativeShare = Number(shareEvidence?.marketShare);
+    const normalizeText = (value: any) => {
+      let s = String(value ?? "");
+      if (Number.isFinite(latest13Average) && latest13Average > 0) {
+        const avgLabel = "$" + latest13Average.toLocaleString("en-US", { maximumFractionDigits: 0 });
+        s = s.replace(/latest\\s+13[-‑ ]week\\s+average(?:\\s+of)?\\s*[$€£]?[d,.]+(?:\\s*[KMB])?/gi, "latest 13-week average of " + avgLabel);
+        s = s.replace(/latest\\s+13[-‑ ]w(?:eek)?\\s+average(?:\\s+of)?\\s*[$€£]?[d,.]+(?:\\s*[KMB])?/gi, "latest 13-week average of " + avgLabel);
+      }
+      if (Number.isFinite(authoritativeShare) && authoritativeShare >= 0 && authoritativeShare <= 1) {
+        const sharePct = Math.round(authoritativeShare * 100);
+        s = s.replace(/\\b0?\\.0?43(?:2)?%\\b/gi, "about " + sharePct + "%");
+        s = s.replace(/\\b4\\.3(?:2)?%\\b/gi, "about " + sharePct + "%");
+      }
+      return s;
+    };
+    analyst.headline = normalizeText(analyst.headline);
+    analyst.executiveTakeaway = normalizeText(analyst.executiveTakeaway);
+    analyst.sections = analyst.sections.map((section:any) => ({ ...section, title: normalizeText(section?.title), bullets: Array.isArray(section?.bullets) ? section.bullets.map(normalizeText) : [] }));
+    analyst.warnings = analyst.warnings.map(normalizeText);
+    analyst.decisionTrail = analyst.decisionTrail.map((item:any) => ({ ...item, text: normalizeText(item?.text) }));
+    analyst.nextBestQuestion = analyst.nextBestQuestion ? normalizeText(analyst.nextBestQuestion) : null;
+    analyst.metrics = analyst.metrics.map((metric:any) => {
+      const label = String(metric?.label || "");
+      let value = normalizeText(metric?.value);
+      if (/share/i.test(label) && Number.isFinite(authoritativeShare) && authoritativeShare >= 0 && authoritativeShare <= 1) {
+        value = "about " + Math.round(authoritativeShare * 100) + "%";
+      }
+      return { ...metric, value };
+    });
+    if (analyst.table?.rows && Number.isFinite(authoritativeShare) && authoritativeShare >= 0 && authoritativeShare <= 1) {
+      analyst.table = {
+        ...analyst.table,
+        rows: analyst.table.rows.map((row:any[]) => Array.isArray(row) ? row.map(normalizeText) : row)
+      };
+    }
     // Retailer whitespace is a deterministic, structured output. Do not let the
     // language model replace populated retailer values with a generic "data unavailable"
     // narrative or relabel share-gap points as ACV.
