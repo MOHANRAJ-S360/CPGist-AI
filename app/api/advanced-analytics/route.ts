@@ -58,7 +58,17 @@ export async function GET(req:NextRequest){
   const sumBrand=(periods:string[])=>brandRows.filter(r=>periods.includes(String(r.week_ending))).reduce((s,r)=>s+Number(r.sales||0),0);
   const brandSummary={latestSales:sumBrand(brandLatest),priorSales:sumBrand(brandPrior),growthPct:sumBrand(brandPrior)?(sumBrand(brandLatest)/sumBrand(brandPrior)-1)*100:null,latestPeriodCount:brandLatest.length,priorPeriodCount:brandPrior.length,status:selectedStatus?"actual":"projected"};
   const promoLift=getPromoLift(events,productWeekly,baseline,trade);
-  const skuGrowth=getSkuGrowth(productWeekly);
+  const skuGrowthRaw=getSkuGrowth(productWeekly);
+  const productById=new Map((productMaster as any[]).map((p:any)=>[String(p.id),p]));
+  const skuGrowth={
+    ...skuGrowthRaw,
+    products: skuGrowthRaw.products.map((x:any)=>({
+      ...x,
+      productName: productById.get(String(x.productId))?.name ?? null,
+      sku: productById.get(String(x.productId))?.sku ?? null,
+      size: productById.get(String(x.productId))?.size ?? null
+    }))
+  };
 
   const normalizedCategoryAgg=categoryRows.map(r=>({week_ending:r.week,category:r.category,subcategory:r.subcategory,region:r.region,total_category_sales:r.total_category_sales,total_category_units:r.total_category_units,brand_count_in_category:r.brand_count_in_category,is_actual:r.is_actual}));
   const weeklyCategoryRows=categoryWeekly.map(r=>({week_ending:r.week_ending,category:r.category,subcategory:"ALL",region:"ALL",total_category_sales:r.sales,total_category_units:r.units,brand_count_in_category:null,is_actual:r.is_actual}));
