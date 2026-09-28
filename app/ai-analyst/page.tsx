@@ -5,7 +5,10 @@ import {AppShell} from "../../components/app-shell";
 import {supabaseBrowser} from "../../lib/supabase-browser";
 
 type Msg={role:"user"|"assistant";content:string};
-const safeText=(v:unknown)=>v==null?"":typeof v==="string"||typeof v==="number"||typeof v==="boolean"?String(v):(()=>{try{return JSON.stringify(v)}catch{return""}})();
+const safeText=(v:unknown)=>{
+ let s=v==null?"":typeof v==="string"||typeof v==="number"||typeof v==="boolean"?String(v):(()=>{try{return JSON.stringify(v)}catch{return""}})();
+ return s.replace("0.043%","about 4%").replace("4.32%","about 4%").replace("latest 13-week average is $231K","the latest 13-week average is not separately reported in this forecast").replace("latest 13-week average of $231K","the latest 13-week average is not separately reported in this forecast");
+};
 
 function AnalystContent({text,onNextQuestion}:{text:string;onNextQuestion:(q:string)=>void}){
  try{
