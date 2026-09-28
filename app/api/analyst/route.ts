@@ -79,7 +79,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   } catch {}
 
   if (!compact) {
-    throw new Error("CPGist Free Dataset is not imported yet. Open Data Import and load CPGist dataset ZIP before using AI Analyst.");
+    throw new Error("CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using AI Analyst.");
   }
 
   if (mode === "retailer" || (retailer && !brand && !category)) {
@@ -710,24 +710,11 @@ async function tool(name: string, a: Args, token: string) {
       return {...result,evidence:{source:"cpgist_product_weekly",grain:"SKU week",rowCount:rows.length,periodStart:rows[0]?.week_ending??null,periodEnd:rows.at(-1)?.week_ending??null,periodCount:new Set(rows.map((x:any)=>x.week_ending)).size,filters:filtersFromArgs(a),generatedAt:new Date().toISOString()},warnings:result.products.length?[]:["SKU weekly data is not populated."]};
     }
     case "get_category_context": {
-      const brandId=String(a.brandId||"").trim(),ctx=await resolveBrandContext(brandId,token),cat=String(a.categoryId||ctx.category||"").trim();
-      if(!cat)return {available:false,warnings:["A category name is required for category context."]};
+      const brandId=String(a.brandId||"").trim(),ctx=await resolveBrandContext(brandId,token),cat=String(a.categoryId||ctx.category||"");
       const [cr,br]=await Promise.all([
-        get("cpgist_category_aggregates?category=eq."+encodeURIComponent(cat)+"&select=*&order=week.asc&limit=100000",token).catch(()=>[]),
-        brandId?get("cpgist_brand_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=brand_id,week_ending,sales,is_actual&order=week_ending.asc&limit=100000",token):Promise.resolve([])
+        get("cpgist_category_aggregates?category=eq."+encodeURIComponent(cat)+"&select=*&order=week.asc&limit=100000",token),
+        get("cpgist_brand_weekly?brand_id=eq."+encodeURIComponent(brandId)+"&select=brand_id,week_ending,sales,is_actual&order=week_ending.asc&limit=100000",token)
       ]);
-      if(!brandId){
-        const weekly=cr.length?cr.map((r:any)=>({week_ending:r.week, sales:r.total_category_sales, units:r.total_category_units, is_actual:r.is_actual})):await get("cpgist_category_weekly?category=eq."+encodeURIComponent(cat)+"&select=week_ending,sales,units,is_actual&order=week_ending.asc&limit=100000",token).catch(()=>[]);
-        const explicit=(weekly as any[]).filter((r:any)=>r.is_actual===true||r.is_actual===false);
-        const status=explicit.length&&explicit.every((r:any)=>r.is_actual===false)?false:true;
-        const rows=(weekly as any[]).filter((r:any)=>((r.is_actual===true||r.is_actual===false)?r.is_actual===status:true));
-        const periods=[...new Set(rows.map((r:any)=>String(r.week_ending)).filter(Boolean))].sort();
-        const latest=periods.slice(-13),prior=periods.slice(-26,-13);
-        const sum=(ps:string[])=>rows.filter((r:any)=>ps.includes(String(r.week_ending))).reduce((s:number,r:any)=>s+Number(r.sales||0),0);
-        const latestSales=sum(latest),priorSales=sum(prior);
-        const growth=priorSales?(latestSales/priorSales-1)*100:null;
-        return {available:latest.length===13&&prior.length===13,observed:status===true,context:{category:cat,categorySales:latestSales,categoryPriorSales:priorSales,categoryGrowthPct:growth,periodCount:13,periods:latest},disclaimer:"Observed category performance is bounded by the connected category source; it is not a total-market claim.",evidence:{source:cr.length?"cpgist_category_aggregates":"cpgist_category_weekly",grain:"category week",rowCount:rows.length,periodStart:latest[0]??null,periodEnd:latest.at(-1)??null,periodCount:latest.length,filters:{...filtersFromArgs(a),categoryId:cat},generatedAt:new Date().toISOString()},warnings:latest.length===13&&prior.length===13?[]:["The category source does not contain a complete 13W + prior-13W window."]};
-      }
       const result=getCategoryContext(cr,br,brandId);
       return {...result,evidence:{source:"cpgist_category_aggregates + cpgist_brand_weekly",grain:"category/brand week",rowCount:cr.length+br.length,periodStart:result.context?.periods?.[0]??null,periodEnd:result.context?.periods?.at(-1)??null,periodCount:result.context?.periodCount??0,filters:{...filtersFromArgs(a),categoryId:cat},generatedAt:new Date().toISOString()},warnings:result.available?[]:["Observed category aggregates are not populated."]};
     }
@@ -945,9 +932,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   const q = question.toLowerCase();
   const scope = brandId ? { brandId } : {};
   const context = await resolveBrandContext(brandId, token);
-  const categoryCatalog = (!brandId && /category|market|growth|decline|down|underperform|momentum/.test(q)) ? await get("cpgist_categories?select=name&limit=5000", token).catch(()=>[]) : [];
-  const categoryFromQuestion = String(categoryCatalog.map((x:any)=>String(x.name||"")).filter(Boolean).sort((a:string,b:string)=>b.length-a.length).find((name:string)=>q.includes(name.toLowerCase())) || "");
-  const categoryId = context.category || categoryFromQuestion || undefined;
+  const categoryId = context.category || undefined;
   const selected: string[] = [];
   const add = (name: string) => { if (!selected.includes(name)) selected.push(name); };
 
@@ -993,7 +978,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (pricePromoIntent) add("promotion_diagnostic");
   if (brandId && /promo roi|promotion roi|incremental|trade spend|promotion lift|which promotion|promo lift/.test(q)) add("get_promo_lift");
   if (brandId && /sku growth|sku momentum|product growth|sku decline|product decline/.test(q)) add("get_sku_growth");
-  if (categoryId && /category context|brand vs category|category share|category performance|why is|why are|why did|category growth|category down|category decline/.test(q)) add("get_category_context");
+  if (brandId && categoryId && /category context|brand vs category|category share|category performance/.test(q)) add("get_category_context");
   if (channelIntent && brandId) add("get_channel_breakdown");
   if (marginIntent && brandId) add("get_margin_pnl");
   if (launchIntent && brandId) add("get_launch_performance");
@@ -1026,7 +1011,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   for (const name of finalTools) {
     try {
       const args: Args = { ...scope };
-      if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic","get_category_context"].includes(name)) args.categoryId = categoryId;
+      if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic"].includes(name)) args.categoryId = categoryId;
       if (name === "product_competitor_diagnostic") args.productQuery = question;
       if (name === "retailer_scope_guard") {
         evidence.push({

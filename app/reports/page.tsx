@@ -118,7 +118,7 @@ function ReportsContent(){
     bullets(s,[
       "Realized price = latest 13W sales divided by latest 13W units for the selected brand.",
       d.promoRate==null?"Promotion rate is unavailable in the current report scope.":"Promotion activity is observed at "+Number(d.promoRate).toFixed(1)+"% in the latest 13 weeks.",
-      "Promotion economics are "+(adv.promoLift?.available?"available from populated event-level data; ROI is incremental margin divided by trade spend.":"not yet available because the required promotion/baseline/trade-spend/SKU fields are not populated.")+"",
+      "Promotion economics are "+(adv.promoLift?.available?"available from populated event-level data; ROI is incremental margin divided by trade spend.":"not yet available because the required promotion/baseline/trade-spend/SKU fields are not populated.")+" Learned causal price elasticity remains outside the current model.",
       d.growth!=null&&Number(d.growth)<0?"Negative sales growth should be tested against distribution, price, promotion and retailer mix rather than assigned to one cause.":"Positive sales growth should be tested against distribution, price, promotion and retailer mix before attributing a driver."
      ],.75,2.85,11.5);note(s,"Driver signals are descriptive. Causal effectiveness is intentionally not inferred from the available fields.");footer(s);}
 

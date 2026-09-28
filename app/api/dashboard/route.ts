@@ -38,7 +38,7 @@ export async function GET(){
   const compact:any[]=await get("cpgist_brands?select=id&limit=1");
   if(!compact.length){
    return NextResponse.json({
-    error:"The CPGist Free Dataset is not imported yet. Open Data Import and upload CPGist dataset ZIP. The dashboard will not fall back to the legacy Syndicate dataset.",
+    error:"The CPGist Free Dataset is not imported yet. Open Data Import and upload CPGist_Supabase_Free_Dataset.zip. The dashboard will not fall back to the legacy Syndicate dataset.",
     code:"COMPACT_DATASET_REQUIRED"
    },{status:503});
   }
@@ -170,7 +170,7 @@ export async function GET(){
    totalSales:latest.sales,
    totalUnits:latest.units,
    avgDistribution:latest.avgDistribution,
-   promoRate:latestPeriods.length?((brandRows.filter((r:any)=>latestSet.has(String(r.week_ending))&&r.promo_rate!=null).reduce((s:number,r:any)=>s+n(r.promo_rate),0))/Math.max(1,brandRows.filter((r:any)=>latestSet.has(String(r.week_ending))&&r.promo_rate!=null).length)):null,
+   promoRate:null,
    growth:growth(latest.sales,prior.sales),
    provenance,
    alerts,

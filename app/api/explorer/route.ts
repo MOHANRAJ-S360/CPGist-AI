@@ -97,8 +97,8 @@ async function brandDetail(id:string,brand:any){
  const tradeSpend=rows.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.trade_spend),0);
  const grossMargin=rows.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.gross_margin),0);
  const advanced={incrementalSales:incSales,incrementalMargin:incMargin,tradeSpend,roi:tradeSpend?incMargin/tradeSpend:null,grossMargin,marginPercent:a.sales?grossMargin/a.sales:null,promoEvents:rows.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.promo_events),0)};
- const actualWeeks=periods.filter(w=>rows.filter(r=>String(r.week_ending)===w).length>0 && rows.filter(r=>String(r.week_ending)===w).every(r=>r.is_actual===true));
- const syntheticWeeks=periods.filter(w=>{const rs=rows.filter(r=>String(r.week_ending)===w);return rs.length>0&&rs.every(r=>r.is_actual===false);});
+ const actualWeeks=periods.filter(w=>rows.filter(r=>String(r.week_ending)===w).every(r=>r.is_actual===true));
+ const syntheticWeeks=periods.filter(w=>rows.filter(r=>String(r.week_ending)===w).some(r=>r.is_actual===false));
  const provenance={actualWeeks:actualWeeks.length,syntheticWeeks:syntheticWeeks.length,totalWeeks:periods.length,mixed:actualWeeks.length>0&&syntheticWeeks.length>0,status:syntheticWeeks.length?"mixed":"actual",label:syntheticWeeks.length?syntheticWeeks.length+" of "+periods.length+" weeks in this view are projected, not observed":null};
  return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null,priorShare,shareChangePts:(categorySales&&categoryPriorSales)?(a.sales/categorySales*100)-(b.sales/categoryPriorSales*100):null},advanced,provenance,weekly,products,retailers,categoryWeekly,competitorSignals,competitiveBenchmark}
 }
@@ -107,7 +107,7 @@ export async function GET(req:NextRequest){
  try{
   const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim(),id=p.get("id"),categoryFilter=(p.get("category")||"").trim(),subcategoryFilter=(p.get("subcategory")||"").trim(),limit=Math.min(5000,Math.max(1,Number(p.get("limit")||5000)||5000)),offset=Math.max(0,Number(p.get("offset")||0)||0);
   let compact=false;try{const x=await get("cpgist_brands?select=id&limit=1");compact=Array.isArray(x)&&x.length>0}catch{}
-  if(!compact)return NextResponse.json({error:"CPGist Free Dataset is not imported yet. Open Data Import and load CPGist dataset ZIP before using the client workspace.",code:"COMPACT_DATASET_REQUIRED"},{status:503});
+  if(!compact)return NextResponse.json({error:"CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using the client workspace.",code:"COMPACT_DATASET_REQUIRED"},{status:503});
 
   if(entity==="brand"){
    const rows:any[]=await get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000");

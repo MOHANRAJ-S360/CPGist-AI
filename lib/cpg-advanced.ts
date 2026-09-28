@@ -10,24 +10,36 @@ const isActual = (v:any) => v === true || String(v).toLowerCase() === "true";
 
 export function actualSyntheticProvenance(rows:AdvancedRow[], dateStart?:string|null, dateEnd?:string|null) {
   const filtered = rows.filter(r => (!dateStart || String(r.week ?? r.week_ending) >= dateStart) && (!dateEnd || String(r.week ?? r.week_ending) <= dateEnd));
-  const byWeek = new Map<string, {actual:boolean; synthetic:boolean}>();
+  const byWeek = new Map<string, Set<boolean>>();
   filtered.forEach(r => {
-    const w=String(r.week ?? r.week_ending ?? ""); if(!w)return;
-    const x=byWeek.get(w)||{actual:false,synthetic:false};
-    if(r.is_actual===true || String(r.is_actual).toLowerCase()==="true")x.actual=true;
-    else if(r.is_actual===false || String(r.is_actual).toLowerCase()==="false")x.synthetic=true;
-    byWeek.set(w,x);
+    const w=String(r.week ?? r.week_ending ?? "");
+    if(!w)return;
+    if(!byWeek.has(w))byWeek.set(w,new Set());
+    byWeek.get(w)!.add(isActual(r.is_actual));
   });
   const periods=[...byWeek.keys()].sort();
-  const actual=periods.filter(w=>byWeek.get(w)!.actual&&!byWeek.get(w)!.synthetic);
-  const synthetic=periods.filter(w=>byWeek.get(w)!.synthetic&&!byWeek.get(w)!.actual);
-  const mixed=periods.filter(w=>byWeek.get(w)!.actual&&byWeek.get(w)!.synthetic);
-  const unknown=periods.filter(w=>!byWeek.get(w)!.actual&&!byWeek.get(w)!.synthetic);
+  const actual=periods.filter(w=>byWeek.get(w)?.has(true) && !byWeek.get(w)?.has(false));
+  const synthetic=periods.filter(w=>byWeek.get(w)?.has(false) && !byWeek.get(w)?.has(true));
+  const mixed=periods.filter(w=>byWeek.get(w)?.has(true) && byWeek.get(w)?.has(false));
   const firstSynthetic=synthetic[0] ?? null;
   const lastActual=actual.at(-1) ?? null;
-  const status=synthetic.length||mixed.length?(actual.length?"mixed":"synthetic"):(actual.length?"actual":"unknown");
-  return {totalWeeks:periods.length,actualWeeks:actual.length,syntheticWeeks:synthetic.length,mixedWeeks:mixed.length,unknownWeeks:unknown.length,firstSyntheticWeek:firstSynthetic,lastActualWeek:lastActual,status,label:synthetic.length||mixed.length?String(synthetic.length+mixed.length)+" of "+String(periods.length)+" weeks in this view are explicitly projected, not observed":null,periods,actualPeriods:actual,syntheticPeriods:synthetic,mixedPeriods:mixed,sourceOfTruth:"is_actual"};
+  return {
+    totalWeeks:periods.length,
+    actualWeeks:actual.length,
+    syntheticWeeks:synthetic.length,
+    mixedWeeks:mixed.length,
+    firstSyntheticWeek:firstSynthetic,
+    lastActualWeek:lastActual,
+    status: synthetic.length || mixed.length ? (actual.length ? "mixed" : "synthetic") : "actual",
+    label: synthetic.length || mixed.length ? `${synthetic.length + mixed.length} of ${periods.length} weeks in this view are projected, not observed` : null,
+    periods,
+    actualPeriods:actual,
+    syntheticPeriods:synthetic,
+    mixedPeriods:mixed,
+    sourceOfTruth:"is_actual"
+  };
 }
+
 function sameStatusWindows(rows:AdvancedRow[], weekKey="week_ending") {
   const statuses = [true,false].map(status => {
     const filtered=rows.filter(r=>isActual(r.is_actual)===status);
@@ -155,23 +167,19 @@ export function getLaunchPerformance(products:AdvancedRow[], trialRows:AdvancedR
 }
 
 export function getSyntheticPanel(panelRows:AdvancedRow[]) {
-  const universe=new Map<string,Set<string>>();
-  const brandWeeks=new Map<string,{week:string;region:any;brand:any;category:any;buyers:Set<string>;units:number}>();
+  const byWeekBrand=new Map<string,any>();
   for(const r of panelRows){
-    const week=String(r.week??""); const region=String(r.region??""); const category=String(r.category??""); const household=String(r.household_id??"");
-    const universeKey=[week,region,category].join("|");
-    if(!universe.has(universeKey))universe.set(universeKey,new Set<string>());
-    if(household)universe.get(universeKey)!.add(household);
-    const key=[week,region,String(r.brand??""),category].join("|");
-    const x=brandWeeks.get(key)||{week,region,brand:r.brand,category,buyers:new Set<string>(),units:0};
-    x.units+=n(r.units); if(n(r.units)>0 && household)x.buyers.add(household); brandWeeks.set(key,x);
+    const key=[r.week,r.region,r.brand,r.category].join("|");
+    const x=byWeekBrand.get(key)||{week:String(r.week),region:r.region,brand:r.brand,category:r.category,households:new Set<string>(),buyers:new Set<string>(),units:0};
+    x.households.add(String(r.household_id));
+    x.units+=n(r.units);
+    if(n(r.units)>0)x.buyers.add(String(r.household_id));
+    byWeekBrand.set(key,x);
   }
-  const rows=[...brandWeeks.values()].map(x=>{
-    const universeSize=universe.get([x.week,String(x.region??""),String(x.category??"")].join("|"))?.size||0;
-    return {week:x.week,region:x.region,brand:x.brand,category:x.category,panelHouseholds:universeSize,buyers:x.buyers.size,penetrationPct:universeSize?x.buyers.size/universeSize*100:null,purchaseFrequency:x.buyers.size?x.units/x.buyers.size:null,units:x.units,isSyntheticPanel:true};
-  });
-  return {available:rows.length>0,rows,label:"Synthetic panel (illustrative only, not real household data); penetration uses the full panel universe for the week/region/category."};
+  const rows=[...byWeekBrand.values()].map(x=>({week:x.week,region:x.region,brand:x.brand,category:x.category,panelHouseholds:x.households.size,buyers:x.buyers.size,penetrationPct:x.households.size?x.buyers.size/x.households.size*100:null,purchaseFrequency:x.buyers.size?x.units/x.buyers.size:null,units:x.units,isSyntheticPanel:true}));
+  return {available:rows.length>0,rows,label:"Synthetic panel (illustrative only, not real household data)"};
 }
+
 export function getMacroOverlay(rows:AdvancedRow[]) {
   return {available:rows.length>0,rows:rows.map(r=>({week:r.week,region:r.region,inflationIndex:r.inflation_index,categoryPriceIndex:r.category_price_index})),label:"Illustrative synthetic macro trend — not tied to real economic data"};
 }
