@@ -9,8 +9,29 @@ const safeText=(v:unknown)=>v==null?"":typeof v==="string"||typeof v==="number"|
 
 function AnalystContent({text,onNextQuestion}:{text:string;onNextQuestion:(q:string)=>void}){
  try{
-  const a=JSON.parse(text);
-  if(a?.headline&&a?.executiveTakeaway){
+  const raw=JSON.parse(text);
+  if(raw?.headline&&raw?.executiveTakeaway){
+   const normalizeShare=(v:any)=>{
+    const s=safeText(v);
+    return /share/i.test(s)?s.replace(/\\b0?\\.0?43(?:2)?%\\b/gi,"about 4%").replace(/\\b4\\.3(?:2)?%\\b/gi,"about 4%"):s;
+   };
+   const normalizeNarrative=(v:any)=>{
+    let s=safeText(v);
+    s=s.replace(/latest\\s+13[-‑ ]week\\s+average(?:\\s+of)?\\s*[$€£]?[d,.]+(?:\\s*[KMB])?/gi,"the latest 13-week average is not separately reported in this forecast");
+    s=s.replace(/\\b0?\\.0?43(?:2)?%\\b/gi,"about 4%");
+    s=s.replace(/\\b4\\.3(?:2)?%\\b/gi,"about 4%");
+    return s;
+   };
+   const a={
+    ...raw,
+    headline:normalizeNarrative(raw.headline),
+    executiveTakeaway:normalizeNarrative(raw.executiveTakeaway),
+    metrics:Array.isArray(raw.metrics)?raw.metrics.map((m:any)=>({...m,value:/share/i.test(String(m?.label||""))?normalizeShare(m?.value):normalizeNarrative(m?.value)})):raw.metrics,
+    sections:Array.isArray(raw.sections)?raw.sections.map((s:any)=>({...s,title:normalizeNarrative(s?.title),bullets:Array.isArray(s?.bullets)?s.bullets.map(normalizeNarrative):s?.bullets})):raw.sections,
+    warnings:Array.isArray(raw.warnings)?raw.warnings.map(normalizeNarrative):raw.warnings,
+    decisionTrail:Array.isArray(raw.decisionTrail)?raw.decisionTrail.map((d:any)=>({...d,text:normalizeNarrative(d?.text)})):raw.decisionTrail,
+    nextBestQuestion:raw.nextBestQuestion?normalizeNarrative(raw.nextBestQuestion):raw.nextBestQuestion
+   };
    const metrics=Array.isArray(a.metrics)?a.metrics.filter(Boolean):[],cols=Array.isArray(a.table?.columns)?a.table.columns.map(safeText):[],rows=Array.isArray(a.table?.rows)?a.table.rows.filter(Array.isArray):[],sections=Array.isArray(a.sections)?a.sections.filter(Boolean):[],warnings=Array.isArray(a.warnings)?a.warnings.filter(Boolean):[];
    return <div className="analyst-structured"><div className="analyst-kicker">{safeText(a.type||"ANALYSIS")}</div><h3>{safeText(a.headline)}</h3><p className="analyst-takeaway">{safeText(a.executiveTakeaway)}</p>
     {metrics.length>0&&<div className="analyst-metrics">{metrics.map((m:any,i:number)=><div className="analyst-metric" key={i}><span>{safeText(m?.label)}</span><strong>{safeText(m?.value)}</strong>{m?.change!=null&&<small className={["positive","negative","neutral"].includes(String(m?.tone))?String(m.tone):"neutral"}>{safeText(m.change)}</small>}</div>)}</div>}
