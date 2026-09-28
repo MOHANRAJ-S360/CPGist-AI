@@ -170,7 +170,7 @@ export async function GET(){
    totalSales:latest.sales,
    totalUnits:latest.units,
    avgDistribution:latest.avgDistribution,
-   promoRate:null,
+   promoRate:latestPeriods.length?((brandRows.filter((r:any)=>latestSet.has(String(r.week_ending))&&r.promo_rate!=null).reduce((s:number,r:any)=>s+n(r.promo_rate),0))/Math.max(1,brandRows.filter((r:any)=>latestSet.has(String(r.week_ending))&&r.promo_rate!=null).length)):null,
    growth:growth(latest.sales,prior.sales),
    provenance,
    alerts,
