@@ -74,7 +74,7 @@ export async function GET(req:NextRequest){
       const master=rm.get(id)||{};
       const latest=agg(rs,latest13),prior=agg(rs,prior13);
       return {
-        id,name:master.name||("Retailer "+id),channel:master.channel||"",region:master.region||"",retailer_group:master.retailer_group||"",
+        id,name:master.name||("Retailer "+id),channel:master.channel||"",region:master.region||"",
         totalStores:master.total_stores??null,latest,prior,
         growth:prior.sales?((latest.sales/prior.sales)-1)*100:null
       };
