@@ -6,31 +6,27 @@ const n = (v:any) => {
 };
 const pct = (now:number, old:number) => old ? (now / old - 1) * 100 : null;
 const uniq = (xs:any[]) => [...new Set(xs.map(x=>String(x ?? "")).filter(Boolean))].sort();
-const isActual = (v:any): boolean | null => { if (v === true || String(v).toLowerCase() === "true") return true; if (v === false || String(v).toLowerCase() === "false") return false; return null; };
+const isActual = (v:any) => v === true || String(v).toLowerCase() === "true";
 
 export function actualSyntheticProvenance(rows:AdvancedRow[], dateStart?:string|null, dateEnd?:string|null) {
   const filtered = rows.filter(r => (!dateStart || String(r.week ?? r.week_ending) >= dateStart) && (!dateEnd || String(r.week ?? r.week_ending) <= dateEnd));
-  const byWeek = new Map<string, Set<boolean | null>>();
+  const byWeek = new Map<string, {actual:boolean; synthetic:boolean}>();
   filtered.forEach(r => {
-    const w=String(r.week ?? r.week_ending ?? "");
-    if(!w)return;
-    if(!byWeek.has(w))byWeek.set(w,new Set());
-    byWeek.get(w)!.add(isActual(r.is_actual));
+    const w=String(r.week ?? r.week_ending ?? ""); if(!w)return;
+    const x=byWeek.get(w)||{actual:false,synthetic:false};
+    if(r.is_actual===true || String(r.is_actual).toLowerCase()==="true")x.actual=true;
+    else if(r.is_actual===false || String(r.is_actual).toLowerCase()==="false")x.synthetic=true;
+    byWeek.set(w,x);
   });
   const periods=[...byWeek.keys()].sort();
-  const actual=periods.filter(w=>byWeek.get(w)?.has(true) && !byWeek.get(w)?.has(false));
-  const synthetic=periods.filter(w=>byWeek.get(w)?.has(false) && !byWeek.get(w)?.has(true));
-  const mixed=periods.filter(w=>byWeek.get(w)?.has(true) && byWeek.get(w)?.has(false));
-  const unknown=periods.filter(w=>!byWeek.get(w)?.has(true) && !byWeek.get(w)?.has(false));
+  const actual=periods.filter(w=>byWeek.get(w)!.actual&&!byWeek.get(w)!.synthetic);
+  const synthetic=periods.filter(w=>byWeek.get(w)!.synthetic&&!byWeek.get(w)!.actual);
+  const mixed=periods.filter(w=>byWeek.get(w)!.actual&&byWeek.get(w)!.synthetic);
+  const unknown=periods.filter(w=>!byWeek.get(w)!.actual&&!byWeek.get(w)!.synthetic);
   const firstSynthetic=synthetic[0] ?? null;
   const lastActual=actual.at(-1) ?? null;
-  const status = synthetic.length || mixed.length ? (actual.length ? "mixed" : "synthetic") : (actual.length ? "actual" : "unknown");
-  return {
-    totalWeeks:periods.length, actualWeeks:actual.length, syntheticWeeks:synthetic.length, mixedWeeks:mixed.length, unknownWeeks:unknown.length,
-    firstSyntheticWeek:firstSynthetic, lastActualWeek:lastActual, status,
-    label: synthetic.length || mixed.length ? String(synthetic.length + mixed.length) + " of " + String(periods.length) + " weeks in this view are explicitly projected, not observed" : null,
-    periods, actualPeriods:actual, syntheticPeriods:synthetic, mixedPeriods:mixed, sourceOfTruth:"is_actual"
-  };
+  const status=synthetic.length||mixed.length?(actual.length?"mixed":"synthetic"):(actual.length?"actual":"unknown");
+  return {totalWeeks:periods.length,actualWeeks:actual.length,syntheticWeeks:synthetic.length,mixedWeeks:mixed.length,unknownWeeks:unknown.length,firstSyntheticWeek:firstSynthetic,lastActualWeek:lastActual,status,label:synthetic.length||mixed.length?String(synthetic.length+mixed.length)+" of "+String(periods.length)+" weeks in this view are explicitly projected, not observed":null,periods,actualPeriods:actual,syntheticPeriods:synthetic,mixedPeriods:mixed,sourceOfTruth:"is_actual"};
 }
 function sameStatusWindows(rows:AdvancedRow[], weekKey="week_ending") {
   const statuses = [true,false].map(status => {
