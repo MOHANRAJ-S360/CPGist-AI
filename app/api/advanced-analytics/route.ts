@@ -54,11 +54,11 @@ export async function GET(req:NextRequest){
   const brandPeriods=[...new Set(brandRows.map(r=>String(r.week_ending)).filter(Boolean))].sort();
   const brandLatest=brandPeriods.slice(-13),brandPrior=brandPeriods.slice(-26,-13);
   const latestStatusRows=brandRows.filter(r=>brandLatest.includes(String(r.week_ending)));
-  const selectedStatus=latestStatusRows.length>0 && latestStatusRows.some(r=>!actualFlag(r.is_actual))?false:true;
+  const explicitStatuses=latestStatusRows.map((r:any)=>r.is_actual).filter((v:any)=>v===true||v===false);\n  const selectedStatus=explicitStatuses.length && explicitStatuses.every((v:any)=>v===false)?false:true;
   const sumBrand=(periods:string[])=>brandRows.filter(r=>periods.includes(String(r.week_ending))).reduce((s,r)=>s+Number(r.sales||0),0);
   const brandSummary={latestSales:sumBrand(brandLatest),priorSales:sumBrand(brandPrior),growthPct:sumBrand(brandPrior)?(sumBrand(brandLatest)/sumBrand(brandPrior)-1)*100:null,latestPeriodCount:brandLatest.length,priorPeriodCount:brandPrior.length,status:selectedStatus?"actual":"projected"};
   const promoLift=getPromoLift(events,productWeekly,baseline,trade);
-  const skuGrowth=getSkuGrowth(productWeekly);
+  const skuGrowthRaw=getSkuGrowth(productWeekly);\n  const productNames=new Map((productMaster as any[]).map((p:any)=>[String(p.id),p]));\n  const skuGrowth={...skuGrowthRaw,products:skuGrowthRaw.products.map((x:any)=>{const p=productNames.get(String(x.productId));return {...x,name:p?.name||null,sku:p?.sku||null,size:p?.size||null};})};
 
   const normalizedCategoryAgg=categoryRows.map(r=>({week_ending:r.week,category:r.category,subcategory:r.subcategory,region:r.region,total_category_sales:r.total_category_sales,total_category_units:r.total_category_units,brand_count_in_category:r.brand_count_in_category,is_actual:r.is_actual}));
   const weeklyCategoryRows=categoryWeekly.map(r=>({week_ending:r.week_ending,category:r.category,subcategory:"ALL",region:"ALL",total_category_sales:r.sales,total_category_units:r.units,brand_count_in_category:null,is_actual:r.is_actual}));
