@@ -79,7 +79,7 @@ async function queryDataset(a: Args, token: string, mode: "sales" | "retailer" =
   } catch {}
 
   if (!compact) {
-    throw new Error("CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using AI Analyst.");
+    throw new Error("CPGist Free Dataset is not imported yet. Open Data Import and load CPGist dataset ZIP before using AI Analyst.");
   }
 
   if (mode === "retailer" || (retailer && !brand && !category)) {
