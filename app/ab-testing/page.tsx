@@ -81,10 +81,31 @@ export default function ABTesting(){
 
  const live=useMemo(()=>{
   if(mode!=="live"||!data||!controlRetailer||!testRetailer)return null;
-  const c=aggregate(data.rows||[],String(controlRetailer),weeks),t=aggregate(data.rows||[],String(testRetailer),weeks);
+  const unitKey=(r:any)=>{
+   if(unit==="regions") return String(r.region||"");
+   if(unit==="store clusters") return String(r.retailer_group||r.channel||r.region||"");
+   return String(r.id);
+  };
+  const groupLabel=(r:any)=>{
+   if(unit==="regions") return r.region||"Region unavailable";
+   if(unit==="store clusters") return r.retailer_group||r.channel||r.region||"Store cluster unavailable";
+   return r.name||"Retailer unavailable";
+  };
+  const rows=data.rows||[];
+  const selected=(id:string)=>retailers.find((r:any)=>String(r.id)===id);
+  const aggregateUnit=(id:string)=>{
+   const anchor=selected(id);
+   if(!anchor)return {sales:0,units:0,grossMargin:0,marginPercent:null,distribution:null,price:null,observations:0};
+   const key=unitKey(anchor);
+   const ids=new Set(retailers.filter((r:any)=>unitKey(r)===key).map((r:any)=>String(r.id)));
+   const x=rows.filter((r:any)=>ids.has(String(r.retailer_id))&&weeks.includes(String(r.week_ending)));
+   const sales=x.reduce((s,r)=>s+n(r.sales),0),units=x.reduce((s,r)=>s+n(r.units),0),grossMargin=x.reduce((s,r)=>s+n(r.gross_margin),0);
+   return {sales,units,grossMargin,marginPercent:sales?grossMargin/sales*100:null,distribution:x.length?x.reduce((s,r)=>s+n(r.distribution),0)/x.length:null,price:units?sales/units:null,observations:x.length,label:groupLabel(anchor),members:ids.size};
+  };
+  const c=aggregateUnit(String(controlRetailer)),t=aggregateUnit(String(testRetailer));
   const cv=metric==="sales"?c.sales:metric==="units"?c.units:c.grossMargin,tv=metric==="sales"?t.sales:metric==="units"?t.units:t.grossMargin;
   return {c,t,cv,tv,diff:tv-cv,lift:cv!==0?(tv/cv-1)*100:null};
- },[mode,data,controlRetailer,testRetailer,metric,weeks.join("|")]);
+ },[mode,data,controlRetailer,testRetailer,metric,unit,weeks.join("|")]);
 
  const manual=useMemo(()=>{
   const c=Number(controlValue),t=Number(testValue),cn=Math.floor(Number(controlN)),tn=Math.floor(Number(testN));
@@ -122,7 +143,7 @@ export default function ABTesting(){
 
    <div className="ab-grid">
     <div className="card panel ab-setup"><div className="ab-section-head"><div><span className="ab-kicker">02 · MEASURE</span><b>{mode==="live"?"Connected KPI values":"Experiment inputs"}</b><small>{mode==="live"?"Calculated from selected brand, retailers and aligned weeks.":"Enter the observed Control and Test results."}</small></div><BarChart3 size={18}/></div>
-     {mode==="live"?<div className="ab-values"><div className="ab-group control"><div className="ab-group-label"><span>CONTROL</span><small>{selectedControl?.name||"Select a retailer"}</small></div><div className="ab-live-value">{valid?value(live!.cv):"—"}</div><div className="ab-live-meta">{live?.c.observations||0} weekly rows · ACV {live?.c.distribution==null?"—":live.c.distribution.toFixed(1)+"%"}</div></div><div className="ab-arrow"><ArrowRight size={18}/></div><div className="ab-group test"><div className="ab-group-label"><span>TEST</span><small>{selectedTest?.name||"Select a retailer"}</small></div><div className="ab-live-value">{valid?value(live!.tv):"—"}</div><div className="ab-live-meta">{live?.t.observations||0} weekly rows · ACV {live?.t.distribution==null?"—":live.t.distribution.toFixed(1)+"%"}</div></div></div>:
+     {mode==="live"?<div className="ab-values"><div className="ab-group control"><div className="ab-group-label"><span>CONTROL</span><small>{live?.c.label||selectedControl?.name||"Select a retailer"}</small></div><div className="ab-live-value">{valid?value(live!.cv):"—"}</div><div className="ab-live-meta">{live?.c.members||0} {unit} · {live?.c.observations||0} weekly rows · ACV {live?.c.distribution==null?"—":live.c.distribution.toFixed(1)+"%"}</div></div><div className="ab-arrow"><ArrowRight size={18}/></div><div className="ab-group test"><div className="ab-group-label"><span>TEST</span><small>{live?.t.label||selectedTest?.name||"Select a retailer"}</small></div><div className="ab-live-value">{valid?value(live!.tv):"—"}</div><div className="ab-live-meta">{live?.t.members||0} {unit} · {live?.t.observations||0} weekly rows · ACV {live?.t.distribution==null?"—":live.t.distribution.toFixed(1)+"%"}</div></div></div>:
      <><div className="ab-values"><div className="ab-group control"><div className="ab-group-label"><span>CONTROL</span><small>Baseline / current approach</small></div><label><span>{metricMeta[metric].short} ({metricMeta[metric].unit})</span><input type="number" step="any" value={controlValue} onChange={e=>setControlValue(e.target.value)}/></label><label><span>Observations</span><input type="number" min="1" value={controlN} onChange={e=>setControlN(e.target.value)}/></label></div><div className="ab-arrow"><ArrowRight size={18}/></div><div className="ab-group test"><div className="ab-group-label"><span>TEST</span><small>New price / promotion / variant</small></div><label><span>{metricMeta[metric].short} ({metricMeta[metric].unit})</span><input type="number" step="any" value={testValue} onChange={e=>setTestValue(e.target.value)}/></label><label><span>Observations</span><input type="number" min="1" value={testN} onChange={e=>setTestN(e.target.value)}/></label></div></div>{metric==="conversion"&&!manual.validRate&&<div className="ab-error"><AlertTriangle size={14}/><span>Conversion rate must be between 0% and 100%.</span></div>}
      {mode==="manual"&&<div className="ab-save-row"><button className="btn primary" onClick={saveExperiment} disabled={!brandId}>{saveStatus||"Save experiment evidence"}</button><span>Saved experiments: {savedExperiments.length}. Saving stores the entered experiment metadata/results; it does not turn observational data into causal evidence.</span></div>}</>}
     </div>
@@ -132,7 +153,7 @@ export default function ABTesting(){
      <div className="ab-metric-cards"><div><span>CONTROL</span><strong>{valid?(mode==="live"?value(live!.cv):fmt(manual.c)):"—"}</strong><small>{mode==="live"?selectedControl?.name||"—":manual.cn.toLocaleString()+" observations"}</small></div><div><span>TEST</span><strong>{valid?(mode==="live"?value(live!.tv):fmt(manual.t)):"—"}</strong><small>{mode==="live"?selectedTest?.name||"—":manual.tn.toLocaleString()+" observations"}</small></div><div><span>ABSOLUTE CHANGE</span><strong>{valid?(mode==="live"?value(live!.diff):fmt(manual.diff)):"—"}</strong><small>test − control</small></div></div>
      <div className="ab-interpret"><CheckCircle2 size={15}/><div><b>{valid?(result!.diff>0?"Test is higher than control":result!.diff<0?"Test is lower than control":"Test equals control"):"Waiting for valid data"}</b><span>{valid&&result!.lift!=null?metricMeta[metric].short+": "+pct(result!.lift)+" vs control.":"Select valid inputs to calculate the comparison."}</span></div></div>
      {mode==="manual"&&metric==="conversion"&&valid?<div className={"ab-stat "+(manual.significant?"signal":"")}><Info size={15}/><div><b>{manual.significant?"Statistical signal at 95%":"No statistical signal at 95%"}</b><span>Two-proportion z-test · |z| = {manual.z?.toFixed(2)} · reference threshold = 1.96</span></div></div>:<div className="ab-stat neutral"><Info size={15}/><div><b>{mode==="live"?"No causal significance test from this dataset":"Lift is descriptive for this KPI"}</b><span>{mode==="live"?"The connected rows are observational retailer aggregates, not randomized experiment assignments.":"Formal uncertainty needs experiment-level variance or unit-level observations for the appropriate test."}</span></div></div>}
-     <div className="ab-method"><Layers3 size={14}/><span><b>Evidence:</b> {mode==="live"?"cpgist_brand_retailer_weekly · live connected data":"manually entered experiment values"} · {unit}</span></div>
+     <div className="ab-method"><Layers3 size={14}/><span><b>Evidence:</b> {mode==="live"?"cpgist_brand_retailer_weekly · live connected data":"manually entered experiment values"} · comparison unit: {unit}</span></div>
     </div>
    </div>
 
