@@ -97,8 +97,8 @@ async function brandDetail(id:string,brand:any){
  const tradeSpend=rows.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.trade_spend),0);
  const grossMargin=rows.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.gross_margin),0);
  const advanced={incrementalSales:incSales,incrementalMargin:incMargin,tradeSpend,roi:tradeSpend?incMargin/tradeSpend:null,grossMargin,marginPercent:a.sales?grossMargin/a.sales:null,promoEvents:rows.filter(r=>ls.has(String(r.week_ending))).reduce((s,r)=>s+n(r.promo_events),0)};
- const actualWeeks=periods.filter(w=>rows.filter(r=>String(r.week_ending)===w).every(r=>r.is_actual===true));
- const syntheticWeeks=periods.filter(w=>rows.filter(r=>String(r.week_ending)===w).some(r=>r.is_actual===false));
+ const actualWeeks=periods.filter(w=>rows.filter(r=>String(r.week_ending)===w).length>0 && rows.filter(r=>String(r.week_ending)===w).every(r=>r.is_actual===true));
+ const syntheticWeeks=periods.filter(w=>{const rs=rows.filter(r=>String(r.week_ending)===w);return rs.length>0&&rs.every(r=>r.is_actual===false);});
  const provenance={actualWeeks:actualWeeks.length,syntheticWeeks:syntheticWeeks.length,totalWeeks:periods.length,mixed:actualWeeks.length>0&&syntheticWeeks.length>0,status:syntheticWeeks.length?"mixed":"actual",label:syntheticWeeks.length?syntheticWeeks.length+" of "+periods.length+" weeks in this view are projected, not observed":null};
  return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null,priorShare,shareChangePts:(categorySales&&categoryPriorSales)?(a.sales/categorySales*100)-(b.sales/categoryPriorSales*100):null},advanced,provenance,weekly,products,retailers,categoryWeekly,competitorSignals,competitiveBenchmark}
 }
