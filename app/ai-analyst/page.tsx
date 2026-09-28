@@ -18,7 +18,7 @@ function AnalystContent({text,onNextQuestion}:{text:string;onNextQuestion:(q:str
    };
    const normalizeNarrative=(v:any)=>{
     let s=safeText(v);
-    const parts=s.split(/(?<=[.!?])\\s+/);
+    const parts=s.split(". ");
     s=parts.map((part:string)=>part.toLowerCase().includes("latest 13-week average")?"The latest 13-week average is not separately reported in this forecast.":part).join(" ");
     return s.replace("0.043%","about 4%").replace("4.32%","about 4%");
    };
