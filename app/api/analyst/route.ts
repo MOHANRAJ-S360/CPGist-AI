@@ -951,11 +951,25 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   const scenarioIntent = /scenario|what if|simulate|simulation/.test(q);
   const abIntent = /a\/b|ab test|a-b test|experiment|control group|test group|variant|randomi[sz]ed|incrementality/.test(q);
 
-  if (brandId) add("monthly_business_review");
-  else add("business_health_scan");
+  // Route targeted questions to the smallest deterministic evidence set.
+  // Loading a full business review for every question creates competing evidence
+  // and can cause the language layer to answer from the wrong grain.
+  const explicitIntent = retailerIntent || productIntent || competitorIntent || pricePromoIntent ||
+    channelIntent || marginIntent || launchIntent || shopperIntent || forecastIntent ||
+    anomalyIntent || scenarioIntent || abIntent || driverIntent;
 
-  if (!broadReview || driverIntent) add("analyze_drivers");
+  if (broadReview || !explicitIntent) {
+    if (brandId) add("monthly_business_review");
+    else add("business_health_scan");
+  }
+
+  if (driverIntent && !broadReview) add("analyze_drivers");
   if (retailerIntent && brandId && categoryId) add("retailer_opportunity");
+  if (retailerIntent && !brandId) {
+    // Retailer whitespace is inherently brand-relative in the current analytical
+    // model. Do not let the language model turn Market scope into a fake ranking.
+    add("retailer_scope_guard");
+  }
   if (productIntent) add("product_sku_performance");
   if (competitorIntent) {
     add("competitive_signals");
@@ -981,7 +995,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   // 7-tool safety cap cannot discard the evidence the user actually requested.
   const base = brandId ? "monthly_business_review" : "business_health_scan";
   const priority = [
-    "retailer_opportunity","product_sku_performance","product_competitor_diagnostic",
+    "retailer_opportunity","retailer_scope_guard","product_sku_performance","product_competitor_diagnostic",
     "get_promo_lift","get_sku_growth","get_category_context","get_channel_breakdown",
     "get_margin_pnl","get_launch_performance","get_synthetic_panel","get_macro_overlay",
     "forecast_sales","detect_anomalies","get_market_share","run_scenario","ab_testing_guidance",
@@ -999,6 +1013,17 @@ async function collectEvidence(question: string, brandId: string | undefined, to
       const args: Args = { ...scope };
       if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic"].includes(name)) args.categoryId = categoryId;
       if (name === "product_competitor_diagnostic") args.productQuery = question;
+      if (name === "retailer_scope_guard") {
+        evidence.push({
+          tool: name,
+          result: {
+            supported: false,
+            message: "Retailer whitespace is a focal-brand analysis. Select a brand scope before ranking retailer whitespace opportunities.",
+            reason: "The whitespace metric is defined as focal-brand retailer share versus that brand's category benchmark."
+          }
+        });
+        continue;
+      }
       if (name === "ab_testing_guidance") { evidence.push({ tool: name, result: abTestingGuidance(question) }); continue; }
       if (name === "forecast_sales") args.horizon = /next 12|12 week/.test(q) ? 12 : 8;
       if (name === "run_scenario") { args.priceChangePct = 0; args.distributionChangePts = 0; }
@@ -1028,12 +1053,11 @@ export async function POST(req: Request) {
     const activeScope = brandId
       ? "\nActive analysis scope: brandId=" + brandId + ". Keep the answer focused on this brand unless the user explicitly changes scope."
       : "";
-    const routingQuestion = incoming
-      .filter((m: any) => m?.role === "user")
-      .slice(-4)
-      .map((m: any) => String(m?.content || ""))
-      .join("\n");
-    const { evidence, context, selected } = await collectEvidence(routingQuestion || String(latestUser), brandId, token);
+    // Routing must use the current question only. Previous turns remain available
+    // to the model for conversational context, but must not activate unrelated
+    // analytical tools or change the requested evidence grain.
+    const routingQuestion = String(latestUser || "").trim();
+    const { evidence, context, selected } = await collectEvidence(routingQuestion, brandId, token);
 
     const evidenceJson = JSON.stringify(evidence);
     const messages = [
