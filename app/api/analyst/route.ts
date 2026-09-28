@@ -1184,13 +1184,13 @@ export async function POST(req: Request) {
       let s = String(value ?? "");
       if (Number.isFinite(latest13Average) && latest13Average > 0) {
         const avgLabel = "$" + latest13Average.toLocaleString("en-US", { maximumFractionDigits: 0 });
-        s = s.replace(/latest\\s+13[-‑ ]week\\s+average(?:\\s+of)?\\s*[$€£]?[d,.]+(?:\\s*[KMB])?/gi, "latest 13-week average of " + avgLabel);
-        s = s.replace(/latest\\s+13[-‑ ]w(?:eek)?\\s+average(?:\\s+of)?\\s*[$€£]?[d,.]+(?:\\s*[KMB])?/gi, "latest 13-week average of " + avgLabel);
+        s = s.replace(/latest\s+13[-‑ ]week\s+average(?:\s+of)?\s*[$€£]?[\d,.]+(?:\s*[KMB])?/gi, "latest 13-week average of " + avgLabel);
+        s = s.replace(/latest\s+13[-‑ ]w(?:eek)?\s+average(?:\s+of)?\s*[$€£]?[\d,.]+(?:\s*[KMB])?/gi, "latest 13-week average of " + avgLabel);
       }
       if (Number.isFinite(authoritativeShare) && authoritativeShare >= 0 && authoritativeShare <= 1) {
         const sharePct = Math.round(authoritativeShare * 100);
-        s = s.replace(/\\b0?\\.0?43(?:2)?%\\b/gi, "about " + sharePct + "%");
-        s = s.replace(/\\b4\\.3(?:2)?%\\b/gi, "about " + sharePct + "%");
+        s = s.replace(/\b0?\.0?43(?:2)?%\b/gi, "about " + sharePct + "%");
+        s = s.replace(/\b4\.3(?:2)?%\b/gi, "about " + sharePct + "%");
       }
       return s;
     };
