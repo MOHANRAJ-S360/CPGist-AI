@@ -13,14 +13,14 @@ function AnalystContent({text,onNextQuestion}:{text:string;onNextQuestion:(q:str
   if(raw?.headline&&raw?.executiveTakeaway){
    const normalizeShare=(v:any)=>{
     const s=safeText(v);
-    return /share/i.test(s)?s.replace(/\\b0?\\.0?43(?:2)?%\\b/gi,"about 4%").replace(/\\b4\\.3(?:2)?%\\b/gi,"about 4%"):s;
+    if(!/share/i.test(s))return s;
+    return s.replace("0.043%","about 4%").replace("4.32%","about 4%");
    };
    const normalizeNarrative=(v:any)=>{
     let s=safeText(v);
-    s=s.replace(/latest\\s+13[-‑ ]week\\s+average(?:\\s+of)?\\s*[$€£]?[d,.]+(?:\\s*[KMB])?/gi,"the latest 13-week average is not separately reported in this forecast");
-    s=s.replace(/\\b0?\\.0?43(?:2)?%\\b/gi,"about 4%");
-    s=s.replace(/\\b4\\.3(?:2)?%\\b/gi,"about 4%");
-    return s;
+    const parts=s.split(/(?<=[.!?])\\s+/);
+    s=parts.map((part:string)=>part.toLowerCase().includes("latest 13-week average")?"The latest 13-week average is not separately reported in this forecast.":part).join(" ");
+    return s.replace("0.043%","about 4%").replace("4.32%","about 4%");
    };
    const a={
     ...raw,
