@@ -915,10 +915,15 @@ function abTestingGuidance(question: string) {
     available: true,
     type: "experimentation_framework",
     metric,
-    causalRule: "A/B results support causal interpretation only when treatment assignment is randomized or otherwise designed as a valid experiment.",
+    causalRule: "Causal interpretation requires valid treatment assignment and appropriate statistical analysis.",
+    design: {
+      randomizationUnit: "Store or another operational unit that can be assigned consistently to control/test.",
+      duration: "Choose before launch based on the business cycle and a formal power calculation; no validated duration is stored in the current dataset.",
+      sampleSize: "Not available from the current dataset. A formal power calculation requires baseline variance, alpha, target power and minimum detectable effect."
+    },
     cpgUseCases: ["price","promotion","pack/SKU","assortment","display","retailer/store cluster"],
     requiredFields: ["experiment_id","control/test assignment","start_date","end_date","primary KPI","control observations","test observations","unit of randomization"],
-    analysis: ["absolute difference","relative lift","sample size","statistical uncertainty when variance/count data supports it"],
+    analysis: ["absolute difference","relative lift","statistical uncertainty when variance/count data supports it"],
     guardrails: [
       "Historical control-vs-test differences are observational, not automatically causal.",
       "Do not claim a winner from lift alone when experiment quality or uncertainty is insufficient.",
