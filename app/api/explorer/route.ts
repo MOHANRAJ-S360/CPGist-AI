@@ -127,10 +127,13 @@ export async function GET(req:NextRequest){
     const agg=(ws:any[])=>({sales:ws.reduce((a,x)=>a+n(x.sales),0),units:ws.reduce((a,x)=>a+n(x.units),0),distribution:ws.length?ws.reduce((a,x)=>a+n(x.distribution),0)/ws.length:null});
     const cur=agg(weekly.filter(x=>latest.includes(String(x.week_ending)))),prev=agg(weekly.filter(x=>prior.includes(String(x.week_ending))));
     const summarySales=summary.reduce((a,x)=>a+n(x.sales_13w),0),summaryUnits=summary.reduce((a,x)=>a+n(x.units_13w),0);
-    const sales=summary.length?summarySales:cur.sales, units=summary.length?summaryUnits:cur.units;
+    const weeklyComplete=latest.length===13;
+    const has13wCoverage=summary.length>0 || weeklyComplete;
+    const sales=summary.length?summarySales:(weeklyComplete?cur.sales:null);
+    const units=summary.length?summaryUnits:(weeklyComplete?cur.units:null);
     const summaryEnd=summary.map(x=>String(x.period_end||"")).filter(Boolean).sort().at(-1)||null;
     const latestWindow=summaryEnd?(()=>{const d=new Date(summaryEnd+"T00:00:00Z");const out:string[]=[];for(let i=12;i>=0;i--){const z=new Date(d);z.setUTCDate(z.getUTCDate()-7*i);out.push(z.toISOString().slice(0,10));}return out})():latest;
-    return NextResponse.json({entity,source:summary.length?"cpgist_brand_retailer_summary":"cpgist_retailer_weekly",retailer,metrics:{sales,units,distribution:cur.distribution,growth:prev.sales?pct(sales,prev.sales):null,priorSales:prev.sales,weeksAvailable:summary.length?13:latest.length},periods,latestWindow});
+    return NextResponse.json({entity,source:summary.length?"cpgist_brand_retailer_summary":"cpgist_retailer_weekly",retailer,metrics:{sales,units,distribution:cur.distribution,growth:(sales!=null&&prev.sales)?pct(sales,prev.sales):null,priorSales:prev.sales,weeksAvailable:has13wCoverage?13:latest.length,has13wCoverage},periods,latestWindow});
 
    }
    const results=rows.filter(x=>has(x.name,q)||has(x.channel,q)||has(x.region,q)||has(x.retailer_group,q));
