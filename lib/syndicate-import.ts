@@ -776,13 +776,12 @@ async function unzipFiltered(file:File,wanted:string[]):Promise<Record<string,Ui
 export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Progress){
   if(!file.name.toLowerCase().endsWith(".zip"))throw new Error("Please select a CPGist dataset ZIP file.");
   if(file.size>200*1024*1024)throw new Error("The CPGist dataset ZIP must be 200 MB or smaller for browser import.");
-  progress(`Reading ${file.name} without blocking the page…`);
+  progress("Reading selected dataset ZIP without blocking the page…");
   let zip:Record<string,Uint8Array>;
   try{
     const wanted=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv","category_aggregates.csv","trial_repeat.csv","panel_household_synthetic.csv","macro_signals.csv","competitor_price_sales.csv","brand_relationships.csv","competitor_signals.csv","signal_notes.csv","README_v5_Additions.md","Metric_Distribution_Efficiency_13W.csv","Metric_First_Purchase_Share.csv","Media_Channel_Dictionary.csv","Media_Fact_Weekly.csv","Store_SKU_Status.csv","Store_Dictionary.csv"];
     zip=await unzipFiltered(file,wanted);
   }catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
-  const names=Object.keys(zip);
   const names=Object.keys(zip);
   const v5Package=names.some(x=>basename(x).toLowerCase()==="readme_v5_additions.md");
   if(v5Package)return importV5Extensions(sb,zip,progress);
