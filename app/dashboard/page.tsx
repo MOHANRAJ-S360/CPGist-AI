@@ -7,7 +7,7 @@ import {BarChart,Donut,LineChart} from "../../components/cpg-charts";
 import {supabaseBrowser} from "../../lib/supabase-browser";
 
 const money=(n:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(n||0);
-const pct=(n:number)=> (n>=0?"+":"")+n.toFixed(1)+"%";
+const pct=(n:number)=> (n>=0?"+":"")+(n*100).toFixed(1)+"%";
 
 export default function Dashboard(){
  const [d,setD]=useState<any>(null),[loading,setLoading]=useState(true);
@@ -22,7 +22,7 @@ export default function Dashboard(){
     <div className="card kpi"><span>Latest 13W sales</span><strong>{money(d.totalSales)}</strong><small className={d.growth>=0?"positive":"negative"}>{d.growth>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>} {pct(Number(d.growth||0)*100)} vs prior 13W</small></div>
     <div className="card kpi"><span>Units</span><strong>{new Intl.NumberFormat().format(d.totalUnits)}</strong><small>Source volume in latest 13W</small></div>
     <div className="card kpi"><span>Avg. ACV distribution</span><strong>{d.avgDistribution==null?"—":d.avgDistribution.toFixed(1)+"%"}</strong><small>Across source observations</small></div>
-    <div className="card kpi"><span>Promo rate</span><strong>{d.promoRate==null?"—":d.promoRate.toFixed(1)+"%"}</strong><small>Observed promotional activity</small></div>
+    <div className="card kpi"><span>Promo rate</span><strong>{d.promoRate==null?"Not available":d.promoRate.toFixed(1)+"%"}</strong><small>{d.promoRate==null?"Promotion rate is not present in this dataset scope":"Observed promotional activity"}</small></div>
    </div>
    <div className="two-col">
     <div className="card panel"><div className="panel-head"><div><b>Market value trend</b><span>Weekly sales · last 26 completed periods</span></div><BarChart3 size={17}/></div><LineChart points={(d.weekly||[]).slice(-26).map((x:any)=>({label:x.label,value:x.sales}))}/></div>
