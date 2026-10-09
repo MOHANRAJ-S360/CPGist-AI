@@ -1,5 +1,6 @@
 import { Unzip, AsyncUnzipInflate, strFromU8 } from "fflate";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { importV5Extensions } from "./cpgist-v5-extension-import";
 
 type Row = Record<string,string>;
 type Progress = (message:string)=>void;
@@ -714,26 +715,45 @@ async function importCombinedDatasetZip(sb:SupabaseClient,zip:Record<string,Uint
 
 async function unzipFiltered(file:File,wanted:string[]):Promise<Record<string,Uint8Array>>{
   const wantedSet=new Set(wanted.map(x=>x.toLowerCase()));
+  const v5Names=new Set([
+    "readme_v5_additions.md",
+    "metric_distribution_efficiency_13w.csv",
+    "metric_first_purchase_share.csv",
+    "media_channel_dictionary.csv",
+    "media_fact_weekly.csv",
+    "store_sku_status.csv",
+    "store_dictionary.csv"
+  ]);
   const parts=new Map<string,Uint8Array[]>();
   const totals=new Map<string,number>();
   const pending:Promise<void>[]=[];
+  let v5Mode=false;
   const unzipper=new Unzip(stream=>{
     const name=basename(stream.name);
-    if(!wantedSet.has(name.toLowerCase()))return;
+    const lower=name.toLowerCase();
+    // The supplied v5 archive includes a marker before its large fact files.
+    // Once found, discard any previously retained v4/core files and only retain
+    // the five small/aggregatable extension sources plus the store lookup.
+    if(lower==="readme_v5_additions.md"){
+      v5Mode=true;
+      for(const key of [...parts.keys()])if(!v5Names.has(key.toLowerCase())){parts.delete(key);totals.delete(key);}
+    }
+    if(v5Mode?!v5Names.has(lower):!wantedSet.has(lower))return;
     pending.push(new Promise<void>((resolve,reject)=>{
       const chunks:Uint8Array[]=[];
       let total=0;
       stream.ondata=(err,dat,final)=>{
         if(err){reject(err);return;}
         if(dat){chunks.push(dat);total+=dat.byteLength;}
-        if(final){parts.set(name,chunks);totals.set(name,total);resolve();}
+        if(final){
+          if(v5Mode&&!v5Names.has(lower)){resolve();return;}
+          parts.set(name,chunks);totals.set(name,total);resolve();
+        }
       };
       try{stream.start();}catch(err){reject(err);}
     }));
   });
   unzipper.register(AsyncUnzipInflate);
-  // Stream the File directly into fflate instead of repeatedly slicing it into 8 MB
-  // ArrayBuffers. This removes a large amount of browser-side copying for 50–200 MB ZIPs.
   const reader=file.stream().getReader();
   try{
     while(true){
@@ -742,15 +762,11 @@ async function unzipFiltered(file:File,wanted:string[]):Promise<Record<string,Ui
       if(value?.byteLength)unzipper.push(value,false);
     }
     unzipper.push(new Uint8Array(0),true);
-  }finally{
-    reader.releaseLock();
-  }
+  }finally{reader.releaseLock();}
   await Promise.all(pending);
   const out:Record<string,Uint8Array>={};
   for(const [name,chunks] of parts){
-    const total=totals.get(name)||0;
-    const bytes=new Uint8Array(total);
-    let offset=0;
+    const total=totals.get(name)||0,bytes=new Uint8Array(total);let offset=0;
     for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
     out[name]=bytes;
   }
@@ -763,10 +779,13 @@ export async function importDatasetZip(sb:SupabaseClient,file:File,progress:Prog
   progress(`Reading ${file.name} without blocking the page…`);
   let zip:Record<string,Uint8Array>;
   try{
-    const wanted=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv","category_aggregates.csv","trial_repeat.csv","panel_household_synthetic.csv","macro_signals.csv","competitor_price_sales.csv","brand_relationships.csv","competitor_signals.csv","signal_notes.csv"];
+    const wanted=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv","category_aggregates.csv","trial_repeat.csv","panel_household_synthetic.csv","macro_signals.csv","competitor_price_sales.csv","brand_relationships.csv","competitor_signals.csv","signal_notes.csv","README_v5_Additions.md","Metric_Distribution_Efficiency_13W.csv","Metric_First_Purchase_Share.csv","Media_Channel_Dictionary.csv","Media_Fact_Weekly.csv","Store_SKU_Status.csv","Store_Dictionary.csv"];
     zip=await unzipFiltered(file,wanted);
   }catch(e:any){throw new Error(`Could not read ZIP: ${e?.message||"invalid archive"}`)}
   const names=Object.keys(zip);
+  const names=Object.keys(zip);
+  const v5Package=names.some(x=>basename(x).toLowerCase()==="readme_v5_additions.md");
+  if(v5Package)return importV5Extensions(sb,zip,progress);
   const combinedCore=["brands.csv","retailers.csv","products.csv","sales_weekly.csv","baseline_sales.csv","promotion.csv","trade_spend.csv"].every(n=>names.some(x=>basename(x).toLowerCase()===n.toLowerCase()));
   if(combinedCore)return importCombinedDatasetZip(sb,zip,progress);
   const hasCore=["03_brands.csv","08_retailers.csv","06_products.csv","05_categories.csv","10_locations.csv","26_brand_weekly.csv","27_category_weekly.csv","28_retailer_weekly.csv"].every(n=>names.some(x=>basename(x).toLowerCase()===n.toLowerCase()));
