@@ -7,7 +7,7 @@ import {BarChart,Donut,LineChart} from "../../components/cpg-charts";
 import {supabaseBrowser} from "../../lib/supabase-browser";
 
 const money=(n:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:"compact",maximumFractionDigits:1}).format(n||0);
-const pct=(n:number)=> (n>=0?"+":"")+(n*100).toFixed(1)+"%";
+const pct=(n:number)=> (n>=0?"+":"")+n.toFixed(1)+"%";
 
 export default function Dashboard(){
  const [d,setD]=useState<any>(null),[loading,setLoading]=useState(true);
@@ -24,9 +24,10 @@ export default function Dashboard(){
     <div className="card kpi"><span>Avg. ACV distribution</span><strong>{d.avgDistribution==null?"—":d.avgDistribution.toFixed(1)+"%"}</strong><small>Across source observations</small></div>
     <div className="card kpi"><span>Promo rate</span><strong>{d.promoRate==null?"Not available":d.promoRate.toFixed(1)+"%"}</strong><small>{d.promoRate==null?"Promotion rate is not present in this dataset scope":"Observed promotional activity"}</small></div>
    </div>
+   {d.provenance?.label&&<div className="data-provenance synthetic"><ShieldCheck size={13}/><b>Projection status</b><span>{d.provenance.label}. Latest 13W: {d.provenance.latest13ProjectedWeeks} projected / {d.provenance.latest13ActualWeeks} observed; prior 13W: {d.provenance.prior13ProjectedWeeks} projected / {d.provenance.prior13ActualWeeks} observed. Growth is a source-window comparison, not observed-only performance.</span></div>}
    <div className="two-col">
-    <div className="card panel"><div className="panel-head"><div><b>Market value trend</b><span>Weekly sales · last 26 completed periods</span></div><BarChart3 size={17}/></div><LineChart points={(d.weekly||[]).slice(-26).map((x:any)=>({label:x.label,value:x.sales}))}/></div>
-    <div className="card panel"><div className="panel-head"><div><b>Brand market sales structure</b><span>Latest 13-week observed market sales</span></div></div><div className="share-focus"><Donut share={Number(d.topBrands?.[0]?.share||0)} centerLabel="leader share"/><div><strong>{d.topBrands?.[0]?.name||"—"}</strong><p>{money(d.topBrands?.[0]?.sales||0)} · {d.topBrands?.[0]?.growth==null?"—":pct(Number(d.topBrands[0].growth)*100)}</p><span>Share is descriptive; combine with growth and distribution.</span></div></div></div>
+    <div className="card panel"><div className="panel-head"><div><b>Market value trend</b><span>Weekly sales · last 26 source periods</span></div><BarChart3 size={17}/></div><LineChart points={(d.weekly||[]).slice(-26).map((x:any)=>({label:x.label,value:x.sales}))}/></div>
+    <div className="card panel"><div className="panel-head"><div><b>Brand market sales structure</b><span>Latest 13-week source-window sales</span></div></div><div className="share-focus"><Donut share={Number(d.topBrands?.[0]?.share||0)} centerLabel="leader share"/><div><strong>{d.topBrands?.[0]?.name||"—"}</strong><p>{money(d.topBrands?.[0]?.sales||0)} · {d.topBrands?.[0]?.growth==null?"—":pct(Number(d.topBrands[0].growth)*100)}</p><span>Share is descriptive; combine with growth and distribution.</span></div></div></div>
    </div>
    <div className="two-col">
     <div className="card panel"><div className="panel-head"><div><b>Brand performance</b><span>Value sales with period comparison</span></div></div><BarChart items={(d.topBrands||[]).slice(0,8).map((x:any)=>({label:x.name,value:x.sales,change:x.growth}))}/></div>
