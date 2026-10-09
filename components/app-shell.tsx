@@ -3,21 +3,25 @@
 import {ReactNode,useEffect,useState} from "react";
 import Link from "next/link";
 import {usePathname,useRouter} from "next/navigation";
-import {LayoutDashboard,BrainCircuit,Boxes,Store,Layers3,Globe2,Map,FileText,Workflow,TriangleAlert,Database,LogOut,ChevronRight,Search,DollarSign,BarChart3,FlaskConical} from "lucide-react";
+import {LayoutDashboard,BrainCircuit,Boxes,Store,Layers3,Globe2,Map,FileText,Workflow,TriangleAlert,Database,LogOut,ChevronRight,Search,DollarSign,BarChart3,FlaskConical,Target,Users,Megaphone,PackageCheck} from "lucide-react";
 import {supabaseBrowser} from "../lib/supabase-browser";
 
 const nav=[
  {label:"Dashboard",href:"/dashboard",icon:LayoutDashboard},
  {label:"AI Analyst",href:"/ai-analyst",icon:BrainCircuit},
  {label:"Brands",href:"/brands",icon:Boxes},
+ {label:"First Purchase Share",href:"/first-purchase-share",icon:Users},
  {label:"Retailers",href:"/retailers",icon:Store},
  {label:"Categories",href:"/categories",icon:Layers3},
  {label:"Regions",href:"/regions",icon:Map},
+ {label:"Availability Coverage",href:"/availability-coverage",icon:PackageCheck},
  {label:"Market",href:"/market",icon:Globe2},
  {label:"Data Explorer",href:"/explorer",icon:Search},
  {label:"Reports",href:"/reports",icon:FileText},
  {label:"Price & Promotion",href:"/price-promotion",icon:DollarSign},
+ {label:"Media Readiness",href:"/media-readiness",icon:Megaphone},
  {label:"Advanced Analytics",href:"/advanced-analytics",icon:BarChart3},
+ {label:"Distribution Efficiency",href:"/distribution-efficiency",icon:Target},
  {label:"A/B Testing",href:"/ab-testing",icon:FlaskConical},
  {label:"Workflows",href:"/workflows",icon:Workflow},
  {label:"Alerts",href:"/alerts",icon:TriangleAlert},
@@ -57,7 +61,7 @@ export function AppShell({title,subtitle,children}:{title:string;subtitle?:strin
    </div>
   </aside>
   <main className="main">
-   <header className="topbar"><div><b>{title}</b>{subtitle&&<span>{subtitle}</span>}</div><div className="topbar-user"><div className="mini-avatar">{initials}</div><div><strong>{name}</strong><small>{email}</small></div></div></header>
+   <header className="topbar"><div><b>{title}</b>{subtitle&&<span>{subtitle}</span>}</div><div className="topbar-user"><span className="scope-badge" style={{fontSize:9,whiteSpace:"nowrap"}}>DEMO DATA · SYNTHETIC</span><div className="mini-avatar">{initials}</div><div><strong>{name}</strong><small>{email}</small></div></div></header>
    {children}
   </main>
  </div>
