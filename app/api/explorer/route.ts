@@ -105,14 +105,14 @@ async function brandDetail(id:string,brand:any){
 
 export async function GET(req:NextRequest){
  try{
-  const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim(),id=p.get("id"),categoryFilter=(p.get("category")||"").trim(),subcategoryFilter=(p.get("subcategory")||"").trim(),limit=Math.min(5000,Math.max(1,Number(p.get("limit")||5000)||5000)),offset=Math.max(0,Number(p.get("offset")||0)||0);
+  const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim(),regionFilter=(p.get("region")||"").trim(),id=p.get("id"),categoryFilter=(p.get("category")||"").trim(),subcategoryFilter=(p.get("subcategory")||"").trim(),limit=Math.min(5000,Math.max(1,Number(p.get("limit")||5000)||5000)),offset=Math.max(0,Number(p.get("offset")||0)||0);
   let compact=false;try{const x=await get("cpgist_brands?select=id&limit=1");compact=Array.isArray(x)&&x.length>0}catch{}
   if(!compact)return NextResponse.json({error:"CPGist Free Dataset is not imported yet. Open Data Import and load CPGist_Supabase_Free_Dataset.zip before using the client workspace.",code:"COMPACT_DATASET_REQUIRED"},{status:503});
 
   if(entity==="brand"){
    const rows:any[]=await get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000");
    if(id){const brand=rows.find(x=>String(x.id)===String(id));if(!brand)return NextResponse.json({error:"Brand not found."},{status:404});return NextResponse.json(await brandDetail(String(id),brand))}
-   const results=rows.filter(x=>has(x.name,q)||has(x.category,q)||has(x.parent_company,q)||has(x.home_regions,q));
+   const results=rows.filter(x=>(!regionFilter||has(x.home_regions,regionFilter))&&(!q||has(x.name,q)||has(x.category,q)||has(x.parent_company,q)||has(x.home_regions,q)));
    return NextResponse.json({entity,source:"cpgist_compact",count:results.length,results:results.slice(offset,offset+limit)});
   }
   if(entity==="retailer"){
