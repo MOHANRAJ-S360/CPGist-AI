@@ -1030,7 +1030,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
 
   // Base review stays first. Explicit drill-downs are then prioritized so the
   // 7-tool safety cap cannot discard the evidence the user actually requested.
-  const base = brandId ? "monthly_business_review" : "business_health_scan";
+  const base = brandId ? "monthly_business_review" : categoryId ? "category_business_review" : "business_health_scan";
   const priority = [
     "category_business_review","retailer_opportunity","retailer_scope_guard","product_sku_performance","product_competitor_diagnostic",
     "get_promo_lift","get_sku_growth","get_category_context","get_channel_breakdown",
