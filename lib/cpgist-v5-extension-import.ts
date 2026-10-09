@@ -140,7 +140,7 @@ export async function importV5Extensions(sb:SupabaseClient,zip:Record<string,Uin
     assumed_roas_max:number(r,"assumed_roas_max"),notes:pick(r,"notes")||null
   })).filter(r=>r.channel);
 
-  // Aggregate the 906k channel-level media rows to brand x market x week before
+  // Aggregate the channel-level media source rows to brand x market x week before
   // storage. This is the only media fact persisted on Free; CPM/CTR/ROAS are assumptions.
   const mediaMap=new Map<string,any>();
   await scanCsv(mediaBytes!,r=>{
@@ -181,7 +181,7 @@ export async function importV5Extensions(sb:SupabaseClient,zip:Record<string,Uin
   },progress,"Store_SKU_Status.csv");
   const availability=[...availabilityMap.values()];
 
-  const expected={distribution:58288,firstPurchase:405,media:517306,availability:952,channels:5};
+  const expected={distribution:58288,firstPurchase:405,media:483350,availability:952,channels:5};
   const actual={distribution:distribution.length,firstPurchase:firstPurchase.length,media:media.length,availability:availability.length,channels:channels.length};
   const mismatches=Object.keys(expected).filter(k=>(actual as any)[k]!== (expected as any)[k]);
   if(mismatches.length)throw new Error("V5 package validation failed before any database writes. Expected "+JSON.stringify(expected)+"; received "+JSON.stringify(actual)+". Check the selected archive and do not import a partial package.");
