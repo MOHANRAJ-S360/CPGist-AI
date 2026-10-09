@@ -43,15 +43,15 @@ export async function GET(req:NextRequest){
   }
   if(mode==="first-purchase"){
     const rows=await get("cpgist_v5_first_purchase_share?select=brand,geographic_scope,quarter_ending,first_observed_purchases,total_purchases,first_purchase_share,avg_price_paid_first,avg_price_paid_repeat,avg_size_volume_first,avg_size_volume_repeat,top_market_share_first,top_market_share_repeat,is_synthetic_flag,low_sample&order=quarter_ending.desc&limit=1000");
-    return NextResponse.json({mode,status,rows,warning:"First purchase means first observed within a closed synthetic panel, not a verified first-ever brand purchase. Burn-in effects make many cells sparse; use for demo/logic validation only."});
+    return NextResponse.json({mode,status,rows,warning:"This table reports first-observed purchase counts and count share within a synthetic closed panel. It does not measure sales/volume share or verified household penetration; stable household IDs and a validated burn-in window are required to estimate first-ever acquisition."});
   }
   if(mode==="media"){
     const channels=await get("cpgist_v5_media_channel_dictionary?select=channel,funnel_stage,assumed_cpm,assumed_ctr,assumed_roas_min,assumed_roas_max,notes&order=channel&limit=50");
-    return NextResponse.json({mode,status,channels,warning:"CPM, CTR and ROAS are illustrative assumptions. The media overlay is synthetic, not measured media performance or causal attribution."});
+    return NextResponse.json({mode,status,channels,warning:"This is a media scenario planner, not a product-level media-readiness score. Inventory stability, digital-shelf conversion, reviews/images/metadata and price competitiveness are not connected. CPM, CTR and ROAS are illustrative assumptions, not measured media performance or causal attribution."});
   }
   if(mode==="availability"){
     const rows=await get("cpgist_v5_availability_counts?select=week_ending,market_id,upc,sampled_stores,listed_stores,in_stock_stores,is_synthetic_flag&order=week_ending.desc&limit=1000");
-    return NextResponse.json({mode,status,rows,warning:"Coverage represents 12 sampled markets and one synthetic snapshot only. Do not generalize it to all markets or weeks."});
+    return NextResponse.json({mode,status,rows,warning:"Coverage represents a limited synthetic market/UPC snapshot. It does not provide a complete addressable category footprint, demand-weighted ACV or a validated lost-demand estimate; do not generalize it to all markets or weeks."});
   }
   return NextResponse.json({error:"Unsupported v5 insight mode."},{status:400});
  }catch(e:any){
