@@ -35,8 +35,9 @@ export async function GET(req:NextRequest){
     if(p.get("geography"))terms.push("geographic_scope=eq."+enc(p.get("geography")));
     if(p.get("quadrant"))terms.push("quadrant=eq."+enc(p.get("quadrant")));
     const rows=await get("cpgist_v5_distribution_efficiency_13w?select=anchor,win,upc,market_id,geographic_scope,category,weeks_present,dollar_sales,unit_sales,acv_avg,stores_selling_avg,velocity_units_per_store_week,velocity_dollars_per_store_week,sales_per_acv_point_week,peer_median_velocity,distribution_efficiency_index,peer_acv_p75,acv_gap_points,lost_sales_estimate_weekly,quadrant,is_estimate&"+terms.join("&")+"&order=lost_sales_estimate_weekly.desc&limit=1000");
-    const categories=[...new Set(rows.map((x:any)=>x.category).filter(Boolean))].sort();
-    const geographies=[...new Set(rows.map((x:any)=>x.geographic_scope).filter(Boolean))].sort();
+    const options=await get("cpgist_v5_distribution_efficiency_13w?anchor=eq.ACTUAL&win=eq.L13W&select=category,geographic_scope&limit=1000");
+    const categories=[...new Set(options.map((x:any)=>x.category).filter(Boolean))].sort();
+    const geographies=[...new Set(options.map((x:any)=>x.geographic_scope).filter(Boolean))].sort();
     const totals=rows.reduce((a:any,x:any)=>{a.sales+=Number(x.dollar_sales)||0;a.lostSales+=Number(x.lost_sales_estimate_weekly)||0;a.rows++;return a;},{sales:0,lostSales:0,rows:0});
     return NextResponse.json({mode,status,rows,categories,geographies,totals,limited:true});
   }
