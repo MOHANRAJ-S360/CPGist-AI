@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useMemo,useState} from "react";
-import {Activity,ArrowDownRight,ArrowUpRight,BarChart3,Boxes,CheckCircle2,Info,MapPinned,Megaphone,PackageCheck,ShoppingBag,Target,Users} from "lucide-react";
+import {CheckCircle2,Info,Megaphone,PackageCheck,Target,Users} from "lucide-react";
 import {AppShell} from "./app-shell";
 import {supabaseBrowser} from "../lib/supabase-browser";
 
@@ -29,7 +29,7 @@ export function V5InsightView({mode}:{mode:Mode}){
  const purchaseGeoOptions=useMemo(()=>[...new Set((data?.rows||[]).map((x:any)=>x.geographic_scope).filter(Boolean))].sort() as string[],[data]);
  const quarterOptions=useMemo(()=>[...new Set((data?.rows||[]).map((x:any)=>x.quarter_ending).filter(Boolean))].sort().reverse() as string[],[data]);
  const totalInStock=rows.reduce((a:number,x:any)=>a+(Number(x.in_stock_stores)||0),0), totalListed=rows.reduce((a:number,x:any)=>a+(Number(x.listed_stores)||0),0);
- const scenario=useMemo(()=>{const b=Math.max(0,Number(budget)||0),c=Math.max(.01,Number(cpm)||0),impressions=b/c*1000;return{impressions,clicks:impressions*Math.max(0,Number(ctr)||0)/100,low:b*Math.max(0,Number(roasMin)||0),high:b*Math.max(0,Number(roasMax)||0)};},[budget,cpm,ctr,roasMin,roasMax]);
+ const scenario=useMemo(()=>{const b=Math.max(0,Number(budget)||0),c=Math.max(.01,Number(cpm)||0),impressions=b/c*1000,r1=b*Math.max(0,Number(roasMin)||0),r2=b*Math.max(0,Number(roasMax)||0);return{impressions,clicks:impressions*Math.max(0,Number(ctr)||0)/100,low:Math.min(r1,r2),high:Math.max(r1,r2)};},[budget,cpm,ctr,roasMin,roasMax]);
  const setChannelValues=(value:string)=>{setChannel(value);const c=data?.channels?.find((x:any)=>x.channel===value);if(c){setCpm(String(c.assumed_cpm));setCtr(String(Number(c.assumed_ctr)*100));setRoasMin(String(c.assumed_roas_min));setRoasMax(String(c.assumed_roas_max));}};
  const card=(label:string,value:any,note:string)=><div className="card kpi" key={label}><span>{label}</span><strong>{value}</strong><small>{note}</small></div>;
  const warning=data?.warning;
@@ -45,8 +45,9 @@ export function V5InsightView({mode}:{mode:Mode}){
     <label>Quadrant<select value={quadrant} onChange={e=>setQuadrant(e.target.value)}><option value="">All quadrants</option>{["Core","Expand Distribution","Fix Velocity","Review"].map(x=><option key={x}>{x}</option>)}</select></label>
     <label>Geography<select value={geo} onChange={e=>setGeo(e.target.value)}><option value="">All geographies</option>{(data?.geographies||[]).map((x:string)=><option key={x}>{x}</option>)}</select></label>
     <label>Category<select value={category} onChange={e=>setCategory(e.target.value)}><option value="">All categories</option>{(data?.categories||[]).map((x:string)=><option key={x}>{x}</option>)}</select></label>
-   </div>
-   <div className="report-grid-kpis">{card("Rows returned",num(data?.totals?.rows,0),"Maximum 1,000 per query")}{card("Sales represented",money(data?.totals?.sales),"Filtered rows only")}{card("Estimated weekly opportunity",money(data?.totals?.lostSales),"Not observed or guaranteed")}{card("Window",anchor+" · "+win,"Actual-only by default")}</div>
+   </div></div>
+   <div className="v5-definition-strip"><div><b>Distribution efficiency</b><span>Sales velocity relative to distribution, benchmarked against peers.</span></div><div><b>ACV gap</b><span>Difference from a peer ACV benchmark, not a guaranteed expansion target.</span></div><div><b>Opportunity estimate</b><span>Modeled weekly sales opportunity, not observed lost sales.</span></div></div>
+   <div className="report-grid-kpis">{card("Rows returned",num(data?.totals?.rows,0),"Filtered rows · max 1,000")}{card("Sales represented",money(data?.totals?.sales),"Filtered rows only")}{card("Estimated weekly opportunity",money(data?.totals?.lostSales),"Not observed or guaranteed")}{card("Window",anchor+" · "+win,"Actual-only by default")}</div>
    <div className="card panel"><div className="panel-head"><div><b>Distribution opportunities</b><span>Top results sorted by estimated weekly lost sales</span></div><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search UPC, market or category…" style={{maxWidth:260}}/></div><div style={{overflowX:"auto"}}><table><thead><tr>{["UPC","Market","Geography","Category","Sales","ACV","Velocity / store / week","Efficiency index","ACV gap","Est. lost sales / week","Quadrant"].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{rows.slice(0,100).map((x:any,i:number)=><tr key={x.upc+"-"+x.market_id+"-"+i}><td>{x.upc}</td><td>{x.market_id}</td><td>{x.geographic_scope}</td><td>{x.category}</td><td>{money(x.dollar_sales)}</td><td>{num(x.acv_avg)}%</td><td>{num(x.velocity_units_per_store_week,2)}</td><td>{num(x.distribution_efficiency_index,0)}</td><td>{num(x.acv_gap_points)} pts</td><td>{money(x.lost_sales_estimate_weekly)}</td><td>{x.quadrant}</td></tr>)}</tbody></table></div></div>
   </>}
   {mode==="first-purchase"&&<>
