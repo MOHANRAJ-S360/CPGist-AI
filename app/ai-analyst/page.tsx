@@ -21,7 +21,7 @@ function AnalystContent({text,onNextQuestion}:{text:string;onNextQuestion:(q:str
     {sections.map((s:any,i:number)=><section className="analyst-section" key={i}><h4>{safeText(s?.title)}</h4>{Array.isArray(s?.bullets)&&<ul>{s.bullets.filter(Boolean).map((b:any,j:number)=><li key={j}>{safeText(b)}</li>)}</ul>}</section>)}
     {warnings.length>0&&<div className="analyst-warning"><strong>Modeling notes</strong><ul>{warnings.map((w:any,i:number)=><li key={i}>{safeText(w)}</li>)}</ul></div>}
     {Array.isArray(a.decisionTrail)&&a.decisionTrail.length>0&&<div className="analyst-decision-trail"><strong>Decision trail</strong><ol>{a.decisionTrail.map((d:any,i:number)=><li key={i}><span>{safeText(d?.type||"note")}</span>{safeText(d?.text)}</li>)}</ol></div>}
-    {a.evidence&&<div className="analyst-evidence"><strong>Evidence</strong><span>{safeText(a.evidence?.source)}</span><span>{safeText(a.evidence?.period)}</span>{a.evidence?.periodCount!=null&&<span>{safeText(a.evidence.periodCount)} observed periods</span>}</div>}
+    {a.evidence&&<div className="analyst-evidence"><strong>Evidence</strong><span>{safeText(a.evidence?.source)}</span><span>{safeText(a.evidence?.period)}</span>{a.evidence?.periodCount!=null&&<span>{safeText(a.evidence.periodCount)} source periods in comparison window</span>}{(a.evidence?.observedPeriodCount!=null||a.evidence?.projectedPeriodCount!=null)&&<span>{safeText(a.evidence.observedPeriodCount??0)} observed · {safeText(a.evidence.projectedPeriodCount??0)} projected</span>}</div>}
     {a.nextBestQuestion&&<button className="analyst-next-question" onClick={()=>onNextQuestion(String(a.nextBestQuestion))}>Next best question → {safeText(a.nextBestQuestion)}</button>}
    </div>
   }
