@@ -23,10 +23,10 @@ The extension import estimates a conservative 100 MiB increment and calls `cpgis
 
 ## User-facing features
 
-- Distribution Efficiency: ACTUAL default, ACTUAL/ALL anchor, L13W/P13W, category/geography/quadrant filters, clearly labelled lost-sales estimates.
-- First Purchase Share: first-observed only; synthetic and closed-cohort limitations shown.
-- Media Readiness: editable budget, CPM, CTR and ROAS assumptions; results labelled scenario estimates.
-- Availability Coverage: sampled market/UPC snapshot only, not a complete all-market availability gap.
+- Distribution Efficiency: compares velocity with ACV and peer benchmarks, with modeled weekly opportunity. It does not include logistics, warehousing or servicing costs, so it is not a full cost-to-serve efficiency metric.
+- First Purchase Share: synthetic first-observed purchase-count share only. It is not sales/volume share or verified household penetration; true acquisition analysis needs stable household IDs, burn-in and cohort history.
+- Media Planning: editable budget, CPM, CTR and ROAS assumptions. This is not product-level Media Readiness until inventory history, digital-shelf conversion, reviews/content quality and competitive pricing inputs are connected.
+- Availability Coverage: sampled market/UPC snapshot only. It does not calculate complete category footprint or demand-weighted ACV gaps.
 
 ## Rollout
 
@@ -38,3 +38,8 @@ The extension import estimates a conservative 100 MiB increment and calls `cpgis
 6. Check live database size with `select pg_size_pretty(pg_database_size(current_database()));` after import.
 
 All v5 additions are synthetic or derived. They are suitable for demos and logic validation, not real-world customer recommendations.
+
+
+## Metric-definition alignment (2026-10)
+
+The current extension should be described as a set of **partial analytical proxies**, not as full implementations of the four business concepts. The UI explicitly lists missing evidence and avoids fabricating readiness scores. To complete the concepts, integrate validated household-level purchase history, addressable store/category and demand-weight inputs, product-level inventory/digital-shelf/review/content/price signals, and logistics/servicing cost data. Until those sources are connected, do not present synthetic or modeled outputs as observed commercial outcomes.
