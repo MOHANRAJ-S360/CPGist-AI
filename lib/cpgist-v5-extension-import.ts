@@ -28,7 +28,12 @@ function parseSmall(input:Uint8Array):Row[]{
 async function scanCsv(input:Uint8Array,onRow:(r:Row)=>void,progress:Progress,label:string){
   const decoder=new TextDecoder();
   let headers:string[]|null=null,row:string[]=[],cellStart=0,quoted=false,rows=0;
-  const emit=(end:number)=>{row.push(decoder.decode(input.subarray(cellStart,end)));cellStart=end+1;};
+  const decodeCell=(start:number,end:number)=>{
+    let value=decoder.decode(input.subarray(start,end)).trim();
+    if(value.startsWith('"')&&value.endsWith('"'))value=value.slice(1,-1).replace(/""/g,'"');
+    return value;
+  };
+  const emit=(end:number)=>{row.push(decodeCell(cellStart,end));cellStart=end+1;};
   for(let i=0;i<input.length;i++){
     const c=input[i];
     if(c===34){if(quoted&&input[i+1]===34)i++;else quoted=!quoted;continue;}
@@ -46,7 +51,7 @@ async function scanCsv(input:Uint8Array,onRow:(r:Row)=>void,progress:Progress,la
     }
   }
   if(cellStart<input.length||row.length){
-    row.push(decoder.decode(input.subarray(cellStart)));
+    row.push(decodeCell(cellStart,input.length));
     if(!headers)headers=row.map(h=>String(h||"").replace(/^\uFEFF/,"").trim());
     else if(row.length&&row.some(Boolean)){const r:Row={};headers.forEach((h,j)=>r[h]=String(row[j]??"").trim());onRow(r);}
   }
@@ -196,8 +201,13 @@ export async function importV5Extensions(sb:SupabaseClient,zip:Record<string,Uin
     ]);
     const failed=checks.find(x=>x.error);if(failed?.error)throw new Error("V5 extension verification failed: "+failed.error.message);
     if(!checks[0].count||!checks[1].count||!checks[2].count||!checks[3].count||!checks[4].count)throw new Error("V5 extension verification failed: one or more feature tables are empty.");
-    progress("V5 extensions verified. Existing core dataset was preserved; only storage-efficient derived tables were added.");
-    return {type:"v5-extension",distributionRows:checks[0].count,firstPurchaseRows:checks[1].count,mediaRows:checks[2].count,availabilityRows:checks[3].count,mediaChannels:checks[4].count,estimatedIncrementMiB:100,storageGuardPassed:true};
+    const after=await sb.rpc("cpgist_v5_storage_guard",{p_estimated_increment_mb:0});
+    if(after.error)throw new Error("Could not verify database size after v5 import: "+after.error.message);
+    const afterRow=Array.isArray(after.data)?after.data[0]:after.data;
+    if(!afterRow?.allowed)throw new Error("V5 extension import stopped because the measured database size exceeded the 420 MiB safety ceiling. The importer will clear only v5 extension tables.");
+    const storageAfterMiB=Number(afterRow.current_db_bytes)/1048576;
+    progress("V5 extensions verified. Database now uses "+storageAfterMiB.toFixed(1)+" MiB; existing core dataset was preserved.");
+    return {type:"v5-extension",distributionRows:checks[0].count,firstPurchaseRows:checks[1].count,mediaRows:checks[2].count,availabilityRows:checks[3].count,mediaChannels:checks[4].count,estimatedIncrementMiB:100,storageAfterMiB:Number(storageAfterMiB.toFixed(1)),freeTierLimitMiB:500,guardCeilingMiB:420,storageGuardPassed:true};
   }catch(error){
     await sb.rpc("cpgist_v5_reset_extensions");
     throw error;
