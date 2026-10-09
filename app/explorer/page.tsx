@@ -21,10 +21,11 @@ const money=(n:any)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"U
 
 export default function Explorer(){
  const initialParams=typeof window!=="undefined"?new URLSearchParams(window.location.search):null;
- const [entity,setEntity]=useState<Entity>((initialParams?.get("entity") as Entity)||"brand");
+ const [entity,setEntity]=useState<Entity>((((initialParams?.get("tab")==="brands"?"brand":initialParams?.get("entity")) as Entity)||"brand"));
  const [categoryFilter]=useState(()=>initialParams?.get("category")||"");
  const [subcategoryFilter]=useState(()=>initialParams?.get("subcategory")||"");
  const [q,setQ]=useState(()=>initialParams?.get("q")||"");
+ const [regionFilter]=useState(()=>initialParams?.get("region")||"");
  const [rows,setRows]=useState<any[]>([]);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState("");
@@ -46,7 +47,7 @@ export default function Explorer(){
     const {data:{session}}=await supabaseBrowser().auth.getSession();
     if(!session)throw new Error("Please sign in again.");
     const offset=(page-1)*PAGE_SIZE;
-    const r=await fetch("/api/explorer?entity="+entity+"&q="+encodeURIComponent(q)+"&category="+encodeURIComponent(categoryFilter)+"&subcategory="+encodeURIComponent(subcategoryFilter)+"&limit="+PAGE_SIZE+"&offset="+offset,{headers:{Authorization:"Bearer "+session.access_token},cache:"no-store"});
+    const r=await fetch("/api/explorer?entity="+entity+"&q="+encodeURIComponent(q)+"&region="+encodeURIComponent(regionFilter)+"&category="+encodeURIComponent(categoryFilter)+"&subcategory="+encodeURIComponent(subcategoryFilter)+"&limit="+PAGE_SIZE+"&offset="+offset,{headers:{Authorization:"Bearer "+session.access_token},cache:"no-store"});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(typeof d?.error==="string"?d.error:d?.error?.message||"Search failed.");
     if(live){setRows(Array.isArray(d.results)?d.results:[]);setTotal(Number(d.count)||0);}
@@ -56,7 +57,7 @@ export default function Explorer(){
   };
   run();
   return()=>{live=false};
- },[entity,q,page,categoryFilter,subcategoryFilter]);
+ },[entity,q,page,categoryFilter,subcategoryFilter,regionFilter]);
 
  useEffect(()=>{setDetailData(null);setDetailKey(null)},[entity,q,page]);
 
@@ -80,7 +81,7 @@ export default function Explorer(){
     <div className="explorer-search"><Search size={15}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder={"Search "+currentLabel.toLowerCase()+"…"} autoFocus/></div>
    </div>
    <div className="card panel">
-    <div className="panel-head"><div><b>{currentLabel} directory</b><span>{total.toLocaleString()} total matching records · showing {start.toLocaleString()}–{end.toLocaleString()}</span></div></div>
+    <div className="panel-head"><div><b>{currentLabel} directory</b><span>{total.toLocaleString()} total matching records · showing {start.toLocaleString()}–{end.toLocaleString()}{regionFilter?" · Region: "+regionFilter:""}</span></div></div>
     {error?<div className="form-error">{error}</div>:loading?<div className="loading-card">Searching live data…</div>:<><div className="explorer-results">
       {rows.map((x:any,i:number)=>{
        const isCategory=entity==="category";
