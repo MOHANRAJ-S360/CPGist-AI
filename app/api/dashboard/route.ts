@@ -69,9 +69,12 @@ export async function GET(){
   const priorPeriods=periods.slice(-26,-13);
   const latestSet=new Set<string>(latestPeriods),priorSet=new Set<string>(priorPeriods);
   const periodStart=periods[0],periodEnd=periods.at(-1);
-  const actualPeriods=periods.filter(p=>brandRows.filter((r:any)=>String(r.week_ending)===p).every((r:any)=>r.is_actual===true));
-  const syntheticPeriods=periods.filter(p=>brandRows.filter((r:any)=>String(r.week_ending)===p).some((r:any)=>r.is_actual===false));
-  const provenance={actualWeeks:actualPeriods.length,syntheticWeeks:syntheticPeriods.length,totalWeeks:periods.length,status:syntheticPeriods.length?"mixed":"actual",label:syntheticPeriods.length?syntheticPeriods.length+" of "+periods.length+" weeks in this view are projected, not observed":null,sourceOfTruth:"is_actual"};
+  const periodStatus=(p:string)=>{const rows=brandRows.filter((r:any)=>String(r.week_ending)===p);return rows.length&&rows.every((r:any)=>r.is_actual===true)?"actual":rows.some((r:any)=>r.is_actual===false)?"projected":"unknown"};
+  const actualPeriods=periods.filter(p=>periodStatus(p)==="actual");
+  const syntheticPeriods=periods.filter(p=>periodStatus(p)==="projected");
+  const latest13Projected=latestPeriods.filter(p=>periodStatus(p)==="projected").length;
+  const prior13Projected=priorPeriods.filter(p=>periodStatus(p)==="projected").length;
+  const provenance={actualWeeks:actualPeriods.length,syntheticWeeks:syntheticPeriods.length,totalWeeks:periods.length,latest13ProjectedWeeks:latest13Projected,prior13ProjectedWeeks:prior13Projected,latest13ActualWeeks:latestPeriods.filter(p=>periodStatus(p)==="actual").length,prior13ActualWeeks:priorPeriods.filter(p=>periodStatus(p)==="actual").length,status:syntheticPeriods.length?"mixed":"actual",label:syntheticPeriods.length?syntheticPeriods.length+" of "+periods.length+" source periods in this 26-week window are projected, not observed":null,sourceOfTruth:"is_actual"};
 
   const agg=(rows:any[],periodSet:Set<string>)=>{
    const scoped=rows.filter((r:any)=>periodSet.has(String(r.week_ending)));
