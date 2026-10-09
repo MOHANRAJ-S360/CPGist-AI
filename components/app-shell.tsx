@@ -61,7 +61,7 @@ export function AppShell({title,subtitle,children}:{title:string;subtitle?:strin
    </div>
   </aside>
   <main className="main">
-   <header className="topbar"><div><b>{title}</b>{subtitle&&<span>{subtitle}</span>}</div><div className="topbar-user"><span className="scope-badge" style={{fontSize:9,whiteSpace:"nowrap"}}>DEMO DATA · SYNTHETIC</span><div className="mini-avatar">{initials}</div><div><strong>{name}</strong><small>{email}</small></div></div></header>
+   <header className="topbar"><div><b>{title}</b>{subtitle&&<span>{subtitle}</span>}</div><div className="topbar-user"><div className="mini-avatar">{initials}</div><div><strong>{name}</strong><small>{email}</small></div></div></header>
    {children}
   </main>
  </div>
