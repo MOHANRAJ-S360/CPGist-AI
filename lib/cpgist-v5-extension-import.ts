@@ -172,7 +172,11 @@ export async function importV5Extensions(sb:SupabaseClient,zip:Record<string,Uin
   },progress,"Store_SKU_Status.csv");
   const availability=[...availabilityMap.values()];
 
-  progress("Validated v5 extension inputs: "+distribution.length.toLocaleString()+" distribution rows · "+firstPurchase.length.toLocaleString()+" first-purchase rows · "+media.length.toLocaleString()+" aggregated media rows · "+availability.length.toLocaleString()+" availability counts.");
+  const expected={distribution:58288,firstPurchase:405,media:517306,availability:952,channels:5};
+  const actual={distribution:distribution.length,firstPurchase:firstPurchase.length,media:media.length,availability:availability.length,channels:channels.length};
+  const mismatches=Object.keys(expected).filter(k=>(actual as any)[k]!== (expected as any)[k]);
+  if(mismatches.length)throw new Error("V5 package validation failed before any database writes. Expected "+JSON.stringify(expected)+"; received "+JSON.stringify(actual)+". Check the selected archive and do not import a partial package.");
+  progress("Validated v5 extension inputs: "+distribution.length.toLocaleString()+" distribution rows · "+firstPurchase.length.toLocaleString()+" first-purchase rows · "+media.length.toLocaleString()+" aggregated media rows · "+availability.length.toLocaleString()+" availability counts · "+channels.length+" channels.");
 
   // The tables are extension-only: do not reset or replace existing CPGist sales tables.
   const reset=await sb.rpc("cpgist_v5_reset_extensions");
