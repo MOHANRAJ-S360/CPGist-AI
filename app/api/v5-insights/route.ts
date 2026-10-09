@@ -27,7 +27,7 @@ export async function GET(req:NextRequest){
     count("cpgist_v5_media_brand_market_week"),
     count("cpgist_v5_availability_counts")
   ]);
-  const status={ready:coverage.every(x=>x!==null&&x>0),distributionRows:coverage[0],firstPurchaseRows:coverage[1],mediaRows:coverage[2],availabilityRows:coverage[3],dataMode:"DEMO DATA · SYNTHETIC",note:"v5 additions are synthetic or derived; estimates and scenario outputs are not measured customer outcomes."};
+  const status={ready:coverage.every(x=>x!==null&&x>0),distributionRows:coverage[0],firstPurchaseRows:coverage[1],mediaRows:coverage[2],availabilityRows:coverage[3],note:"v5 additions are synthetic or derived; estimates and scenario outputs are not measured customer outcomes."};
   if(mode==="distribution"){
     const anchor=p.get("anchor")==="ALL"?"ALL":"ACTUAL",win=p.get("win")==="P13W"?"P13W":"L13W";
     const terms=["anchor=eq."+anchor,"win=eq."+win];
