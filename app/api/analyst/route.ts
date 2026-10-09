@@ -248,6 +248,24 @@ async function tool(name: string, a: Args, token: string) {
       };
     }
 
+    case "category_business_review": {
+      const categoryName=String(a.categoryId||"").trim();
+      if(!categoryName)return {error:"Category-scope review requires a resolved category name."};
+      const rawCategory:any[]=await get("cpgist_category_weekly?category=eq."+encodeURIComponent(categoryName)+"&select=category,week_ending,sales,units,distribution&order=week_ending.asc&limit=5000",token);
+      const periods=[...new Set(rawCategory.map(r=>String(r.week_ending)).filter(Boolean))].sort();
+      if(!periods.length)return {error:"No weekly category observations were found for "+categoryName+"."};
+      const latest=periods.slice(-13),prior=periods.slice(-26,-13),latestSet=new Set(latest),priorSet=new Set(prior);
+      const sum=(rows:any[],key:string)=>rows.reduce((s,r)=>s+Number(r[key]||0),0);
+      const pct=(now:number,old:number)=>old?(now/old-1)*100:null;
+      const currentRows=rawCategory.filter(r=>latestSet.has(String(r.week_ending))),priorRows=rawCategory.filter(r=>priorSet.has(String(r.week_ending)));
+      const sales=sum(currentRows,"sales"),priorSales=sum(priorRows,"sales"),units=sum(currentRows,"units"),priorUnits=sum(priorRows,"units");
+      const brandRows=dataset.rows,brandIds=[...new Set(brandRows.map((r:any)=>String(r.brand_id)).filter(Boolean))];
+      const brandPerf=brandIds.map(id=>{const rows=brandRows.filter((r:any)=>String(r.brand_id)===id);const cur=rows.filter((r:any)=>latestSet.has(String(r.week_ending))),prev=rows.filter((r:any)=>priorSet.has(String(r.week_ending)));const s=sum(cur,"dollar_sales"),ps=sum(prev,"dollar_sales");return {brandId:id,sales:s,priorSales:ps,growthPct:pct(s,ps)}}).sort((a:any,b:any)=>b.sales-a.sales).slice(0,8);
+      const observedPeriods=latest.filter(p=>brandRows.some((r:any)=>String(r.week_ending)===p&&r.is_actual===true)).length;
+      const projectedPeriods=latest.filter(p=>brandRows.some((r:any)=>String(r.week_ending)===p&&r.is_actual===false)).length;
+      return {scope:{type:"category",category:categoryName},executive:{latest13wSales:sales,prior13wSales:priorSales,salesGrowthPct:pct(sales,priorSales),latest13wUnits:units,prior13wUnits:priorUnits,unitGrowthPct:pct(units,priorUnits),comparisonBasis:"latest 13 weeks versus prior 13 weeks; not year-over-year"},topBrands:brandPerf,evidence:{source:"cpgist_category_weekly; brand context from cpgist_brand_weekly",grain:"weekly category sales",rowCount:rawCategory.length,periodStart:latest[0]||null,periodEnd:latest.at(-1)||null,periodCount:latest.length,observedPeriodCount:observedPeriods,projectedPeriodCount:projectedPeriods,comparisonBasis:"latest 13 weeks versus prior 13 weeks; not year-over-year",filters:{categoryId:categoryName},generatedAt:new Date().toISOString()},warnings:[...(latest.length<13||prior.length<13?["The 13-week comparison is incomplete."]:[]),...(projectedPeriods?["The latest category comparison window includes projected source periods; growth is not observed-only performance."]:[]),"No causal explanation is inferred from category-level sales movement alone."]};
+    }
+
     case "monthly_business_review": {
       const brandId = String(a.brandId || "").trim();
       if (!brandId) return { error: "monthly_business_review requires a brandId for a brand-scoped review." };
@@ -322,13 +340,15 @@ async function tool(name: string, a: Args, token: string) {
       const retailerNames = Object.fromEntries(retailerMaster.map((x:any)=>[String(x.id),x]));
 
       const validationIssues:any[] = [];
-      if (latest13.length !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_RECENT_13W", message:"Fewer than 13 observed weeks are available for the recent period." });
-      if (prior13.length !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_PRIOR_13W", message:"Fewer than 13 observed weeks are available for the prior comparison period." });
+      if (latest13.length !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_RECENT_13W", message:"Fewer than 13 source periods are available for the recent comparison window; source periods may be observed or projected." });
+      if (prior13.length !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_PRIOR_13W", message:"Fewer than 13 source periods are available for the prior comparison window; source periods may be observed or projected." });
       if (categoryLatest13.size !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_CATEGORY_13W", message:"Fewer than 13 category weeks are available for the recent period." });
       if (categoryPrior13.size !== 13) validationIssues.push({ severity:"warning", code:"INCOMPLETE_CATEGORY_PRIOR_13W", message:"Fewer than 13 category weeks are available for the prior comparison period." });
       if (marketShare !== null && (marketShare < 0 || marketShare > 1)) validationIssues.push({ severity:"error", code:"INVALID_SHARE", message:"Calculated brand share is outside the valid 0–100% range." });
       if (recentSales >= 0 && recentUnits > 0 && recentPrice !== null && Math.abs(recentSales - recentUnits * recentPrice) > Math.max(1, recentSales * 1e-8)) validationIssues.push({ severity:"error", code:"PRICE_RECONCILIATION", message:"Recent sales, units and realized price do not reconcile." });
 
+      const recentObservedPeriods = latest13.filter(p=>brandDataset.rows.some(r=>r.week_ending===p&&r.is_actual===true)).length;
+      const recentProjectedPeriods = latest13.filter(p=>brandDataset.rows.some(r=>r.week_ending===p&&r.is_actual===false)).length;
       const evidence = {
         source: "cpgist_brand_weekly + cpgist_category_weekly-equivalent brand/category scope",
         grain: "weekly brand/category sales",
@@ -336,6 +356,9 @@ async function tool(name: string, a: Args, token: string) {
         periodStart: latest13[0] ?? null,
         periodEnd: latest13.at(-1) ?? null,
         periodCount: latest13.length,
+        observedPeriodCount: recentObservedPeriods,
+        projectedPeriodCount: recentProjectedPeriods,
+        comparisonBasis: "latest 13 weeks versus prior 13 weeks; not year-over-year",
         filters: { brandId, categoryId: categoryName },
         generatedAt: new Date().toISOString()
       };
@@ -935,9 +958,17 @@ function abTestingGuidance(question: string) {
 
 async function collectEvidence(question: string, brandId: string | undefined, token: string) {
   const q = question.toLowerCase();
-  const scope = brandId ? { brandId } : {};
   const context = await resolveBrandContext(brandId, token);
-  const categoryId = context.category || undefined;
+  let requestedCategory:string|undefined;
+  if(!brandId){
+    try{
+      const categoryRows:any[]=await get("cpgist_category_weekly?select=category&limit=1000",token);
+      const names=[...new Set(categoryRows.map(r=>String(r.category||"").trim()).filter(Boolean))].sort((a,b)=>b.length-a.length);
+      requestedCategory=names.find(name=>q.includes(name.toLowerCase()));
+    }catch{}
+  }
+  const categoryId = context.category || requestedCategory;
+  const scope = brandId ? { brandId } : categoryId ? { categoryId } : {};
   const selected: string[] = [];
   const add = (name: string) => { if (!selected.includes(name)) selected.push(name); };
 
@@ -965,6 +996,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
 
   if (broadReview || !explicitIntent) {
     if (brandId) add("monthly_business_review");
+    else if(categoryId) add("category_business_review");
     else add("business_health_scan");
   }
 
@@ -994,13 +1026,13 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   if (brandId && categoryId && /share|market share|category share/.test(q)) add("get_market_share");
   if (scenarioIntent) add("run_scenario");
   if (abIntent) add("ab_testing_guidance");
-  if (!brandId && /category|growth|underperform|momentum|market|all brands|share/.test(q)) add("category_growth_plan");
+  if (!brandId && !categoryId && /category|growth|underperform|momentum|market|all brands|share/.test(q)) add("category_growth_plan");
 
   // Base review stays first. Explicit drill-downs are then prioritized so the
   // 7-tool safety cap cannot discard the evidence the user actually requested.
   const base = brandId ? "monthly_business_review" : "business_health_scan";
   const priority = [
-    "retailer_opportunity","retailer_scope_guard","product_sku_performance","product_competitor_diagnostic",
+    "category_business_review","retailer_opportunity","retailer_scope_guard","product_sku_performance","product_competitor_diagnostic",
     "get_promo_lift","get_sku_growth","get_category_context","get_channel_breakdown",
     "get_margin_pnl","get_launch_performance","get_synthetic_panel","get_macro_overlay",
     "forecast_sales","detect_anomalies","get_market_share","run_scenario","ab_testing_guidance",
@@ -1016,7 +1048,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
   for (const name of finalTools) {
     try {
       const args: Args = { ...scope };
-      if (categoryId && ["category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic"].includes(name)) args.categoryId = categoryId;
+      if (categoryId && ["category_business_review","category_growth_plan","retailer_opportunity","get_market_share","product_competitor_diagnostic"].includes(name)) args.categoryId = categoryId;
       if (name === "product_competitor_diagnostic") args.productQuery = question;
       if (name === "retailer_scope_guard") {
         evidence.push({
@@ -1068,7 +1100,7 @@ export async function POST(req: Request) {
     const messages = [
       {
         role: "system",
-        content: "You are CPGist AI Analyst. Interpret only the supplied deterministic evidence. Do not invent, recalculate, infer causality, or turn missing data into estimates. Every number must be traceable to evidence. Use the requested grain and distinguish observed facts from diagnostics, actions and limitations. For competitive questions, use only populated peer/brand/category evidence and state the comparison grain. For product questions, prioritize product performance. For A/B tests, never invent sample size, duration, confidence, lift or experiment results. Return ONLY valid JSON with exactly: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. Keep it concise.\n\nCapabilities:\n" + String(capabilityCatalog || "").slice(0, 2200) + "\n\nScope:\n" + JSON.stringify(context).slice(0, 1800) + activeScope + "\n\nEvidence:\n" + evidenceJson.slice(0, 9000) + "\n\nSelected tools: " + selected.join(", ")
+        content: "You are CPGist AI Analyst. Interpret only the supplied deterministic evidence. Do not invent, recalculate, infer causality, or turn missing data into estimates. Every number must be traceable to evidence. Use the requested grain and distinguish observed facts from diagnostics, actions and limitations. Never call a latest-13-weeks-versus-prior-13-weeks comparison YoY; only use YoY when a same-calendar-period one-year comparison is explicitly calculated in the supplied evidence. Respect observed/projected period counts and never describe projected periods as observed. For competitive questions, use only populated peer/brand/category evidence and state the comparison grain. For product questions, prioritize product performance. For A/B tests, never invent sample size, duration, confidence, lift or experiment results. Return ONLY valid JSON with exactly: type, headline, executiveTakeaway, metrics, table, sections, warnings, evidence, decisionTrail, nextBestQuestion. Keep it concise.\n\nCapabilities:\n" + String(capabilityCatalog || "").slice(0, 2200) + "\n\nScope:\n" + JSON.stringify(context).slice(0, 1800) + activeScope + "\n\nEvidence:\n" + evidenceJson.slice(0, 9000) + "\n\nSelected tools: " + selected.join(", ")
       },
       ...incoming.slice(-3).map((m: any) => ({
         role: m?.role === "assistant" ? "assistant" : "user",
