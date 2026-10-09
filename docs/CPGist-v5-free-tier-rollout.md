@@ -9,7 +9,7 @@ This change adds v5-derived capabilities on top of the existing CPGist core data
 - `cpgist_v5_distribution_efficiency_13w`: 58,288 derived rows for ACTUAL/ALL and latest/prior 13-week windows.
 - `cpgist_v5_first_purchase_share`: 405 synthetic-panel-derived rows.
 - `cpgist_v5_media_channel_dictionary`: five illustrative channel assumption rows.
-- `cpgist_v5_media_brand_market_week`: media facts aggregated from channel-week to brand × market × week before storage.
+- `cpgist_v5_media_brand_market_week`: 483,350 media facts aggregated from channel-level inputs to brand × market × week before storage (package-specific validated count).
 - `cpgist_v5_availability_counts`: market × UPC × snapshot counts; the full store × UPC matrix is not persisted.
 
 ## Explicitly excluded from permanent Free-tier storage
