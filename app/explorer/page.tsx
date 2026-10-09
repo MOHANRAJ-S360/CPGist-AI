@@ -24,7 +24,7 @@ export default function Explorer(){
  const [entity,setEntity]=useState<Entity>((initialParams?.get("entity") as Entity)||"brand");
  const [categoryFilter]=useState(()=>initialParams?.get("category")||"");
  const [subcategoryFilter]=useState(()=>initialParams?.get("subcategory")||"");
- const [q,setQ]=useState("");
+ const [q,setQ]=useState(()=>initialParams?.get("q")||"");
  const [rows,setRows]=useState<any[]>([]);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState("");
