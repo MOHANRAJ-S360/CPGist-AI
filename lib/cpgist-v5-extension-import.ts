@@ -156,11 +156,15 @@ export async function importV5Extensions(sb:SupabaseClient,zip:Record<string,Uin
     x.is_actual=x.is_actual&&bool(r.is_actual,false);
     x.is_synthetic_flag=x.is_synthetic_flag||bool(r.is_synthetic_flag,true);
   },progress,"Media_Fact_Weekly.csv");
-  const media=[...mediaMap.values()].map(x=>({
-    week_ending:x.week_ending,brand_id:x.brand_id,market_id:x.market_id,spend:x.spend,impressions:x.impressions,
-    clicks:x.clicks_present?x.clicks:null,attributed_sales:x.sales_present?x.attributed_sales:null,
-    is_planned:x.is_planned,is_actual:x.is_actual,is_synthetic_flag:true
-  }));
+  // Reuse the aggregated objects instead of cloning ~517k rows; this keeps the
+  // browser memory footprint lower during import.
+  const media=[...mediaMap.values()];
+  for(const x of media){
+    x.clicks=x.clicks_present?x.clicks:null;
+    x.attributed_sales=x.sales_present?x.attributed_sales:null;
+    delete x.clicks_present;delete x.sales_present;
+    x.is_synthetic_flag=true;
+  }
   mediaMap.clear();
 
   // Keep only market x UPC x snapshot counts. The 1.55M-row store-SKU matrix is never persisted.
