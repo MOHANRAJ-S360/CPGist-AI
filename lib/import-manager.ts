@@ -25,7 +25,7 @@ export function startDatasetImport(sb:SupabaseClient,file:File){
       const {data:{session}}=await sb.auth.getSession();
       if(!session)throw new Error("Please sign in first.");
       const result=await importDatasetZip(sb,file,(status)=>emit({status}));
-      emit({busy:false,status:"Import completed successfully. The client workspace now uses the CPGist Free Dataset.",result,error:""});
+      emit({busy:false,status:result?.type==="v5-extension"?"V5 extension import completed. Existing core dataset was preserved.":"Import completed successfully. The client workspace now uses the selected CPGist dataset.",result,error:""});
       return result;
     }catch(e:any){
       const message=e?.message||"Import failed. You can retry safely.";
