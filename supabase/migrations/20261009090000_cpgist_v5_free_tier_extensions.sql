@@ -158,5 +158,7 @@ begin
 end;
 $$;
 
+revoke all on function public.cpgist_v5_storage_guard(integer) from public, anon;
+revoke all on function public.cpgist_v5_reset_extensions() from public, anon;
 grant execute on function public.cpgist_v5_storage_guard(integer) to authenticated, service_role;
 grant execute on function public.cpgist_v5_reset_extensions() to authenticated, service_role;
