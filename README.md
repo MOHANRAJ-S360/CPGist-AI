@@ -49,3 +49,12 @@ Before production:
 3. Test successful, failed, dismissed, duplicate-webhook, cancelled, halted, and expired subscription paths with Razorpay Test Mode.
 4. Verify paid access is granted only after a verified active subscription and failed AI analyses release their own reservation.
 5. Review migration and build/test output before merging or deploying. Do not apply the migration to production as part of this setup.
+
+
+Confirmed monthly AI analysis allowances:
+- Free: 3 successfully completed analyses total.
+- Pro: 300 successfully completed analyses per billing month.
+- Growth: 1,500 successfully completed analyses per billing month.
+- Enterprise: custom contract and limit.
+
+Paid checkout is fail-closed by default. Keep `BILLING_CHECKOUT_ENABLED=false` until Razorpay Test Mode, webhook replay/idempotency, subscription lifecycle, database migration, quota concurrency, and failed-analysis reservation-release tests all pass. Setting plan limits alone does not enable checkout.
