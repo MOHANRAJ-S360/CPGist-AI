@@ -1080,6 +1080,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
 export async function POST(req: Request) {
   let usageToken = "";
   let usageReserved = false;
+  let usageReservationId = "";
   try {
     const body = await req.json();
     const key = process.env.GROQ_API_KEY;
@@ -1098,6 +1099,8 @@ export async function POST(req: Request) {
         upgradeRequired: true
       }, { status: 402 });
     }
+    usageReservationId = String((usage as any).reservationId || "");
+    if (!usageReservationId) throw new Error("AI usage reservation could not be verified. Please retry.");
     usageReserved = true;
 
     const capabilityCatalog = capabilityContext();
@@ -1281,7 +1284,7 @@ export async function POST(req: Request) {
       analyst.decisionTrail = analyst.decisionTrail.filter((x:any) => x.type !== "action");
     }
 
-    const completedUsage = await callUsageRpc(token, "complete");
+    const completedUsage = await callUsageRpc(token, "complete", usageReservationId);
     usageReserved = false;
     return NextResponse.json({
       analyst,
@@ -1290,7 +1293,7 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     if (usageReserved && usageToken) {
-      try { await callUsageRpc(usageToken, "release"); } catch (releaseError) {
+      try { await callUsageRpc(usageToken, "release", usageReservationId); } catch (releaseError) {
         console.error("Failed to release reserved AI usage after an unsuccessful analysis.");
       }
     }
