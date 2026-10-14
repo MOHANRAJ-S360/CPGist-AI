@@ -56,7 +56,7 @@ export async function getSupabaseUser(accessToken: string) {
   return user?.id && user?.email ? { id: String(user.id), email: String(user.email) } : null;
 }
 
-export async function adminRest(path: string, method: "GET" | "POST" | "PATCH", body?: unknown, prefer?: string) {
+export async function adminRest(path: string, method: "GET" | "POST" | "PATCH" | "DELETE", body?: unknown, prefer?: string) {
   const cfg = razorpayConfig();
   const response = await fetch(cfg.supabaseUrl + "/rest/v1/" + path, {
     method,
