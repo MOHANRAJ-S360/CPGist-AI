@@ -25,6 +25,9 @@ create table if not exists public.cpgist_ai_subscriptions (
 );
 create index if not exists cpgist_ai_subscriptions_user_status_idx
   on public.cpgist_ai_subscriptions(user_id, status, current_end desc);
+create unique index if not exists cpgist_ai_subscriptions_one_open_per_user
+  on public.cpgist_ai_subscriptions(user_id)
+  where status in ('created','authenticated','pending','active');
 alter table public.cpgist_ai_subscriptions enable row level security;
 revoke all on public.cpgist_ai_subscriptions from anon, authenticated;
 grant select on public.cpgist_ai_subscriptions to authenticated;
@@ -75,6 +78,16 @@ begin
   values (v_user, v_month) on conflict (user_id) do nothing;
 
   perform 1 from public.cpgist_ai_usage where user_id = v_user for update;
+
+  -- Recover abandoned reservations from crashed/timed-out analysis requests.
+  update public.cpgist_ai_usage_reservations
+    set status = 'released', finished_at = now()
+    where user_id = v_user and status = 'pending'
+      and created_at < now() - interval '30 minutes';
+  update public.cpgist_ai_usage
+    set pending_count = (select count(*)::integer from public.cpgist_ai_usage_reservations
+      where user_id = v_user and status = 'pending'), updated_at = now()
+    where user_id = v_user;
 
   select plan_key, monthly_ai_limit into v_plan, v_limit
   from public.cpgist_ai_subscriptions
