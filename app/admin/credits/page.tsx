@@ -7,7 +7,8 @@ import { RefreshCw, Save, Coins, PlusCircle } from "lucide-react";
 export default function AdminCreditsPage() {
   const [settings, setSettings] = useState<any>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [ledger, setLedger] = useState<any[]>([]);\n  const [operations, setOperations] = useState<any[]>([]);
+  const [ledger, setLedger] = useState<any[]>([]);
+  const [operations, setOperations] = useState<any[]>([]);
   const [userId, setUserId] = useState("");
   const [amount, setAmount] = useState("5");
   const [reason, setReason] = useState("");
