@@ -1,4 +1,5 @@
 import {NextResponse} from "next/server";
+import {requireSupabaseUser} from "../../../lib/require-supabase-user";
 import * as XLSX from "xlsx";
 
 type Row=Record<string,string>;
