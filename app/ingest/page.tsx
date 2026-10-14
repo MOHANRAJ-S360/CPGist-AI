@@ -3,6 +3,7 @@
 import {useState} from "react";
 import {ArrowLeft,Upload,CheckCircle2,AlertTriangle,FileSpreadsheet} from "lucide-react";
 import Link from "next/link";
+import {supabaseBrowser} from "../../lib/supabase-browser";
 
 export default function IngestPage(){
  const [file,setFile]=useState<File|null>(null),[result,setResult]=useState<any>(null),[loading,setLoading]=useState(false),[error,setError]=useState(""),[organizationId,setOrganizationId]=useState("");
@@ -12,9 +13,9 @@ export default function IngestPage(){
   setLoading(true);setError("");setResult(null);
   try{
    const fd=new FormData();fd.append("file",file);fd.append("organizationId",organizationId.trim());
-   const res=await fetch("/api/ingest",{method:"POST",body:fd});const data=await res.json();
+   const {data:{session}}=await supabaseBrowser().auth.getSession();if(!session)throw new Error("Please sign in again.");const res=await fetch("/api/ingest",{method:"POST",headers:{Authorization:"Bearer "+session.access_token},body:fd});const data=await res.json();
    if(!res.ok)setError(data.error||"Could not import file.");else setResult(data);
-  }catch(e){setError("Unable to reach the ingestion service.");}finally{setLoading(false);}
+  }catch(e:any){setError(e?.message||"Unable to reach the ingestion service.");}finally{setLoading(false);}
  }
 
  return <div className="app"><main className="main" style={{marginLeft:0}}><header><Link href="/" className="navitem"><ArrowLeft size={16}/>Dashboard</Link><b>Data ingestion</b></header><section className="content">
