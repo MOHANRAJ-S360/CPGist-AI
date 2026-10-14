@@ -41,7 +41,7 @@ export async function GET(request:Request){
   const {u}=base();
   const publishableKey=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const authHeader=request.headers.get("authorization")||"";
-  const token=authHeader.match(/^Bearer\\s+(.+)$/i)?.[1];
+  const token=authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
   if(!u||!publishableKey){
    return NextResponse.json({error:"Authentication service is not configured.",code:"AUTH_CONFIG_MISSING"},{status:503});
   }
