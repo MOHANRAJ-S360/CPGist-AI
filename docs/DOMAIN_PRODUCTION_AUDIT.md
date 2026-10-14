@@ -30,7 +30,7 @@ The Vercel team context lookup succeeded, and both projects' Git connections are
 - Read the existing company website source and fetched the assigned production alias.
 - Company-site sign-in/app CTA links point to `https://cpgistai.vercel.app/`; create-account CTA points to `https://cpgistai.vercel.app/?mode=signup`.
 - The live app root responds HTTP 200 and serves its existing sign-in/create-account UI.
-- Inspection of the deployed app JavaScript bundle did not find the `mode=signup` query handling. Therefore the production create-account CTA does not appear to preselect signup; users can still choose the Create account switch manually. Source changes on the PR branch are intended to address this but are not deployed.
+- The live app JavaScript bundle does not include the `mode=signup` query handling, while the company-site create-account CTA points to `/?mode=signup`. The current GitHub source already contains the query handler (it is inherited from the PR base, not a code change in this PR), so a successful deployment from current main would be expected to align the behavior. Until then, users can manually switch to Create account. No deployment was triggered.
 - This was a read-only smoke test, not a real signup/login. No credentials were submitted and no production user was created.
 
 ## Supabase Auth configuration
