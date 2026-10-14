@@ -284,3 +284,53 @@ grant execute on function public.cpgist_credit_status() to authenticated;
 grant execute on function public.cpgist_credit_reserve(text,text) to authenticated;
 grant execute on function public.cpgist_credit_complete(text) to authenticated;
 grant execute on function public.cpgist_credit_refund(text,text) to authenticated;
+
+
+-- Administrative balance adjustments are atomic and require an app_metadata admin claim.
+create or replace function public.cpgist_credit_admin_adjust(
+  p_user_id uuid,
+  p_amount integer,
+  p_reason text,
+  p_idempotency_key text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_admin uuid := auth.uid();
+  v_balance integer;
+  v_existing public.cpgist_credit_ledger%rowtype;
+begin
+  if v_admin is null or coalesce(auth.jwt()->'app_metadata'->>'role','') <> 'admin' then
+    raise exception 'Administrator permission required';
+  end if;
+  if p_user_id is null or p_amount = 0 or p_amount < -100000 or p_amount > 100000 then
+    raise exception 'Invalid adjustment';
+  end if;
+  if p_idempotency_key is null or length(trim(p_idempotency_key)) < 8 or length(p_idempotency_key) > 200 then
+    raise exception 'A valid idempotency key is required';
+  end if;
+  if length(trim(coalesce(p_reason,''))) < 3 then
+    raise exception 'Adjustment reason is required';
+  end if;
+
+  insert into public.cpgist_credit_accounts(user_id,balance) values(p_user_id,0) on conflict(user_id) do nothing;
+  select balance into v_balance from public.cpgist_credit_accounts where user_id=p_user_id for update;
+  select * into v_existing from public.cpgist_credit_ledger
+    where user_id=p_user_id and idempotency_key='admin:' || p_idempotency_key;
+  if found then
+    return jsonb_build_object('balance',v_balance,'duplicate',true,'ledger_id',v_existing.id);
+  end if;
+  if v_balance + p_amount < 0 then raise exception 'Adjustment would make the balance negative'; end if;
+  update public.cpgist_credit_accounts set balance=balance+p_amount,updated_at=now()
+    where user_id=p_user_id returning balance into v_balance;
+  insert into public.cpgist_credit_ledger(user_id,transaction_type,amount,balance_after,idempotency_key,reason,metadata)
+    values(p_user_id,'adjustment',p_amount,v_balance,'admin:' || p_idempotency_key,
+      left(trim(p_reason),200),jsonb_build_object('adjusted_by',v_admin));
+  return jsonb_build_object('balance',v_balance,'duplicate',false);
+end;
+$$;
+revoke all on function public.cpgist_credit_admin_adjust(uuid,integer,text,text) from public, anon;
+grant execute on function public.cpgist_credit_admin_adjust(uuid,integer,text,text) to authenticated;
