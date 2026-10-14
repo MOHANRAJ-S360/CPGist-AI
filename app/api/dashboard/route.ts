@@ -53,7 +53,7 @@ export async function GET(){
   // Pull only the latest 26 source periods, but paginate each table because
   // Supabase Free's REST API caps each response at 1,000 rows.
   const [brandRows,categoryRows,retailerRows,brands,retailers]=await Promise.all([
-   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual&is_actual=eq.true&week_ending=lte."+latestWeek+"&order=week_ending.asc,brand_id.asc"),
+   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual&is_actual=eq.true&week_ending=gte."+cutoff+"&week_ending=lte."+latestWeek+"&order=week_ending.asc,brand_id.asc"),
    getPaged("cpgist_category_weekly?select=category,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,category.asc"),
    getPaged("cpgist_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,retailer_id.asc"),
    get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000"),
