@@ -62,7 +62,7 @@ export default function AdminCreditsPage() {
           <p className="muted">Proposed launch defaults: 10 welcome credits and 1 credit per AI Analyst question. No expiry is configured.</p>
           <div className="form-grid">
             <label>Welcome credits<input type="number" min="0" max="100000" required value={settings.welcome_credits} onChange={e=>setSettings({...settings,welcome_credits:Number(e.target.value)})}/></label>
-            <label>AI Analyst question cost<input type="number" min="0" max="100000" required value={settings.ai_analyst_question_cost} onChange={e=>setSettings({...settings,ai_analyst_question_cost:Number(e.target.value)})}/></label>
+            <label>AI Analyst question cost<input type="number" min="1" max="100000" required value={settings.ai_analyst_question_cost} onChange={e=>setSettings({...settings,ai_analyst_question_cost:Number(e.target.value)})}/></label>
           </div>
           <label style={{display:"flex",gap:10,alignItems:"center",margin:"14px 0"}}><input type="checkbox" checked={settings.welcome_grant_enabled} onChange={e=>setSettings({...settings,welcome_grant_enabled:e.target.checked})}/> Enable one-time welcome grants for new accounts</label>
           <button className="button primary" disabled={saving}><Save size={15}/> Save settings</button>
