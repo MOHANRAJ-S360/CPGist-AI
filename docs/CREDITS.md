@@ -1,17 +1,17 @@
 # CPGist credit system
 
 ## Initial policy (proposed defaults)
-- Welcome allowance: 10 credits per new Supabase account, once.
+- Welcome allowance: configurable; currently set to 0 and disabled until the business approves an amount. Grant only after Supabase confirms the email, once per eligible account.
 - AI Analyst question: 1 credit per request (admin can configure a positive integer cost).
 - Expiration: none configured.
 - Ordinary navigation, dashboards, reports already generated, and credit history are not metered.
 - Failed AI-provider/analysis requests refund their reserved credits.
-- Checkout, purchased packs, subscriptions, and recurring grants are not active.
+- Checkout, purchased packs, subscriptions, and recurring grants are not active. Do not collect payments until the provider, products, prices, and required configuration are approved.
 
-The settings are stored in `public.cpgist_credit_settings`, not in browser code. An administrator can use `/admin/credits` after the Supabase Auth user's **app_metadata** includes `{ "role": "admin" }`. Do not put admin privileges in user_metadata. If the role was just set, sign out/in to refresh the JWT.
+The settings are stored in `public.cpgist_credit_settings`, not in browser code. The current safe default is `welcome_credits = 0` and `welcome_grant_enabled = false`; configure and enable only after the welcome amount is approved. An administrator can use `/admin/credits` after the Supabase Auth user's **app_metadata** includes `{ "role": "admin" }`. Do not put admin privileges in user_metadata. If the role was just set, sign out/in to refresh the JWT.
 
 ## Database rollout
-Apply migrations `supabase/migrations/20261015090000_cpgist_credit_ledger.sql` then `supabase/migrations/20261015093000_harden_credit_ledger_grants.sql`, then `supabase/migrations/20261015100000_credit_operation_history.sql`, then `supabase/migrations/20261015110000_user_workspace_provisioning.sql`, then `supabase/migrations/20261015120000_scope_experiments.sql`, then `supabase/migrations/20261015130000_restrict_anon_rpc_execution.sql`, then `supabase/migrations/20261015140000_restrict_public_view_access.sql`, then `supabase/migrations/20261015150000_admin_only_global_dataset_rpcs.sql`, and finally `supabase/migrations/20261015160000_require_positive_ai_cost.sql` to the existing Supabase project before promoting the application code. The second migration removes default PUBLIC/anon grants and leaves authenticated users read-only access to their own account and ledger rows. It creates the ledger, accounts, settings, atomic RPC functions and the one-time signup trigger. Existing accounts are provisioned with a zero balance; the migration does not silently award them a welcome grant. An admin can add a reasoned adjustment.
+Apply migrations `supabase/migrations/20261015090000_cpgist_credit_ledger.sql` then `supabase/migrations/20261015093000_harden_credit_ledger_grants.sql`, then `supabase/migrations/20261015100000_credit_operation_history.sql`, then `supabase/migrations/20261015110000_user_workspace_provisioning.sql`, then `supabase/migrations/20261015120000_scope_experiments.sql`, then `supabase/migrations/20261015130000_restrict_anon_rpc_execution.sql`, then `supabase/migrations/20261015140000_restrict_public_view_access.sql`, then `supabase/migrations/20261015150000_admin_only_global_dataset_rpcs.sql`, and finally `supabase/migrations/20261015160000_require_positive_ai_cost.sql` to the existing Supabase project before promoting the application code. The second migration removes default PUBLIC/anon grants and leaves authenticated users read-only access to their own account and ledger rows. It creates the ledger, accounts, settings, atomic RPC functions and the one-time verified-email welcome trigger. The follow-up migration `20261015170000_email_verified_welcome_credits.sql` changes the trigger to wait for `auth.users.email_confirmed_at` and disables the unapproved welcome amount. Existing accounts are provisioned with a zero balance; the migration does not silently award them a welcome grant. An admin can add a reasoned adjustment.
 
 ## Endpoints
 - `GET /api/credits`: current authenticated user's balance and last 100 ledger entries.
@@ -21,7 +21,7 @@ Apply migrations `supabase/migrations/20261015090000_cpgist_credit_ledger.sql` t
 All credit RPCs derive identity from the verified Supabase JWT. Ledger writes and balances are not client-editable. Reservation is serialized by locking the account row and each request includes an idempotency key.
 
 ## Website-to-app authentication
-The existing marketing site is `https://cpgist-website.vercel.app`. Its Launch App / Create account CTAs send visitors to `https://cpgistai.vercel.app`, where all signup and sign-in is handled by the same Supabase Auth project; the marketing site does not maintain a second password/session system. `NEXT_PUBLIC_MARKETING_SITE_URL` is configured for the workspace return link. The browser client now uses PKCE so OAuth returns a one-time code rather than access tokens in a URL. Supabase Auth URL Configuration must allow `https://cpgistai.vercel.app/dashboard` and `https://cpgistai.vercel.app/reset-password` (plus any required local preview redirects).
+The intended direction is company website → existing app sign-in/create-account → workspace. The marketing website CTA currently links to `https://cpgistai.vercel.app`, where the existing Supabase Auth project handles signup/sign-in; the marketing site does not maintain a second password/session system. The app should not make a return link to the company website the primary integration. The user supplied `https://cpgist.vercel.app/` as the company site, but current Vercel project-domain records show `https://cpgist-website.vercel.app/` for the marketing project and `https://cpgistai.vercel.app/` for the app. Do not change domains until this discrepancy is resolved. The browser client uses PKCE. Supabase Auth URL Configuration must allow the actual app dashboard and password-reset URLs.
 
 
 ## Protected API routes
