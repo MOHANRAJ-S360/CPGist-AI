@@ -1166,7 +1166,7 @@ export async function POST(req: Request) {
     }
 
     if (!response.ok) {
-      await callUsageRpc(token, "release");
+      await callUsageRpc(token, "release", usageReservationId);
       usageReserved = false;
       return NextResponse.json(
         { error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status },
