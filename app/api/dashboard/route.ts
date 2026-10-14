@@ -45,7 +45,7 @@ export async function GET(){
 
   // Find the actual latest completed source week first. This keeps the
   // dashboard aligned to the uploaded dataset rather than a hard-coded year.
-  const latestRow:any[]=await get("cpgist_brand_weekly?select=week_ending&order=week_ending.desc&limit=1");
+  const latestRow:any[]=await get("cpgist_brand_weekly?select=week_ending&is_actual=eq.true&order=week_ending.desc&limit=1");
   const latestWeek=String(latestRow?.[0]?.week_ending||"");
   if(!latestWeek)throw new Error("CPGist Free Dataset has no weekly observations.");
   const cutoff=isoWeeksBefore(latestWeek,25);
@@ -53,7 +53,7 @@ export async function GET(){
   // Pull only the latest 26 source periods, but paginate each table because
   // Supabase Free's REST API caps each response at 1,000 rows.
   const [brandRows,categoryRows,retailerRows,brands,retailers]=await Promise.all([
-   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual&week_ending=gte."+cutoff+"&order=week_ending.asc,brand_id.asc"),
+   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual&is_actual=eq.true&week_ending=lte."+latestWeek+"&order=week_ending.asc,brand_id.asc"),
    getPaged("cpgist_category_weekly?select=category,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,category.asc"),
    getPaged("cpgist_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,retailer_id.asc"),
    get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000"),
