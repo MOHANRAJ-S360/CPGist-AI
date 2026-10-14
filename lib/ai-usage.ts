@@ -7,7 +7,7 @@ function supabaseConfig() {
   return { url: url.replace(/\/$/, ""), key };
 }
 
-export async function callUsageRpc(token: string, name: "reserve" | "complete" | "release" | "status"): Promise<UsageState> {
+export async function callUsageRpc(token: string, name: "reserve" | "complete" | "release" | "status", reservationId?: string): Promise<UsageState> {
   if (!token) throw new Error("Authentication required.");
   const { url, key } = supabaseConfig();
   const response = await fetch(`${url}/rest/v1/rpc/cpgist_ai_usage_${name}`, {
@@ -18,7 +18,7 @@ export async function callUsageRpc(token: string, name: "reserve" | "complete" |
       "Content-Type": "application/json",
       "Cache-Control": "no-store"
     },
-    body: "{}",
+    body: name === "complete" || name === "release" ? JSON.stringify({ p_reservation_id: reservationId }) : "{}",
     cache: "no-store"
   });
   if (!response.ok) {

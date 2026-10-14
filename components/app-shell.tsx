@@ -3,12 +3,13 @@
 import {ReactNode,useEffect,useState} from "react";
 import Link from "next/link";
 import {usePathname,useRouter} from "next/navigation";
-import {LayoutDashboard,BrainCircuit,Boxes,Store,Layers3,Globe2,Map,FileText,Workflow,TriangleAlert,Database,LogOut,ChevronRight,Search,DollarSign,BarChart3,FlaskConical,Target,Users,Megaphone,PackageCheck,Menu,X} from "lucide-react";
+import {LayoutDashboard,BrainCircuit,Boxes,Store,Layers3,Globe2,Map,FileText,Workflow,TriangleAlert,Database,LogOut,ChevronRight,Search,DollarSign,BarChart3,FlaskConical,Target,Users,Megaphone,PackageCheck,Menu,X,CreditCard} from "lucide-react";
 import {supabaseBrowser} from "../lib/supabase-browser";
 
 const nav=[
  {label:"Dashboard",href:"/dashboard",icon:LayoutDashboard},
  {label:"AI Analyst",href:"/ai-analyst",icon:BrainCircuit},
+ {label:"Plans & Billing",href:"/pricing",icon:CreditCard},
  {label:"Brands",href:"/brands",icon:Boxes},
  {label:"First Purchase Share",href:"/first-purchase-share",icon:Users},
  {label:"Retailers",href:"/retailers",icon:Store},

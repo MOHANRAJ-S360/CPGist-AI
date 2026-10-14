@@ -1080,6 +1080,7 @@ async function collectEvidence(question: string, brandId: string | undefined, to
 export async function POST(req: Request) {
   let usageToken = "";
   let usageReserved = false;
+  let usageReservationId = "";
   try {
     const body = await req.json();
     const key = process.env.GROQ_API_KEY;
@@ -1092,12 +1093,14 @@ export async function POST(req: Request) {
     const usage = await callUsageRpc(token, "reserve");
     if (!usage.allowed) {
       return NextResponse.json({
-        error: "FREE_LIMIT_REACHED",
-        message: "You've used all 3 free AI analyses on this account. Upgrade to continue.",
+        error: "AI_LIMIT_REACHED",
+        message: "You have reached the AI usage limit for your current plan. Upgrade or wait for your plan monthly reset.",
         usage: { completed: usage.completed, limit: usage.limit, remaining: 0 },
         upgradeRequired: true
       }, { status: 402 });
     }
+    usageReservationId = String((usage as any).reservationId || "");
+    if (!usageReservationId) throw new Error("AI usage reservation could not be verified. Please retry.");
     usageReserved = true;
 
     const capabilityCatalog = capabilityContext();
@@ -1163,7 +1166,7 @@ export async function POST(req: Request) {
     }
 
     if (!response.ok) {
-      await callUsageRpc(token, "release");
+      await callUsageRpc(token, "release", usageReservationId);
       usageReserved = false;
       return NextResponse.json(
         { error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status },
@@ -1281,7 +1284,7 @@ export async function POST(req: Request) {
       analyst.decisionTrail = analyst.decisionTrail.filter((x:any) => x.type !== "action");
     }
 
-    const completedUsage = await callUsageRpc(token, "complete");
+    const completedUsage = await callUsageRpc(token, "complete", usageReservationId);
     usageReserved = false;
     return NextResponse.json({
       analyst,
@@ -1290,7 +1293,7 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     if (usageReserved && usageToken) {
-      try { await callUsageRpc(usageToken, "release"); } catch (releaseError) {
+      try { await callUsageRpc(usageToken, "release", usageReservationId); } catch (releaseError) {
         console.error("Failed to release reserved AI usage after an unsuccessful analysis.");
       }
     }
