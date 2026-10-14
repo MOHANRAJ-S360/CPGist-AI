@@ -11,7 +11,7 @@
 The settings are stored in `public.cpgist_credit_settings`, not in browser code. An administrator can use `/admin/credits` after the Supabase Auth user's **app_metadata** includes `{ "role": "admin" }`. Do not put admin privileges in user_metadata. If the role was just set, sign out/in to refresh the JWT.
 
 ## Database rollout
-Apply migration `supabase/migrations/20261015090000_cpgist_credit_ledger.sql` to the existing Supabase project before deploying the application code. It creates the ledger, accounts, settings, atomic RPC functions and the one-time signup trigger. Existing accounts are provisioned with a zero balance; the migration does not silently award them a welcome grant. An admin can add a reasoned adjustment.
+Apply migrations `supabase/migrations/20261015090000_cpgist_credit_ledger.sql` and then `supabase/migrations/20261015093000_harden_credit_ledger_grants.sql` to the existing Supabase project before promoting the application code. The second migration removes default PUBLIC/anon grants and leaves authenticated users read-only access to their own account and ledger rows. It creates the ledger, accounts, settings, atomic RPC functions and the one-time signup trigger. Existing accounts are provisioned with a zero balance; the migration does not silently award them a welcome grant. An admin can add a reasoned adjustment.
 
 ## Endpoints
 - `GET /api/credits`: current authenticated user's balance and last 100 ledger entries.
