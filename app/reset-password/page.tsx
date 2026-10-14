@@ -20,12 +20,8 @@ export default function ResetPasswordPage() {
       try {
         const sb = supabaseBrowser();
         const params = new URLSearchParams(window.location.search);
-        const code = params.get("code");
         const tokenHash = params.get("token_hash");
-        if (code) {
-          const { error } = await sb.auth.exchangeCodeForSession(code);
-          if (error) throw error;
-        } else if (tokenHash) {
+        if (tokenHash) {
           const { error } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
           if (error) throw error;
         }
