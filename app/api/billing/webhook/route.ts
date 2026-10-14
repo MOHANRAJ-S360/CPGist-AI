@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { adminRest, toIsoFromEpoch, verifyWebhookSignature } from "../../../../../lib/razorpay-server";
+import { adminRest, toIsoFromEpoch, verifyWebhookSignature } from "../../../../lib/razorpay-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
