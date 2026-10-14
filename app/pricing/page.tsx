@@ -20,14 +20,14 @@ const plans = [
 
 export default function PricingPage() {
   const [busy, setBusy] = useState("");
-  const [checkoutEnabled, setCheckoutEnabled] = useState(false);
+  const [checkoutPlans, setCheckoutPlans] = useState({ pro: false, growth: false });
 
   useEffect(() => {
     let mounted = true;
     fetch("/api/billing/status", { cache: "no-store" })
       .then(response => response.ok ? response.json() : null)
-      .then(status => { if (mounted) setCheckoutEnabled(Boolean(status?.plans?.pro || status?.plans?.growth)); })
-      .catch(() => { if (mounted) setCheckoutEnabled(false); });
+      .then(status => { if (mounted) setCheckoutPlans({ pro: Boolean(status?.plans?.pro), growth: Boolean(status?.plans?.growth) }); })
+      .catch(() => { if (mounted) setCheckoutPlans({ pro: false, growth: false }); });
     return () => { mounted = false; };
   }, []);
   const [message, setMessage] = useState("");
@@ -113,8 +113,8 @@ export default function PricingPage() {
           {plan.key === "pro" && <p className="mt-2 text-xs text-slate-500">Approximately ₹2,500/month; INR amount and taxes depend on exchange rates and your configured plan.</p>}
           <p className="mt-4 min-h-12 text-sm leading-6 text-slate-600">{plan.note}</p>
           <ul className="my-6 flex-1 space-y-3 text-sm text-slate-700">{plan.features.map(item => <li key={item} className="flex gap-2"><span className="font-bold text-emerald-600">✓</span><span>{item}</span></li>)}</ul>
-          <button disabled={busy !== "" || plan.key === "free" || (plan.key !== "enterprise" && !checkoutEnabled)} onClick={() => void upgrade(plan.key)} className={"rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 " + (plan.featured ? "bg-indigo-700 text-white hover:bg-indigo-800" : "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50")}>
-            {busy === plan.key ? "Opening secure checkout…" : plan.key === "free" ? "Free tier included" : plan.key !== "enterprise" && !checkoutEnabled ? "Checkout disabled while testing" : plan.action}
+          <button disabled={busy !== "" || plan.key === "free" || (plan.key === "pro" && !checkoutPlans.pro) || (plan.key === "growth" && !checkoutPlans.growth)} onClick={() => void upgrade(plan.key)} className={"rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 " + (plan.featured ? "bg-indigo-700 text-white hover:bg-indigo-800" : "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50")}>
+            {busy === plan.key ? "Opening secure checkout…" : plan.key === "free" ? "Free tier included" : ((plan.key === "pro" && !checkoutPlans.pro) || (plan.key === "growth" && !checkoutPlans.growth)) ? "Checkout disabled while testing" : plan.action}
           </button>
         </section>)}
       </div>
