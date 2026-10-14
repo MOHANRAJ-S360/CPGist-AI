@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const globalEnabled = process.env.BILLING_CHECKOUT_ENABLED === "true";
+  const globalEnabled = process.env.BILLING_CHECKOUT_ENABLED === "true" && process.env.BILLING_TESTS_PASSED === "true";
   const sharedReady = Boolean(
     process.env.RAZORPAY_KEY_ID?.trim() &&
     process.env.RAZORPAY_KEY_SECRET?.trim() &&
