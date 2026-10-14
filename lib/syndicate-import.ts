@@ -132,10 +132,16 @@ function entryExact(zip:Record<string,Uint8Array>,...names:string[]){
   return k?zip[k]:null;
 }
 
+async function runAdminDatasetRpc(sb:SupabaseClient,action:"reset"|"rebuild_competitor_weekly"){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session)throw new Error("Sign in again before importing data.");
+  const response=await fetch("/api/import/admin-rpc",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({action}),cache:"no-store"});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||"Only an administrator can replace or rebuild the shared dataset.");
+}
 async function clearCompactDataset(sb:SupabaseClient,progress:Progress){
   // One server-side TRUNCATE replaces 23 sequential browser DELETE requests.
-  const {error}=await sb.rpc("cpgist_reset_import_dataset");
-  if(error)throw new Error("Could not reset CPGist dataset: "+error.message);
+  await runAdminDatasetRpc(sb,"reset");
   progress("Cleared previous compact dataset in one server-side operation; loading the new archive from scratch…");
 }
 
@@ -350,8 +356,7 @@ async function importCompactDatasetZip(sb:SupabaseClient,zip:Record<string,Uint8
     },progress);
     if(competitorRows.length){
       await insertBatches(sb,"cpgist_competitor_price_sales",competitorRows,progress);
-      const {error}=await sb.rpc("cpgist_rebuild_competitor_weekly");
-      if(error)throw new Error("Could not rebuild competitor weekly relationships: "+error.message);
+      await runAdminDatasetRpc(sb,"rebuild_competitor_weekly");
       progress("Linked competitor price/sales to brand relationships and rebuilt competitor weekly benchmarks.");
     }
   } else if(competitorBytes) {
