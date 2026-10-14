@@ -44,7 +44,9 @@ export default function PricingPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to start checkout.");
-      const checkout = new window.Razorpay!({
+      const RazorpayCheckout = window.Razorpay;
+      if (!RazorpayCheckout) throw new Error("Secure checkout is unavailable. Please refresh and try again.");
+      const checkout = new RazorpayCheckout({
         key: data.keyId,
         subscription_id: data.subscriptionId,
         name: "CPGist",
