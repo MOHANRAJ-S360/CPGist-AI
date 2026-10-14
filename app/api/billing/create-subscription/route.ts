@@ -19,6 +19,17 @@ export async function POST(req: Request) {
     if (!Number.isInteger(plan.monthlyAiLimit) || plan.monthlyAiLimit < 1) {
       return NextResponse.json({ error: "The monthly AI usage limit for this plan must be configured before checkout can be enabled." }, { status: 503 });
     }
+    const existing = await adminRest(
+      "cpgist_ai_subscriptions?select=razorpay_subscription_id,status&user_id=eq." +
+      encodeURIComponent(user.id) + "&status=in.(created,authenticated,pending,active)&limit=1",
+      "GET"
+    );
+    if (Array.isArray(existing) && existing.length) {
+      return NextResponse.json({
+        error: "An existing subscription is already active or awaiting confirmation. Check your billing status before starting another checkout."
+      }, { status: 409 });
+    }
+
     const cfg = razorpayConfig();
     const subscription = await razorpayRequest("subscriptions", "POST", {
       plan_id: plan.planId,
