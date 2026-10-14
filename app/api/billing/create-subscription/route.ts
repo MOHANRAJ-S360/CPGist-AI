@@ -5,6 +5,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  // Fail closed until configuration and end-to-end test checklist are explicitly completed.
+  if (process.env.BILLING_CHECKOUT_ENABLED !== "true") {
+    return NextResponse.json({ error: "Paid checkout is not enabled yet. Billing is still being configured and tested." }, { status: 503 });
+  }
   try {
     const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return NextResponse.json({ error: "Please sign in before upgrading." }, { status: 401 });
