@@ -47,7 +47,7 @@ export async function PATCH(req: Request) {
     patch.welcome_grant_enabled = body.welcome_grant_enabled;
   }
   if (body.ai_analyst_question_cost !== undefined) {
-    if (!Number.isInteger(body.ai_analyst_question_cost) || body.ai_analyst_question_cost < 0 || body.ai_analyst_question_cost > 100000) return NextResponse.json({ error: "ai_analyst_question_cost must be an integer from 0 to 100000." }, { status: 400 });
+    if (!Number.isInteger(body.ai_analyst_question_cost) || body.ai_analyst_question_cost < 1 || body.ai_analyst_question_cost > 100000) return NextResponse.json({ error: "ai_analyst_question_cost must be an integer from 1 to 100000." }, { status: 400 });
     patch.ai_analyst_question_cost = body.ai_analyst_question_cost;
   }
   if (!Object.keys(patch).length) return NextResponse.json({ error: "No supported settings were supplied." }, { status: 400 });
