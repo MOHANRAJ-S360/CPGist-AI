@@ -9,7 +9,8 @@ type Transaction = { id: number; transaction_type: string; amount: number; balan
 type Operation = { id: string; operation_key: string; credits: number; status: string; created_at: string; completed_at?: string | null; refunded_at?: string | null; failure_reason?: string | null };
 export default function CreditsPage() {
   const [balance, setBalance] = useState<any>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);\n  const [operations, setOperations] = useState<Operation[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [operations, setOperations] = useState<Operation[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   async function load() {
