@@ -14,7 +14,7 @@ async function supa(path:string,method:"GET"|"POST"|"PATCH",body?:unknown,extra:
 async function entity(table:string,organization_id:string,name:string){if(!name)return null;const existing=await supa(table+"?organization_id=eq."+encodeURIComponent(organization_id)+"&name=eq."+encodeURIComponent(name)+"&select=id","GET");if(existing[0])return existing[0].id;const made=await supa(table,"POST",{organization_id,name});return made[0]?.id??null;}
 export async function POST(req:Request){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
  const form=await req.formData(),file=form.get("file");if(!(file instanceof File))return NextResponse.json({error:"Upload CSV or XLSX."},{status:400});
- const org=String(form.get("organizationId")||"");if(!org)return NextResponse.json({error:"organizationId is required for a production ingestion."},{status:400});
+ const org=String(form.get("organizationId")||"");if(!org)return NextResponse.json({error:"organizationId is required for a production ingestion."},{status:400});try{const memberships=await get("organization_members?organization_id=eq."+encodeURIComponent(org)+"&user_id=eq."+encodeURIComponent(authResult.user.id)+"&select=role&limit=1");if(!Array.isArray(memberships)||memberships.length===0)return NextResponse.json({error:"You do not have access to this organization."},{status:403});}catch{return NextResponse.json({error:"Organization access could not be verified."},{status:403});}
  try{
   const rows=await rowsFrom(file);const headers=rows.length?Object.keys(rows[0]):[];const map=mapping(headers);const src=(k:string)=>map.find(x=>x.canonical===k)?.source;
   const missing=["period","sales_value","units"].filter(k=>!src(k));let rejected=0;const facts=[];
