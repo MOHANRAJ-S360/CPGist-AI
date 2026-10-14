@@ -1093,8 +1093,8 @@ export async function POST(req: Request) {
     const usage = await callUsageRpc(token, "reserve");
     if (!usage.allowed) {
       return NextResponse.json({
-        error: "FREE_LIMIT_REACHED",
-        message: "You've used all 3 free AI analyses on this account. Upgrade to continue.",
+        error: "AI_LIMIT_REACHED",
+        message: "You have reached the AI usage limit for your current plan. Upgrade or wait for your plan monthly reset.",
         usage: { completed: usage.completed, limit: usage.limit, remaining: 0 },
         upgradeRequired: true
       }, { status: 402 });
