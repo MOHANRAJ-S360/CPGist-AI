@@ -31,7 +31,7 @@ Status: proposed product requirements and implementation plan. This document dis
 ### Phase 0 — audit and stabilize
 1. Inspect current repositories, Supabase Auth/database/migrations, Vercel projects/domains/deployments.
 2. Preserve all existing app and website features and data.
-3. Make the company website the public entry point; keep its CTAs routed into the existing app. Do not change domains. The user-confirmed canonical website URL is https://cpgist.vercel.app/ and is hosted in the user's separate Vercel account. It is not visible to the currently connected team. The other account's accessible alias https://cpgist-website.vercel.app/ is a separate visible project and is not a replacement for the original site. Verify canonical domain assignment and production health by signing into the original account.
+3. Make the company website the public entry point; keep its CTAs routed into the existing app. Do not change domains. The user-confirmed canonical website URL is https://cpgist.vercel.app/ and is hosted in the user's separate Vercel account. It is not visible to the currently connected team. Verify canonical domain assignment and production health by signing into the original account.
 
 ### Phase 1 — verified one-time welcome grants
 1. Create a zero-balance credit account when a Supabase user is created.
