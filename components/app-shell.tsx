@@ -38,14 +38,10 @@ export function AppShell({title,subtitle,children}:{title:string;subtitle?:strin
  async function logout(){
   if(signingOut||importBusy)return;
   setSigningOut(true);
-  const sb=supabaseBrowser();
   try{
-    // CPGist dataset is a temporary workspace. Remove the imported dataset
-    // before ending the local session so the next signed-in session starts empty.
-    const {error}=await sb.rpc("cpgist_reset_import_dataset");
-    if(error) console.error("Dataset cleanup before sign out failed:",error);
+    // A user's sign-out must never truncate the shared dataset for other accounts.
+    await supabaseBrowser().auth.signOut({scope:"local"});
   }finally{
-    await sb.auth.signOut({scope:"local"});
     router.replace("/");
   }
 }
