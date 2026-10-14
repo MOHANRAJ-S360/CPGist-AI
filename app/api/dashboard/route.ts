@@ -19,7 +19,8 @@ async function getPaged(path:string,pageSize=1000,maxPages=100){
   const joiner=path.includes("?")?"&":"?";
   const rows:any[]=await get(path+joiner+"limit="+pageSize+"&offset="+offset);
   out.push(...rows);
-  if(rows.length<pageSize)break;
+  if(rows.length<pageSize)return out;
+  if(page===maxPages-1)throw new Error("Dashboard query exceeded the safe pagination limit; narrow the dataset window or increase the reviewed limit.");
  }
  return out;
 }
@@ -33,8 +34,28 @@ function isoWeeksBefore(iso:string,weeks:number){
  return d.toISOString().slice(0,10);
 }
 
-export async function GET(){
+export async function GET(request:Request){
  try{
+  // The service-role key is only for server-side database reads. Never serve
+  // those results until Supabase Auth has validated the caller's access token.
+  const {u}=base();
+  const publishableKey=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const authHeader=request.headers.get("authorization")||"";
+  const token=authHeader.match(/^Bearer\\s+(.+)$/i)?.[1];
+  if(!u||!publishableKey){
+   return NextResponse.json({error:"Authentication service is not configured.",code:"AUTH_CONFIG_MISSING"},{status:503});
+  }
+  if(!token){
+   return NextResponse.json({error:"Sign in to view dashboard data.",code:"AUTH_REQUIRED"},{status:401});
+  }
+  const authCheck=await fetch(u+"/auth/v1/user",{
+   headers:{apikey:publishableKey,Authorization:"Bearer "+token},
+   cache:"no-store"
+  });
+  if(!authCheck.ok){
+   return NextResponse.json({error:"Your session is invalid or expired. Please sign in again.",code:"AUTH_REQUIRED"},{status:401});
+  }
+
   const compact:any[]=await get("cpgist_brands?select=id&limit=1");
   if(!compact.length){
    return NextResponse.json({
@@ -53,17 +74,25 @@ export async function GET(){
   // Pull only the latest 26 source periods, but paginate each table because
   // Supabase Free's REST API caps each response at 1,000 rows.
   const [brandRows,categoryRows,retailerRows,brands,retailers]=await Promise.all([
-   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual&is_actual=eq.true&week_ending=lte."+latestWeek+"&order=week_ending.asc,brand_id.asc"),
-   getPaged("cpgist_category_weekly?select=category,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,category.asc"),
-   getPaged("cpgist_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution&week_ending=gte."+cutoff+"&order=week_ending.asc,retailer_id.asc"),
+   getPaged("cpgist_brand_weekly?select=brand_id,category,week_ending,sales,units,distribution,avg_price,promo_rate,is_actual&is_actual=eq.true&week_ending=gte."+cutoff+"&week_ending=lte."+latestWeek+"&order=week_ending.asc,brand_id.asc"),
+   getPaged("cpgist_category_weekly?select=category,week_ending,sales,units,distribution,is_actual&is_actual=eq.true&week_ending=gte."+cutoff+"&week_ending=lte."+latestWeek+"&order=week_ending.asc,category.asc"),
+   getPaged("cpgist_retailer_weekly?select=retailer_id,week_ending,sales,units,distribution,is_actual&is_actual=eq.true&week_ending=gte."+cutoff+"&week_ending=lte."+latestWeek+"&order=week_ending.asc,retailer_id.asc"),
    get("cpgist_brands?select=id,name,category,parent_company,home_regions,portfolio&order=name&limit=5000"),
    get("cpgist_retailers?select=id,name,channel,region,retailer_group,total_stores&order=name&limit=5000")
   ]);
 
   const periods:string[]=[...new Set<string>((brandRows as any[]).map((r:any)=>String(r.week_ending)).filter(Boolean))].sort();
-  if(periods.length<13){
-   throw new Error("CPGist Free Dataset returned fewer than 13 weekly periods for the dashboard window. The uploaded dataset should contain at least 13 completed weeks.");
+  if(periods.length<26){
+   return NextResponse.json({
+    error:"Only "+periods.length+" observed weekly periods are available through "+latestWeek+". At least 26 observed weekly periods are required to compare the latest 13 weeks with the prior 13 weeks. Import a newer validated dataset or restore the missing observed periods; projected and unknown records are excluded.",
+    code:"INSUFFICIENT_OBSERVED_HISTORY",
+    latestCompletedWeek:latestWeek,
+    observedPeriodsAvailable:periods.length,
+    requiredObservedPeriods:26
+   },{status:503});
   }
+  const daysSinceLatestObserved=Math.max(0,Math.floor((Date.now()-new Date(latestWeek+"T00:00:00Z").getTime())/86400000));
+  const freshnessStatus=daysSinceLatestObserved>56?"stale":"recent";
 
   const latestPeriods=periods.slice(-13);
   const priorPeriods=periods.slice(-26,-13);
@@ -165,8 +194,10 @@ export async function GET(){
    compactDataset:true,
    datasetName:"CPGist Free Dataset",
    latestCompletedWeek:latestWeek,
-   periodStart:latestPeriods[0],
-   periodEnd:latestPeriods.at(-1),
+   daysSinceLatestObserved,
+   freshnessStatus,
+   periodStart:periods[0],
+   periodEnd:periods.at(-1),
    periods,
    latestWindow:latestPeriods,
    priorWindow:priorPeriods,
