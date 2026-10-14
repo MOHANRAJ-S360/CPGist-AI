@@ -6,8 +6,9 @@ Audit date: 2026-10-14. Read-only inspection only; no production settings, DNS, 
 
 - Company website repository: `MOHANRAJ-S360/CPGist`
 - AI application repository: `MOHANRAJ-S360/CPGist-AI`
-- Existing Vercel team: `papiltoons-2843's projects` (`team_Jol9cUw96NgEZWCLqXWJoLUH`), Hobby plan.
-- Website Vercel project: `cpgist-website` (`prj_SuVwWfw3FRSMYqCmJX7HE6lf4NQM`), connected to GitHub repo `MOHANRAJ-S360/CPGist`.
+- Canonical company website `https://cpgist.vercel.app/` is in a different Vercel account from the currently connected team, as confirmed by the site owner. This is the original company website and must be preserved.
+- Current connected Vercel team: `papiltoons-2843's projects` (`team_Jol9cUw96NgEZWCLqXWJoLUH`), Hobby plan. It does not have access to the original website's Vercel project/account.
+- A separate website project `cpgist-website` (`prj_SuVwWfw3FRSMYqCmJX7HE6lf4NQM`) is visible in the connected team and linked to `MOHANRAJ-S360/CPGist`. It has an accessible alias but is not proof of ownership or deployment control for the original canonical website.
 - App Vercel project: `cpgist` (`prj_5B6Yz4yRF1oN2S5MuZba7DLKIqPX`), connected to GitHub repo `MOHANRAJ-S360/CPGist-AI`.
 
 ## Domain assignments and production deployments
@@ -15,15 +16,15 @@ Audit date: 2026-10-14. Read-only inspection only; no production settings, DNS, 
 | Role | Observed result |
 |---|---|
 | Canonical company URL, confirmed by product owner | `https://cpgist.vercel.app/` |
-| Is canonical URL assigned to the connected website project? | Not in the project's assigned domain list. Project-domain lookup returned 404. |
-| Can connected team inspect canonical domain ownership? | No. Account-level domain lookup returned 403 Forbidden ("You don't have access"). This is an access boundary, not proof the URL is unowned or offline. |
+| Is canonical URL assigned to the connected website project? | No; the canonical website is hosted under the owner's different Vercel account, which is outside the current team's visibility. |
+| Can connected team inspect canonical domain configuration? | No. Account-level lookup returns 403 Forbidden and project-domain lookup returns 404 because the original website is in a different account. This is an access limitation, not a reason to move or replace the site. |
 | Accessible website alias | `https://cpgist-website.vercel.app/`; assigned and verified on `cpgist-website`. Live Vercel fetch returned HTTP 200 and CPGist company-site HTML. |
 | Website production deployment | READY, `dpl_2EK1cgHbDQvSSr6sNzDykYKNHzpP`, commit `d8dff92f0536d0c4b4c63fed946f64168360e104`, branch `main`, repository `MOHANRAJ-S360/CPGist`. |
 | Intended app URL | `https://cpgistai.vercel.app/`; assigned and verified on existing `cpgist` project. |
 | App production deployment | READY, `dpl_5b7C3zRLaL4qrmyurvkU7YcPW3iH`, commit `3e283400d5f5883fc9d707836abcabe064ff603b`, branch `main`, repository `MOHANRAJ-S360/CPGist-AI`. |
 | Live app response | Vercel fetch returned HTTP 200 for the login route and reset-password route. |
 
-The Vercel team context lookup succeeded, and both projects' Git connections are visible. Re-authentication to the same team did not grant access to `cpgist.vercel.app`. No domain was added, transferred, reassigned, or changed.
+The Vercel team context lookup succeeded for the app account, but it cannot inspect the separate account hosting the original website. The owner has confirmed this account separation. No domain was added, transferred, reassigned, or changed. Keep `https://cpgist.vercel.app/` as canonical.
 
 ## Website-to-app navigation smoke check
 
