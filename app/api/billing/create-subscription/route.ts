@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   // Fail closed until configuration and end-to-end test checklist are explicitly completed.
-  if (process.env.BILLING_CHECKOUT_ENABLED !== "true") {
+  if (process.env.BILLING_CHECKOUT_ENABLED !== "true" || process.env.BILLING_TESTS_PASSED !== "true") {
     return NextResponse.json({ error: "Paid checkout is not enabled yet. Billing is still being configured and tested." }, { status: 503 });
   }
   try {
