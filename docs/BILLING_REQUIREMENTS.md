@@ -13,8 +13,8 @@ Status: proposed product requirements and implementation plan. This document dis
 
 | Requirement | Existing state | Gap / action |
 |---|---|---|
-| Existing company site and app preserved | Two existing repositories and Vercel projects were found. | Preserve both; reconcile the user-provided https://cpgist.vercel.app/ with currently observed Vercel domain records before changing any URL. |
-| Shared authentication | The app uses Supabase Auth; the marketing site routes sign-up/sign-in visitors into the existing app. | Keep one identity system. Verify Supabase redirect allow-list and actual email/OAuth flows in a browser. |
+| Existing company site and app preserved | Two existing repositories and Vercel projects were found. | The user has confirmed https://cpgist.vercel.app/ as the canonical company URL. However, the connected Vercel team cannot verify/access that domain (403 Forbidden; project-domain lookups 404) and it is absent from both project domain lists. Do not change it; manually identify the Vercel account/project currently serving it. |
+| Shared authentication | The app uses Supabase Auth; the marketing site routes sign-up/sign-in visitors into the existing app. | Keep one identity system. Browser client uses Supabase PKCE; signup and password reset redirect to the app. Supabase redirect allow-list and end-to-end email/OAuth flows remain unverified because the Auth URL Configuration is not exposed by the connected Supabase tools. |
 | Welcome credits only after email verification | Previous database trigger granted on auth-user insert. | Replace with an auth.users insert/update trigger that grants only when email_confirmed_at is present, and only once. |
 | Welcome allowance configurable | Admin settings already expose welcome_credits and welcome_grant_enabled. | Amount is undecided. Safe state is zero credits and disabled until approved; do not assume the previous value of 10 was approved. |
 | Never automatically reset welcome credits | A one-time welcome_granted flag and unique welcome:<user_id> ledger key exist. | Preserve permanent grant idempotency; never regrant because of login, refresh, billing renewal, or profile updates. |
@@ -31,7 +31,7 @@ Status: proposed product requirements and implementation plan. This document dis
 ### Phase 0 — audit and stabilize
 1. Inspect current repositories, Supabase Auth/database/migrations, Vercel projects/domains/deployments.
 2. Preserve all existing app and website features and data.
-3. Make the company website the public entry point; keep its CTAs routed into the existing app. Do not change domains until the cpgist.vercel.app discrepancy is resolved.
+3. Make the company website the public entry point; keep its CTAs routed into the existing app. Do not change domains. The user-confirmed canonical website URL is https://cpgist.vercel.app/, but it is not assigned to either project visible to the current Vercel team. The accessible existing website alias https://cpgist-website.vercel.app/ serves HTTP 200; the canonical domain's live response could not be verified.
 
 ### Phase 1 — verified one-time welcome grants
 1. Create a zero-balance credit account when a Supabase user is created.
@@ -66,9 +66,17 @@ Status: proposed product requirements and implementation plan. This document dis
 - Existing company website, app navigation, analytics, and user data remain intact.
 - Production deployment is verified independently; a source commit or PR is not proof of deployment.
 
+## Audit blockers and manual verification
+
+- The connected Vercel team can inspect the existing projects and deployments, but Vercel returns 403 for `cpgist.vercel.app` and 404 for project-domain lookups. In Vercel Dashboard, identify the account/project that owns the canonical domain and inspect its production deployment/aliases. Do not transfer or reassign it as part of this audit.
+- The accessible company-site alias `https://cpgist-website.vercel.app/` returns HTTP 200 and links to the app. The canonical URL itself could not be fetched through the connected Vercel deployment access tool; external fetch also returned a cache miss, so its live status remains unverified.
+- The app domain `https://cpgistai.vercel.app/` returns HTTP 200 and is assigned/verified to the existing app project. Its production deployment is READY at commit `3e283400d5f5883fc9d707836abcabe064ff603b`.
+- The production app bundle currently does not include the `?mode=signup` query handling, while the company-site CTA points to `/?mode=signup`. The user can still manually switch to Create account; the PR source should make the CTA open signup directly after it is reviewed and deployed.
+- The connected Supabase tool exposes project/database operations but not Auth URL Configuration. In Supabase Dashboard → Authentication → URL Configuration, manually confirm Site URL is the intended app URL and allowed redirects include `https://cpgistai.vercel.app/dashboard` and `https://cpgistai.vercel.app/reset-password`. Also test an email-verification link from a newly created test account without altering production user data. No test signup was submitted.
+
 ## Decisions still required
 
-- Confirm the canonical company website URL (the supplied https://cpgist.vercel.app/ differs from the currently inspected Vercel project domains).
+- Verify which Vercel account/project owns and serves the confirmed canonical URL https://cpgist.vercel.app/; current connected team access is denied for that domain.
 - Welcome-credit amount and when welcome grants should be enabled.
 - Payment provider and merchant account.
 - Credit-pack SKUs, prices, currency, included credits, and refund/chargeback policy.
