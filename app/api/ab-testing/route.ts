@@ -32,7 +32,7 @@ export async function GET(req:NextRequest){const authResult=await requireSupabas
     const p=req.nextUrl.searchParams;
     if(p.get("mode")==="experiments"){
       const brandId=p.get("brand_id")||"";
-      const where=brandId?"?brand_id=eq."+enc(brandId)+"&order=created_at.desc&limit=200":"?order=created_at.desc&limit=200";
+      const owner="created_by=eq."+enc(authResult.user.id);const where=brandId?"?"+owner+"&brand_id=eq."+enc(brandId)+"&order=created_at.desc&limit=200":"?"+owner+"&order=created_at.desc&limit=200";
       return NextResponse.json({experiments:await get("cpgist_experiments"+where)});
     }
     const brandId=p.get("brand_id")||"";
@@ -101,6 +101,7 @@ export async function POST(req:NextRequest){const authResult=await requireSupaba
     if(!u||!k) throw new Error("Supabase server environment is not configured.");
     if(!body?.experiment_id||!body?.brand_id) return NextResponse.json({error:"experiment_id and brand_id are required."},{status:400});
     const payload={
+      created_by:authResult.user.id,
       experiment_id:String(body.experiment_id),
       brand_id:Number(body.brand_id),
       category:body.category||null,
