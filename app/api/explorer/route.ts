@@ -1,4 +1,5 @@
 import {NextRequest,NextResponse} from "next/server";
+import {requireSupabaseUser} from "../../../lib/require-supabase-user";
 
 const base=()=>({u:process.env.NEXT_PUBLIC_SUPABASE_URL,k:process.env.SUPABASE_SERVICE_ROLE_KEY});
 async function get(path:string){
@@ -103,7 +104,7 @@ async function brandDetail(id:string,brand:any){
  return{entity:"brand",source:"cpgist_compact",brand,periods,latestWindow:latest,priorWindow:prior,metrics:{sales:a.sales,priorSales:b.sales,growth:pct(a.sales,b.sales),units:a.units,distribution:a.distribution,price:a.price,promoRate:a.promoRate,categorySales,categoryPriorSales,categoryGrowth,share:categorySales?a.sales/categorySales*100:null,priorShare,shareChangePts:(categorySales&&categoryPriorSales)?(a.sales/categorySales*100)-(b.sales/categoryPriorSales*100):null},advanced,provenance,weekly,products,retailers,categoryWeekly,competitorSignals,competitiveBenchmark}
 }
 
-export async function GET(req:NextRequest){
+export async function GET(req:NextRequest){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
  try{
   const p=req.nextUrl.searchParams,entity=p.get("entity")||"brand",q=(p.get("q")||"").trim(),regionFilter=(p.get("region")||"").trim(),id=p.get("id"),categoryFilter=(p.get("category")||"").trim(),subcategoryFilter=(p.get("subcategory")||"").trim(),limit=Math.min(5000,Math.max(1,Number(p.get("limit")||5000)||5000)),offset=Math.max(0,Number(p.get("offset")||0)||0);
   let compact=false;try{const x=await get("cpgist_brands?select=id&limit=1");compact=Array.isArray(x)&&x.length>0}catch{}

@@ -1080,23 +1080,31 @@ async function collectEvidence(question: string, brandId: string | undefined, to
 export async function POST(req: Request) {
   let usageToken = "";
   let usageReserved = false;
+  let usageIdempotencyKey = "";
   try {
     const body = await req.json();
     const key = process.env.GROQ_API_KEY;
     if (!key) return NextResponse.json({ error: "GROQ_API_KEY is not configured in Vercel Production." }, { status: 503 });
 
     const auth = req.headers.get("authorization") || "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    const token = auth.match(/^Bearer\s+(.+)$/i)?.[1] || "";
     if (!token) return NextResponse.json({ error: "Please sign in again before using AI Analyst." }, { status: 401 });
     usageToken = token;
-    const usage = await callUsageRpc(token, "reserve");
+    usageIdempotencyKey = req.headers.get("idempotency-key") || crypto.randomUUID();
+    const usage = await callUsageRpc(token, "reserve", usageIdempotencyKey);
     if (!usage.allowed) {
-      return NextResponse.json({
-        error: "FREE_LIMIT_REACHED",
-        message: "You've used all 3 free AI analyses on this account. Upgrade to continue.",
-        usage: { completed: usage.completed, limit: usage.limit, remaining: 0 },
-        upgradeRequired: true
-      }, { status: 402 });
+      if (usage.duplicate) {
+        return NextResponse.json({ error: "DUPLICATE_OPERATION", message: "This request was already processed. Refresh your balance before retrying.", usage }, { status: 409 });
+      }
+      if (usage.insufficient) {
+        return NextResponse.json({
+          error: "INSUFFICIENT_CREDITS",
+          message: "This AI Analyst question costs " + (usage.cost ?? 1) + " credit(s), but your balance is " + (usage.balance ?? 0) + ". Review your credit balance and usage history for access options.",
+          usage: { balance: usage.balance ?? 0, remaining: usage.remaining ?? 0, cost: usage.cost ?? 1, limit: usage.limit },
+          upgradeRequired: true
+        }, { status: 402 });
+      }
+      return NextResponse.json({ error: usage.code || "OPERATION_NOT_AVAILABLE", message: "This operation is not enabled in the current credit configuration." }, { status: 403 });
     }
     usageReserved = true;
 
@@ -1163,7 +1171,7 @@ export async function POST(req: Request) {
     }
 
     if (!response.ok) {
-      await callUsageRpc(token, "release");
+      await callUsageRpc(token, "release", usageIdempotencyKey);
       usageReserved = false;
       return NextResponse.json(
         { error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status },
@@ -1281,16 +1289,16 @@ export async function POST(req: Request) {
       analyst.decisionTrail = analyst.decisionTrail.filter((x:any) => x.type !== "action");
     }
 
-    const completedUsage = await callUsageRpc(token, "complete");
+    const completedUsage = await callUsageRpc(token, "complete", usageIdempotencyKey);
     usageReserved = false;
     return NextResponse.json({
       analyst,
-      usage: { completed: completedUsage.completed, limit: completedUsage.limit, remaining: completedUsage.remaining },
+      usage: { completed: completedUsage.completed, limit: completedUsage.limit, balance: completedUsage.balance ?? completedUsage.remaining, remaining: completedUsage.remaining, cost: usage.cost ?? 1 },
       verification: { performed: false, toolCount: evidence.length, mode: "deterministic-evidence + resilient-structured-model-call" }
     });
   } catch (error: any) {
     if (usageReserved && usageToken) {
-      try { await callUsageRpc(usageToken, "release"); } catch (releaseError) {
+      try { await callUsageRpc(usageToken, "release", usageIdempotencyKey); } catch (releaseError) {
         console.error("Failed to release reserved AI usage after an unsuccessful analysis.");
       }
     }

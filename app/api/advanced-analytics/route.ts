@@ -1,4 +1,5 @@
 import {NextRequest,NextResponse} from "next/server";
+import {requireSupabaseUser} from "../../../lib/require-supabase-user";
 import {getPromoLift,getSkuGrowth,getCategoryContext,getChannelBreakdown,getMarginPnl,getLaunchPerformance,getSyntheticPanel,getMacroOverlay,actualSyntheticProvenance} from "../../../lib/cpg-advanced";
 
 export const runtime="nodejs";
@@ -25,7 +26,7 @@ async function getAll(path:string,pageSize=1000,maxRows=10000){
 const enc=(v:any)=>encodeURIComponent(String(v??""));
 const actualFlag=(v:any)=>v===true||String(v).toLowerCase()==="true";
 
-export async function GET(req:NextRequest){
+export async function GET(req:NextRequest){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
  try{
   const p=req.nextUrl.searchParams,brandId=p.get("brand_id")||"",category=p.get("category")||"",retailerId=p.get("retailer_id")||"",sku=p.get("sku")||"",startDate=p.get("start_date")||"",endDate=p.get("end_date")||"";
   if(!brandId)return NextResponse.json({error:"brand_id is required."},{status:400});

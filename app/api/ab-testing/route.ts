@@ -1,4 +1,5 @@
 import {NextRequest,NextResponse} from "next/server";
+import {requireSupabaseUser} from "../../../lib/require-supabase-user";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -26,12 +27,12 @@ async function getAll(path:string,pageSize=1000,maxRows=20000){
 const enc=(v:any)=>encodeURIComponent(String(v??""));
 const n=(v:any)=>Number(v??0)||0;
 
-export async function GET(req:NextRequest){
+export async function GET(req:NextRequest){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
   try{
     const p=req.nextUrl.searchParams;
     if(p.get("mode")==="experiments"){
       const brandId=p.get("brand_id")||"";
-      const where=brandId?"?brand_id=eq."+enc(brandId)+"&order=created_at.desc&limit=200":"?order=created_at.desc&limit=200";
+      const owner="created_by=eq."+enc(authResult.user.id);const where=brandId?"?"+owner+"&brand_id=eq."+enc(brandId)+"&order=created_at.desc&limit=200":"?"+owner+"&order=created_at.desc&limit=200";
       return NextResponse.json({experiments:await get("cpgist_experiments"+where)});
     }
     const brandId=p.get("brand_id")||"";
@@ -93,13 +94,14 @@ export async function GET(req:NextRequest){
 }
 
 
-export async function POST(req:NextRequest){
+export async function POST(req:NextRequest){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
   try{
     const body=await req.json();
     const {u,k}=base();
     if(!u||!k) throw new Error("Supabase server environment is not configured.");
     if(!body?.experiment_id||!body?.brand_id) return NextResponse.json({error:"experiment_id and brand_id are required."},{status:400});
     const payload={
+      created_by:authResult.user.id,
       experiment_id:String(body.experiment_id),
       brand_id:Number(body.brand_id),
       category:body.category||null,
