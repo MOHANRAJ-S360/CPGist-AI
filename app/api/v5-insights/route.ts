@@ -1,4 +1,5 @@
 import {NextRequest,NextResponse} from "next/server";
+import {requireSupabaseUser} from "../../../lib/require-supabase-user";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -18,7 +19,7 @@ const count=async(table:string)=>{
   const match=range.match(/\/(\d+)$/);return match?Number(match[1]):null;
 };
 
-export async function GET(req:NextRequest){
+export async function GET(req:NextRequest){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
  try{
   const p=req.nextUrl.searchParams,mode=p.get("mode")||"distribution";
   const coverage=await Promise.all([
