@@ -1,4 +1,5 @@
 import {NextRequest,NextResponse} from "next/server";
+import {requireSupabaseUser} from "../../../lib/require-supabase-user";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -26,7 +27,7 @@ async function getAll(path:string,pageSize=1000,maxRows=20000){
 const enc=(v:any)=>encodeURIComponent(String(v??""));
 const n=(v:any)=>Number(v??0)||0;
 
-export async function GET(req:NextRequest){
+export async function GET(req:NextRequest){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
   try{
     const p=req.nextUrl.searchParams;
     if(p.get("mode")==="experiments"){
@@ -93,7 +94,7 @@ export async function GET(req:NextRequest){
 }
 
 
-export async function POST(req:NextRequest){
+export async function POST(req:NextRequest){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
   try{
     const body=await req.json();
     const {u,k}=base();
