@@ -31,7 +31,6 @@ const nav=[
 
 export function AppShell({title,subtitle,children}:{title:string;subtitle?:string;children:ReactNode}){
  const pathname=usePathname(),router=useRouter();
- const marketingSiteUrl=process.env.NEXT_PUBLIC_MARKETING_SITE_URL;
  const [user,setUser]=useState<any>(null),[signingOut,setSigningOut]=useState(false),[importBusy,setImportBusy]=useState(false),[mobileNavOpen,setMobileNavOpen]=useState(false);
  useEffect(()=>{setMobileNavOpen(false)},[pathname]);
  useEffect(()=>{const onImport=(e:Event)=>setImportBusy(Boolean((e as CustomEvent).detail));window.addEventListener("cpgist:import-busy",onImport);return()=>window.removeEventListener("cpgist:import-busy",onImport)},[]);useEffect(()=>{supabaseBrowser().auth.getUser().then(({data})=>{if(!data.user){router.replace("/");return}setUser(data.user)}).catch(()=>router.replace("/"))},[router]);
@@ -53,7 +52,7 @@ export function AppShell({title,subtitle,children}:{title:string;subtitle?:strin
   {mobileNavOpen&&<button type="button" className="mobile-nav-backdrop" aria-label="Close navigation menu" onClick={()=>setMobileNavOpen(false)}/>}
   <aside className="sidebar">
    <div className="brand"><div className="logo">C</div><div><b>CPGist</b><small>CPG INTELLIGENCE</small></div></div>
-   {marketingSiteUrl&&<a href={marketingSiteUrl} target="_blank" rel="noreferrer" className="navlabel" style={{display:"block",textTransform:"none"}}>← Company website</a>}
+   <a href="https://cpgist.vercel.app/" className="navlabel" style={{display:"block",textTransform:"none"}}>← Company website</a>
    <div className="navlabel">WORKSPACE</div>
    <nav className="workspace-nav">{nav.map(({label,href,icon:Icon})=>{const active=pathname===href||pathname.startsWith(href+"/");return <Link key={href} href={href} onClick={()=>setMobileNavOpen(false)} className={"navitem "+(active?"active":"")}><Icon size={16}/><span>{label}</span>{active&&<ChevronRight size={13} className="nav-chevron"/>}</Link>})}</nav>
    <div className="sidebar-user">
