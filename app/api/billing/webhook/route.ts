@@ -13,7 +13,6 @@ export async function POST(req: Request) {
   }
 
   let eventId = "";
-  let eventRecorded = false;
   try {
     const event = JSON.parse(rawBody);
     const eventName = String(event?.event || "");
@@ -39,7 +38,6 @@ export async function POST(req: Request) {
       event_id: eventId, event_name: eventName
     }], "resolution=ignore-duplicates,return=representation");
     if (!Array.isArray(inserted) || inserted.length === 0) return NextResponse.json({ received: true, duplicate: true });
-    eventRecorded = true;
 
     try {
       await adminRest("cpgist_ai_subscriptions?razorpay_subscription_id=eq." + encodeURIComponent(String(subscription.id)), "PATCH", {
@@ -52,7 +50,6 @@ export async function POST(req: Request) {
       // Let Razorpay retry if the state update failed; don't leave a dedupe marker behind.
       try {
         await adminRest("cpgist_razorpay_webhook_events?event_id=eq." + encodeURIComponent(eventId), "DELETE");
-        eventRecorded = false;
       } catch {
         console.error("Unable to remove webhook deduplication marker after a failed subscription update.");
       }
