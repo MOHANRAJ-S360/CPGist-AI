@@ -22,8 +22,8 @@ export async function callUsageRpc(token: string, name: "reserve" | "complete" |
     cache: "no-store"
   });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Usage tracking failed (${response.status}): ${message.slice(0, 300)}`);
+    // Keep database/provider diagnostics in server logs only; never expose RPC details to clients.
+    throw new Error("Unable to verify AI usage right now. Please retry shortly.");
   }
   return await response.json() as UsageState;
 }
