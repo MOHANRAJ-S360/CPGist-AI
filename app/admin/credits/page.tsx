@@ -7,7 +7,7 @@ import { RefreshCw, Save, Coins, PlusCircle } from "lucide-react";
 export default function AdminCreditsPage() {
   const [settings, setSettings] = useState<any>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [ledger, setLedger] = useState<any[]>([]);
+  const [ledger, setLedger] = useState<any[]>([]);\n  const [operations, setOperations] = useState<any[]>([]);
   const [userId, setUserId] = useState("");
   const [amount, setAmount] = useState("5");
   const [reason, setReason] = useState("");
@@ -25,7 +25,7 @@ export default function AdminCreditsPage() {
   }
   async function load() {
     setLoading(true); setError("");
-    try { const d = await request("/api/admin/credits"); setSettings(d.settings); setAccounts(d.accounts || []); setLedger(d.ledger || []); }
+    try { const d = await request("/api/admin/credits"); setSettings(d.settings); setAccounts(d.accounts || []); setLedger(d.ledger || []); setOperations(d.operations || []); }
     catch (e: any) { setError(e?.message || "Unable to load credit administration."); }
     finally { setLoading(false); }
   }
@@ -74,6 +74,7 @@ export default function AdminCreditsPage() {
           <button className="button primary" disabled={saving || !userId || !reason.trim() || Number(amount)===0}><Coins size={15}/> Apply adjustment</button>
         </form>
         <div className="card panel" style={{marginBottom:18}}><h2 style={{marginTop:0}}>Accounts</h2><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{["User ID","Balance","Welcome grant","Created","Updated"].map(x=><th key={x} style={{textAlign:"left",padding:8,borderBottom:"1px solid #e5e7eb"}}>{x}</th>)}</tr></thead><tbody>{accounts.map(a=><tr key={a.user_id}><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{a.user_id}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{a.balance}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{a.welcome_granted ? "Granted" : "Not granted"}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{new Date(a.created_at).toLocaleDateString()}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{new Date(a.updated_at).toLocaleDateString()}</td></tr>)}</tbody></table></div></div>
+        <div className="card panel" style={{marginBottom:18}}><h2 style={{marginTop:0}}>Recent metered operations</h2><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{["Started","User ID","Operation","Credits","Status","Failure"].map(x=><th key={x} style={{textAlign:"left",padding:8,borderBottom:"1px solid #e5e7eb"}}>{x}</th>)}</tr></thead><tbody>{operations.map(o=><tr key={o.id}><td style={{padding:8,borderBottom:"1px solid #eef0f4",whiteSpace:"nowrap"}}>{new Date(o.created_at).toLocaleString()}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{o.user_id}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{o.operation_key}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{o.credits}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{o.status}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{o.failure_reason||"—"}</td></tr>)}</tbody></table></div></div>
         <div className="card panel"><h2 style={{marginTop:0}}>Recent ledger entries</h2><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{["Date","User ID","Type","Amount","Balance","Operation","Reason"].map(x=><th key={x} style={{textAlign:"left",padding:8,borderBottom:"1px solid #e5e7eb"}}>{x}</th>)}</tr></thead><tbody>{ledger.map(t=><tr key={t.id}><td style={{padding:8,borderBottom:"1px solid #eef0f4",whiteSpace:"nowrap"}}>{new Date(t.created_at).toLocaleString()}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{t.user_id}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{t.transaction_type}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{t.amount}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{t.balance_after}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{t.operation_key||"—"}</td><td style={{padding:8,borderBottom:"1px solid #eef0f4"}}>{t.reason||"—"}</td></tr>)}</tbody></table></div></div>
       </>}
     </section>
