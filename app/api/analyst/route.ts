@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { callUsageRpc } from "../../../lib/ai-usage";
 import { CPG_TOOLS } from "../../../lib/cpg-analytics";
 import { capabilityContext } from "../../../lib/cpg-intelligence/capabilities";
 import {
@@ -1077,6 +1078,8 @@ async function collectEvidence(question: string, brandId: string | undefined, to
 }
 
 export async function POST(req: Request) {
+  let usageToken = "";
+  let usageReserved = false;
   try {
     const body = await req.json();
     const key = process.env.GROQ_API_KEY;
@@ -1085,6 +1088,17 @@ export async function POST(req: Request) {
     const auth = req.headers.get("authorization") || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     if (!token) return NextResponse.json({ error: "Please sign in again before using AI Analyst." }, { status: 401 });
+    usageToken = token;
+    const usage = await callUsageRpc(token, "reserve");
+    if (!usage.allowed) {
+      return NextResponse.json({
+        error: "FREE_LIMIT_REACHED",
+        message: "You've used all 3 free AI analyses on this account. Upgrade to continue.",
+        usage: { completed: usage.completed, limit: usage.limit, remaining: 0 },
+        upgradeRequired: true
+      }, { status: 402 });
+    }
+    usageReserved = true;
 
     const capabilityCatalog = capabilityContext();
     const incoming = Array.isArray(body.messages) ? body.messages : [];
@@ -1149,6 +1163,8 @@ export async function POST(req: Request) {
     }
 
     if (!response.ok) {
+      await callUsageRpc(token, "release");
+      usageReserved = false;
       return NextResponse.json(
         { error: data?.error?.message || data?.message || "AI provider request failed.", providerStatus: response.status },
         { status: response.status }
@@ -1265,11 +1281,19 @@ export async function POST(req: Request) {
       analyst.decisionTrail = analyst.decisionTrail.filter((x:any) => x.type !== "action");
     }
 
+    const completedUsage = await callUsageRpc(token, "complete");
+    usageReserved = false;
     return NextResponse.json({
       analyst,
+      usage: { completed: completedUsage.completed, limit: completedUsage.limit, remaining: completedUsage.remaining },
       verification: { performed: false, toolCount: evidence.length, mode: "deterministic-evidence + resilient-structured-model-call" }
     });
   } catch (error: any) {
+    if (usageReserved && usageToken) {
+      try { await callUsageRpc(usageToken, "release"); } catch (releaseError) {
+        console.error("Failed to release reserved AI usage after an unsuccessful analysis.");
+      }
+    }
     return NextResponse.json({ error: error?.message || "AI Analyst request failed." }, { status: 500 });
   }
 }
