@@ -57,4 +57,4 @@ Confirmed monthly AI analysis allowances:
 - Growth: 1,500 successfully completed analyses per billing month.
 - Enterprise: custom contract and limit.
 
-Paid checkout is fail-closed by default. Keep `BILLING_CHECKOUT_ENABLED=false` until Razorpay Test Mode, webhook replay/idempotency, subscription lifecycle, database migration, quota concurrency, and failed-analysis reservation-release tests all pass. Setting plan limits alone does not enable checkout.
+Paid checkout is fail-closed by default. Keep both `BILLING_CHECKOUT_ENABLED=false` and `BILLING_TESTS_PASSED=false` until Razorpay Test Mode, webhook replay/idempotency, subscription lifecycle, database migration, quota concurrency, and failed-analysis reservation-release tests all pass. Only then may an authorized operator set both flags to `true`. Setting plan limits alone does not enable checkout.
