@@ -12,7 +12,7 @@ function bool(v:string){return ["1","true","yes","y","promo","promoted"].include
 function date(v:string){const d=new Date(v);return Number.isNaN(d.getTime())?null:d.toISOString().slice(0,10);}
 async function supa(path:string,method:"GET"|"POST"|"PATCH",body?:unknown,extra:Record<string,string>={}){const url=process.env.NEXT_PUBLIC_SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;if(!url||!key)throw new Error("Supabase server environment is not configured.");const res=await fetch(url+"/rest/v1/"+path,{method,headers:{"apikey":key,"Authorization":"Bearer "+key,"Content-Type":"application/json","Prefer":"return=representation",...extra},body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"});if(!res.ok)throw new Error("Supabase request failed: "+await res.text());return res.status===204?[]:await res.json();}
 async function entity(table:string,organization_id:string,name:string){if(!name)return null;const existing=await supa(table+"?organization_id=eq."+encodeURIComponent(organization_id)+"&name=eq."+encodeURIComponent(name)+"&select=id","GET");if(existing[0])return existing[0].id;const made=await supa(table,"POST",{organization_id,name});return made[0]?.id??null;}
-export async function POST(req:Request){
+export async function POST(req:Request){const authResult=await requireSupabaseUser(req);if("response" in authResult)return authResult.response;
  const form=await req.formData(),file=form.get("file");if(!(file instanceof File))return NextResponse.json({error:"Upload CSV or XLSX."},{status:400});
  const org=String(form.get("organizationId")||"");if(!org)return NextResponse.json({error:"organizationId is required for a production ingestion."},{status:400});
  try{
