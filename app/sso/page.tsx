@@ -13,24 +13,36 @@ export default function SingleSignOnCallback() {
 
     async function finishSignIn() {
       const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
       const tokenHash = params.get("token_hash");
       const type = params.get("type");
 
-      // Remove the one-time credential from the visible URL/history before any
-      // network call. The token is delivered in the fragment, not an HTTP request.
+      // Remove credentials from browser history before making network calls.
       window.history.replaceState(null, "", "/sso");
 
-      if (!tokenHash || (type !== "magiclink" && type !== "signup")) {
-        if (active) setMessage("This sign-in link is missing or expired. Return to CPGist and open AI Analyst again.");
-        return;
-      }
-
       try {
-        const { error } = await supabaseBrowser().auth.verifyOtp({
-          token_hash: tokenHash,
-          type,
-        });
-        if (error) throw error;
+        const auth = supabaseBrowser().auth;
+
+        // Supabase OAuth can return a session in the URL fragment, while the
+        // main-app SSO handoff uses a one-time OTP token hash. Accept both.
+        if (accessToken && refreshToken) {
+          const { error } = await auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (error) throw error;
+        } else if (tokenHash && (type === "magiclink" || type === "signup")) {
+          const { error } = await auth.verifyOtp({
+            token_hash: tokenHash,
+            type,
+          });
+          if (error) throw error;
+        } else {
+          if (active) setMessage("This sign-in link is missing or expired. Return to CPGist and open AI Analyst again.");
+          return;
+        }
+
         if (active) router.replace("/dashboard");
       } catch {
         if (active) setMessage("We couldn't verify this sign-in. The link may have expired or already been used. Return to CPGist and try again.");
