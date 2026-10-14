@@ -1087,7 +1087,7 @@ export async function POST(req: Request) {
     if (!key) return NextResponse.json({ error: "GROQ_API_KEY is not configured in Vercel Production." }, { status: 503 });
 
     const auth = req.headers.get("authorization") || "";
-    const token = auth.match(/^Bearer\\s+(.+)$/i)?.[1] || "";
+    const token = auth.match(/^Bearer\s+(.+)$/i)?.[1] || "";
     if (!token) return NextResponse.json({ error: "Please sign in again before using AI Analyst." }, { status: 401 });
     usageToken = token;
     usageIdempotencyKey = req.headers.get("idempotency-key") || crypto.randomUUID();
