@@ -5,7 +5,8 @@ import { supabaseBrowser } from "../../lib/supabase-browser";
 import { ArrowLeft, Coins, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
-type Transaction = { id: number; transaction_type: string; amount: number; balance_after: number; operation_key?: string | null; status: string; reason?: string | null; created_at: string };\ntype Operation = { id: string; operation_key: string; credits: number; status: string; created_at: string; completed_at?: string | null; refunded_at?: string | null; failure_reason?: string | null };
+type Transaction = { id: number; transaction_type: string; amount: number; balance_after: number; operation_key?: string | null; status: string; reason?: string | null; created_at: string };
+type Operation = { id: string; operation_key: string; credits: number; status: string; created_at: string; completed_at?: string | null; refunded_at?: string | null; failure_reason?: string | null };
 export default function CreditsPage() {
   const [balance, setBalance] = useState<any>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);\n  const [operations, setOperations] = useState<Operation[]>([]);
