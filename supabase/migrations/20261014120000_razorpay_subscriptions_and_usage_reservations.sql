@@ -74,9 +74,7 @@ begin
   insert into public.cpgist_ai_usage(user_id, period_start)
   values (v_user, v_month) on conflict (user_id) do nothing;
 
-  select * into strict v_completed from (
-    select free_completed_count from public.cpgist_ai_usage where user_id = v_user for update
-  ) s;
+  perform 1 from public.cpgist_ai_usage where user_id = v_user for update;
 
   select plan_key, monthly_ai_limit into v_plan, v_limit
   from public.cpgist_ai_subscriptions
@@ -260,3 +258,7 @@ grant execute on function public.cpgist_ai_usage_reserve() to authenticated;
 grant execute on function public.cpgist_ai_usage_complete(uuid) to authenticated;
 grant execute on function public.cpgist_ai_usage_release(uuid) to authenticated;
 grant execute on function public.cpgist_ai_usage_status() to authenticated;
+
+-- Remove legacy no-argument functions so clients cannot bypass reservation IDs.
+drop function if exists public.cpgist_ai_usage_complete();
+drop function if exists public.cpgist_ai_usage_release();
