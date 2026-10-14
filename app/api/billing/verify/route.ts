@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminRest, getSupabaseUser, razorpayRequest, toIsoFromEpoch, verifySubscriptionSignature } from "../../../../../lib/razorpay-server";
+import { adminRest, getSupabaseUser, razorpayRequest, toIsoFromEpoch, verifySubscriptionSignature } from "../../../../lib/razorpay-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
