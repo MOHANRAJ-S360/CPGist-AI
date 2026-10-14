@@ -22,13 +22,14 @@ export async function GET(req: Request) {
   const auth = await authorize(req);
   if ("error" in auth) return auth.error;
   const headers = { apikey: auth.serviceKey, Authorization: "Bearer " + auth.serviceKey };
-  const [settings, accounts, ledger] = await Promise.all([
+  const [settings, accounts, ledger, operations] = await Promise.all([
     fetch(auth.root + "/rest/v1/cpgist_credit_settings?select=welcome_credits,welcome_grant_enabled,ai_analyst_question_cost,welcome_expiration_days,updated_at&id=eq.1", { headers, cache: "no-store" }),
     fetch(auth.root + "/rest/v1/cpgist_credit_accounts?select=user_id,balance,welcome_granted,welcome_granted_at,created_at,updated_at&order=updated_at.desc&limit=200", { headers, cache: "no-store" }),
-    fetch(auth.root + "/rest/v1/cpgist_credit_ledger?select=id,user_id,transaction_type,amount,balance_after,operation_key,status,reason,created_at&order=created_at.desc&limit=200", { headers, cache: "no-store" })
+    fetch(auth.root + "/rest/v1/cpgist_credit_ledger?select=id,user_id,transaction_type,amount,balance_after,operation_key,status,reason,created_at&order=created_at.desc&limit=200", { headers, cache: "no-store" }),
+    fetch(auth.root + "/rest/v1/cpgist_credit_operations?select=id,user_id,operation_key,credits,status,created_at,completed_at,refunded_at,failure_reason&order=created_at.desc&limit=200", { headers, cache: "no-store" })
   ]);
-  if (!settings.ok || !accounts.ok || !ledger.ok) return NextResponse.json({ error: "Credit ledger is not initialized. Apply the CPGist credit-ledger migration first." }, { status: 503 });
-  return NextResponse.json({ settings: (await settings.json())[0] ?? null, accounts: await accounts.json(), ledger: await ledger.json() }, { headers: { "Cache-Control": "no-store" } });
+  if (!settings.ok || !accounts.ok || !ledger.ok || !operations.ok) return NextResponse.json({ error: "Credit ledger is not initialized. Apply the CPGist credit-ledger migrations first." }, { status: 503 });
+  return NextResponse.json({ settings: (await settings.json())[0] ?? null, accounts: await accounts.json(), ledger: await ledger.json(), operations: await operations.json() }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(req: Request) {
