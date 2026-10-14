@@ -11,7 +11,7 @@
 The settings are stored in `public.cpgist_credit_settings`, not in browser code. An administrator can use `/admin/credits` after the Supabase Auth user's **app_metadata** includes `{ "role": "admin" }`. Do not put admin privileges in user_metadata. If the role was just set, sign out/in to refresh the JWT.
 
 ## Database rollout
-Apply migrations `supabase/migrations/20261015090000_cpgist_credit_ledger.sql` then `supabase/migrations/20261015093000_harden_credit_ledger_grants.sql`, then `supabase/migrations/20261015100000_credit_operation_history.sql`, and finally `supabase/migrations/20261015110000_user_workspace_provisioning.sql` to the existing Supabase project before promoting the application code. The second migration removes default PUBLIC/anon grants and leaves authenticated users read-only access to their own account and ledger rows. It creates the ledger, accounts, settings, atomic RPC functions and the one-time signup trigger. Existing accounts are provisioned with a zero balance; the migration does not silently award them a welcome grant. An admin can add a reasoned adjustment.
+Apply migrations `supabase/migrations/20261015090000_cpgist_credit_ledger.sql` then `supabase/migrations/20261015093000_harden_credit_ledger_grants.sql`, then `supabase/migrations/20261015100000_credit_operation_history.sql`, then `supabase/migrations/20261015110000_user_workspace_provisioning.sql`, and finally `supabase/migrations/20261015120000_scope_experiments.sql` to the existing Supabase project before promoting the application code. The second migration removes default PUBLIC/anon grants and leaves authenticated users read-only access to their own account and ledger rows. It creates the ledger, accounts, settings, atomic RPC functions and the one-time signup trigger. Existing accounts are provisioned with a zero balance; the migration does not silently award them a welcome grant. An admin can add a reasoned adjustment.
 
 ## Endpoints
 - `GET /api/credits`: current authenticated user's balance and last 100 ledger entries.
@@ -22,3 +22,7 @@ All credit RPCs derive identity from the verified Supabase JWT. Ledger writes an
 
 ## Website-to-app authentication
 The application currently uses Supabase Auth with a browser-persisted Supabase JS session and bearer-token API calls. A shared Supabase project provides one identity, but cross-domain cookie/session sharing requires the actual marketing website hostname and its implementation to be wired up. Configure `NEXT_PUBLIC_MARKETING_SITE_URL` only after confirming the company website URL; do not guess the production domain. OAuth redirect allow-lists must include the exact canonical app callback/destination.
+
+
+## Existing experiments table note
+The legacy `public.cpgist_experiments` table still has RLS disabled. This rollout removes direct anon/authenticated table grants and scopes the server API by `created_by`, but it does not enable RLS because a separate policy design is required. Do not restore direct client grants until owner-scoped RLS policies are defined.
