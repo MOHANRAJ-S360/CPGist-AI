@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     if (missing.length > 0) {
       console.error("CPGist SSO configuration missing:", missing.join(", "));
       return NextResponse.json({
-        error: "SSO configuration is missing in the active CPGist AI deployment.",
+        error: `SSO configuration is missing in the active CPGist AI deployment. Missing environment variables: ${missing.join(", ")}.`,
         missing,
       }, { status: 503, headers: { "Cache-Control": "no-store, max-age=0" } });
     }
