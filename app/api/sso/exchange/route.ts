@@ -7,9 +7,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const portalApi = (process.env.CPGIST_PORTAL_API_URL || "https://cpgist-api.onrender.com/api").trim().replace(/\/$/, "");
-    const sharedSecret = process.env.CPGIST_SSO_SHARED_SECRET?.trim();
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+    const sharedSecret = process.env.CPGIST_SSO_SHARED_SECRET?.trim() || "";
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || "";
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
 
     // Report missing variable NAMES only. Never log or return secret values.
     const missing: string[] = [];
