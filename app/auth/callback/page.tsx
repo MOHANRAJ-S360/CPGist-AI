@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../../lib/supabase-browser";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -14,13 +13,14 @@ export default function AuthCallbackPage() {
 
     async function finishAuthentication() {
       try {
+        const params = new URLSearchParams(window.location.search);
         const supabase = supabaseBrowser();
-        const authError = searchParams.get("error_description") || searchParams.get("error");
+        const authError = params.get("error_description") || params.get("error");
         if (authError) throw new Error(authError.replace(/\+/g, " "));
 
-        const code = searchParams.get("code");
-        const tokenHash = searchParams.get("token_hash");
-        const type = searchParams.get("type");
+        const code = params.get("code");
+        const tokenHash = params.get("token_hash");
+        const type = params.get("type");
 
         if (code) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
@@ -36,7 +36,7 @@ export default function AuthCallbackPage() {
         if (!data.session) throw new Error("Your sign-in could not be verified. Please return and try again.");
 
         if (!cancelled) {
-          const requestedNext = searchParams.get("next") || "/dashboard";
+          const requestedNext = params.get("next") || "/dashboard";
           const safeNext = requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/dashboard";
           router.replace(safeNext);
           router.refresh();
@@ -48,7 +48,7 @@ export default function AuthCallbackPage() {
 
     void finishAuthentication();
     return () => { cancelled = true; };
-  }, [router, searchParams]);
+  }, [router]);
 
   return (
     <main className="auth-callback-page">
