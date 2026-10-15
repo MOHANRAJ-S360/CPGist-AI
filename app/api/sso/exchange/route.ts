@@ -6,13 +6,23 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const portalApi = (process.env.CPGIST_PORTAL_API_URL || "https://cpgist-api.onrender.com/api").replace(/\/$/, "");
-    const sharedSecret = process.env.CPGIST_SSO_SHARED_SECRET;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const portalApi = (process.env.CPGIST_PORTAL_API_URL || "https://cpgist-api.onrender.com/api").trim().replace(/\/$/, "");
+    const sharedSecret = process.env.CPGIST_SSO_SHARED_SECRET?.trim();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
-    if (!sharedSecret || !supabaseUrl || !serviceRoleKey) {
-      return NextResponse.json({ error: "SSO is not configured on the CPGist AI server." }, { status: 503 });
+    // Report missing variable NAMES only. Never log or return secret values.
+    const missing: string[] = [];
+    if (!sharedSecret) missing.push("CPGIST_SSO_SHARED_SECRET");
+    if (!supabaseUrl) missing.push("NEXT_PUBLIC_SUPABASE_URL");
+    if (!serviceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (missing.length > 0) {
+      console.error("CPGist SSO configuration missing:", missing.join(", "));
+      return NextResponse.json({
+        error: "SSO configuration is missing in the active CPGist AI deployment.",
+        missing,
+      }, { status: 503, headers: { "Cache-Control": "no-store, max-age=0" } });
     }
     const body = await request.json().catch(() => ({}));
     const ticket = typeof body.ticket === "string" ? body.ticket : "";
